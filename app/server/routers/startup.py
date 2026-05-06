@@ -28,6 +28,13 @@ def run_startup(request: Request) -> dict[str, str]:
 def startup_snapshot(request: Request) -> StartupSnapshotModel:
     coordinator = _coordinator_from_request(request)
     snapshot = coordinator.snapshot()
+    if (
+        not snapshot.completed
+        and not snapshot.failed
+        and snapshot.current_step == "Waiting to start"
+    ):
+        coordinator.run_async()
+        snapshot = coordinator.snapshot()
     return StartupSnapshotModel.from_dataclass(snapshot)
 
 

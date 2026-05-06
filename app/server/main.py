@@ -29,7 +29,7 @@ from app.services.startup import StartupCoordinator
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.risk import ExposureRiskEngine
 
-_ALLOWED_ORIGINS = ("tauri://localhost", "http://localhost:1420", "http://127.0.0.1:1420")
+_ALLOWED_ORIGINS = ("*",)
 
 
 def _app_version() -> str:

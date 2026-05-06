@@ -18,6 +18,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [streamEpoch, setStreamEpoch] = useState(0);
   const startupKickoffRef = useRef(false);
+  const startupKickoffInFlightRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
   const snapshotRef = useRef<StartupSnapshot | null>(null);
 
@@ -32,6 +33,25 @@ export function useStartupSnapshot(): StartupSnapshotState {
     }
   }, []);
 
+  const maybeKickoffStartup = useCallback(async () => {
+    if (startupKickoffRef.current || startupKickoffInFlightRef.current) {
+      return;
+    }
+    startupKickoffInFlightRef.current = true;
+    try {
+      await api.runStartup();
+      startupKickoffRef.current = true;
+      setErrorMessage(null);
+    } catch (error) {
+      // Allow retries when startup is still idle.
+      startupKickoffRef.current = false;
+      const message = error instanceof Error ? error.message : "Unable to start startup pipeline";
+      setErrorMessage(message);
+    } finally {
+      startupKickoffInFlightRef.current = false;
+    }
+  }, []);
+
   const startPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
       return;
@@ -41,12 +61,15 @@ export function useStartupSnapshot(): StartupSnapshotState {
         const next = await api.startupSnapshot();
         setSnapshot(next);
         setErrorMessage(null);
+        if (!next.completed && !next.failed && next.current_step === "Waiting to start") {
+          await maybeKickoffStartup();
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to poll startup snapshot";
         setErrorMessage(message);
       }
     }, POLL_INTERVAL_MS);
-  }, []);
+  }, [maybeKickoffStartup]);
 
   const reconnectStream = useCallback(() => {
     setStreamEpoch((prev) => prev + 1);
@@ -54,6 +77,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
 
   const refreshStartup = useCallback(async () => {
     await api.runStartup();
+    startupKickoffRef.current = true;
     reconnectStream();
   }, [reconnectStream]);
 
@@ -67,9 +91,8 @@ export function useStartupSnapshot(): StartupSnapshotState {
         }
         setSnapshot(next);
         setErrorMessage(null);
-        if (!next.completed && !startupKickoffRef.current) {
-          startupKickoffRef.current = true;
-          await api.runStartup();
+        if (!next.completed && !next.failed && next.current_step === "Waiting to start") {
+          await maybeKickoffStartup();
         }
       } catch (error) {
         if (cancelled) {
@@ -86,7 +109,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [maybeKickoffStartup]);
 
   useEffect(() => {
     const source = new EventSource(startupStreamUrl());

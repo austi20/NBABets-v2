@@ -1,7 +1,7 @@
 // Base URL for the Python sidecar API.
-// In dev: run `python scripts/run_server.py` and this hits it directly.
-// In production (T6): Tauri passes the assigned port via a Rust command.
-const DEFAULT_API_BASE = "http://127.0.0.1:8765";
+// In browser dev, keep this empty and use Vite's /api proxy.
+// In production (Tauri), Rust injects the sidecar URL via window globals.
+const DEFAULT_API_BASE = "";
 
 type AppWindowGlobals = Window & {
   __NBA_API_BASE__?: string;

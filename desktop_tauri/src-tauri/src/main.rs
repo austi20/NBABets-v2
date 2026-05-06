@@ -125,10 +125,6 @@ fn sidecar_executable_path(app: &AppHandle) -> Result<std::path::PathBuf, String
 }
 
 fn spawn_sidecar(app: &AppHandle, state: &SidecarState) -> Result<(), String> {
-    if cfg!(debug_assertions) {
-        return Ok(());
-    }
-
     let port = pick_port()?;
     let app_token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
     let executable = sidecar_executable_path(app)?;
