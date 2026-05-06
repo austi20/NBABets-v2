@@ -1,0 +1,85 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nba-prop-probability-engine"
+version = "0.1.0"
+description = "Production-oriented NBA player prop probability engine"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Codex" }
+]
+dependencies = [
+  "fastapi>=0.115.0",
+  "httpx>=0.28.0",
+  "joblib>=1.5.0",
+  "keyring>=25.6.0",
+  "numpy>=2.3.0",
+  "nba_api>=1.11.4",
+  "pandas>=2.3.0",
+  "pyarrow>=18.0.0",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0",
+  "python-dateutil>=2.9.0",
+  "python-dotenv>=1.1.0",
+  "python-Levenshtein>=0.27.0",
+  "scikit-learn>=1.7.0",
+  "scipy>=1.16.0",
+  "sqlalchemy>=2.0.43",
+  "sse-starlette>=2.1.0",
+  "tenacity>=9.1.0",
+  "uvicorn[standard]>=0.32.0",
+  "xgboost>=3.0.0",
+]
+
+[project.scripts]
+nba-prop-server = "app.server.main:cli"
+nba-llm-build-dataset = "llm_train.dataset.build_dataset:main"
+nba-llm-train-lora = "llm_train.train.sft_lora:main"
+nba-llm-merge-adapter = "llm_train.train.merge_adapter:main"
+nba-llm-eval = "llm_train.eval.run_eval:main"
+nba-llm-continuous = "llm_train.scripts.continuous_retrain:main"
+
+[project.optional-dependencies]
+llm-train = [
+  "accelerate>=1.0.0",
+  "datasets>=3.0.0",
+  "peft>=0.14.0",
+  "torch>=2.4.0",
+  "transformers>=4.46.0",
+  "trl>=0.15.0",
+]
+dev = [
+  "mypy>=1.18.0",
+  "pyinstaller>=6.10.0",
+  "pytest>=8.4.0",
+  "pytest-cov>=6.2.0",
+  "ruff>=0.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "llm_train"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --basetemp=.tmp_pytest"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
+exclude = ["tests", "llm_train"]

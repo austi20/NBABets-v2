@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nba-prop-engine.local/schemas/csv_qa_gold.json",
+  "title": "CsvQaGold",
+  "type": "object",
+  "required": ["issues", "recalculated", "agrees_with_file"],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "detail"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "none",
+              "hit_mismatch",
+              "missing_odds",
+              "suspicious_minutes",
+              "line_actual_inconsistent",
+              "ambiguous_push"
+            ]
+          },
+          "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "recalculated": {
+      "type": "object",
+      "required": ["hit_over", "hit_under", "push"],
+      "properties": {
+        "hit_over": { "type": "boolean" },
+        "hit_under": { "type": "boolean" },
+        "push": { "type": "boolean" }
+      }
+    },
+    "agrees_with_file": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

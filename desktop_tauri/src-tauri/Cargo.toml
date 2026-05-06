@@ -1,0 +1,21 @@
+[package]
+name = "nba_prop_engine_desktop"
+version = "0.1.0"
+description = "NBA Prop Engine desktop shell"
+authors = ["NBA Prop Engine"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-log = "2"
+tauri-plugin-updater = "2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

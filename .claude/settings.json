@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git ls-files)",
+      "Bash(git ls-files *)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pytest *)",
+      "Bash(pytest)",
+      "Bash(pytest *)",
+      "Bash(python -m ruff check .)",
+      "Bash(python -m ruff check *)",
+      "Bash(ruff check .)",
+      "Bash(ruff check *)",
+      "Bash(python -m mypy app)",
+      "Bash(python -m mypy *)",
+      "Bash(mypy app)",
+      "Bash(mypy *)",
+      "Bash(powershell -File scripts/check.ps1)",
+      "Bash(powershell -File scripts/check.ps1 *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/check.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/check.ps1 *)",
+      "Bash(powershell -File scripts/build_tauri.ps1)",
+      "Bash(powershell -File scripts/build_tauri.ps1 *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/build_tauri.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/build_tauri.ps1 *)",
+      "Bash(powershell -File scripts/smoke_tauri.ps1)",
+      "Bash(powershell -File scripts/smoke_tauri.ps1 *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/smoke_tauri.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/smoke_tauri.ps1 *)",
+      "Bash(powershell -File scripts/eval_daily.ps1)",
+      "Bash(powershell -File scripts/eval_daily.ps1 *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/eval_daily.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/eval_daily.ps1 *)",
+      "Bash(npm run tauri:dev --prefix desktop_tauri)",
+      "Bash(npm run tauri:dev --prefix desktop_tauri *)",
+      "Bash(python scripts/retrain_and_predict.py)",
+      "Bash(python scripts/retrain_and_predict.py *)",
+      "Bash(python scripts/deep_model_eval.py)",
+      "Bash(python scripts/deep_model_eval.py *)",
+      "Bash(python scripts/run_daily_automation.py)",
+      "Bash(python scripts/run_daily_automation.py *)"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git tag *)",
+      "Bash(rm *)",
+      "Bash(del *)",
+      "Bash(move *)",
+      "Bash(mv *)",
+      "Bash(ren *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./*.sqlite)",
+      "Read(./data/**/*.sqlite)",
+      "Read(./reports/**)",
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ]
+  },
+  "disableBypassPermissionsMode": "disable",
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "120000",
+    "BASH_MAX_TIMEOUT_MS": "900000",
+    "BASH_MAX_OUTPUT_LENGTH": "12000"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/block_protected_paths.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/post_edit_quality.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/audit_config_change.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

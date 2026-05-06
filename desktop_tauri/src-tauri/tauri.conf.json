@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NBA Prop Engine",
+  "version": "0.1.0",
+  "identifier": "com.nba.prop.engine",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "NBA Prop Engine",
+        "width": 1440,
+        "height": 900,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/nba-sidecar"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://updates.placeholder.nba-prop-engine.invalid/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "REPLACE_WITH_SIGNING_PUBLIC_KEY_FOR_PRODUCTION"
+    }
+  }
+}

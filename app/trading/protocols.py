@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from app.trading.types import ExecutionIntent, Fill, OrderEvent, Position
+
+
+class PortfolioLedger(Protocol):
+    def record_order_event(self, event: OrderEvent) -> None: ...
+
+    def record_fill(self, fill: Fill) -> None: ...
+
+    def open_positions(self) -> list[Position]: ...
+
+    def recent_fills(self, limit: int = 20) -> list[Fill]: ...
+
+    def market_exposure(self, market_symbol: str) -> float: ...
+
+    def open_notional(self) -> float: ...
+
+    def daily_realized_pnl(self) -> float: ...
+
+
+class RiskEngine(Protocol):
+    def evaluate(self, intent: ExecutionIntent, ledger: PortfolioLedger) -> tuple[bool, str]: ...
+
+
+class ExchangeAdapter(Protocol):
+    def place_order(self, intent: ExecutionIntent) -> tuple[list[OrderEvent], list[Fill]]: ...

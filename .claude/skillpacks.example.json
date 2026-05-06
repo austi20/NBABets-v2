@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "superpowers",
+      "repo_url": "https://github.com/<owner>/<repo>.git",
+      "ref": "main",
+      "include": {
+        "commands": [
+          {
+            "source": "commands/plan.md",
+            "target": "ext-superpowers-plan-cloud.md",
+            "activation": "cloud-plan"
+          }
+        ],
+        "agents": [
+          {
+            "source": "agents/planner.md",
+            "target": "ext-superpowers-planner.md",
+            "activation": "cloud-plan"
+          }
+        ],
+        "skills": [
+          {
+            "source": "skills/brainstorming",
+            "target": "ext-superpowers-brainstorming",
+            "activation": "mirror-only"
+          }
+        ]
+      }
+    }
+  ]
+}

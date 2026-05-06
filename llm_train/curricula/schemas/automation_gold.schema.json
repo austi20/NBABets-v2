@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nba-prop-engine.local/schemas/automation_gold.json",
+  "title": "AutomationGold",
+  "type": "object",
+  "required": ["task", "answer"],
+  "properties": {
+    "task": {
+      "type": "string",
+      "enum": ["model_health", "provider_health", "retrain_decision"]
+    },
+    "answer": { "type": "string", "minLength": 20 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,62 @@
+# Python caches and local tooling
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+pytest-of-*/
+.pytest_tmp_*/
+.tmp_pytest/
+.tmp_pytest_review/
+.tmp_pyinstaller/
+.tmp_run/
+tmp_pytest/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local secrets and machine-specific config
+.env
+.env.local
+.claude/settings.local.json
+
+# Local IDE/editor state
+.idea/
+.cursor/
+
+# Local Claude runtime state
+.claude/logs/
+.claude/worktrees/
+.claude/skillpacks.local.json
+.claude/cache/skillpacks/
+.claude/generated/staging/
+
+# Generated project data and outputs
+*.db
+*.sqlite
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/snapshots/*
+!data/snapshots/.gitkeep
+data/parquet/*
+!data/parquet/.gitkeep
+!data/parquet/**/.gitkeep
+reports/*
+!reports/.gitkeep
+temp/*
+!temp/.gitkeep
+build/
+dist/
+
+# LLM fine-tuning outputs (datasets, adapters, merged HF)
+llm_train/outputs/
+
+# Local scratch and one-off artifacts
+_desktop_smoke_pid.txt
+*.bak
+*.spec.spec
