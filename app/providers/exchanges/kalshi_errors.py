@@ -46,7 +46,8 @@ def _looks_like_insufficient_funds(body: bytes) -> bool:
 
 
 def _parse_retry_after(headers: Mapping[str, str]) -> int:
-    raw = headers.get("retry-after") or headers.get("Retry-After") or "1"
+    lower = {k.lower(): v for k, v in headers.items()}
+    raw = lower.get("retry-after") or "1"
     try:
         return max(1, int(raw))
     except ValueError:
@@ -62,8 +63,8 @@ def classify_response(status: int, body: bytes, headers: Mapping[str, str]) -> N
         raise KalshiMarketError(status, body)
     if status == 429:
         raise KalshiRateLimited(status, body, _parse_retry_after(headers))
+    if _looks_like_insufficient_funds(body):
+        raise KalshiInsufficientFunds(status, body)
     if status >= 500:
         raise KalshiServerError(status, body)
-    if 400 <= status < 500 and _looks_like_insufficient_funds(body):
-        raise KalshiInsufficientFunds(status, body)
     raise KalshiApiError(status, body)
