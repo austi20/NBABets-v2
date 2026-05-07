@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from app.trading.sql_ledger import SqlPortfolioLedger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -15,6 +14,7 @@ from app.db.models.trading import (
     TradingOrder,
     TradingPosition,
 )
+from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.types import Fill, MarketRef, OrderEvent
 
 
@@ -123,6 +123,40 @@ def test_recent_fills_returns_in_reverse_order(session_factory) -> None:
         )
     fills = ledger.recent_fills(limit=2)
     assert [f.fill_id for f in fills] == ["f2", "f1"]
+
+
+def test_sell_fill_no_double_count_realized_pnl(session_factory) -> None:
+    """fill.realized_pnl must not be added to AVCO-computed realized; only AVCO is used."""
+    ledger = SqlPortfolioLedger(session_factory)
+    market = _market()
+    now = datetime.now(UTC)
+    ledger.record_fill(Fill(fill_id="b1", intent_id="i1", market=market, side="buy", stake=1.0, price=0.40, timestamp=now))
+    # Sell with a non-zero fill.realized_pnl to verify it is NOT added to position pnl.
+    sell = Fill(
+        fill_id="s1",
+        intent_id="i2",
+        market=market,
+        side="sell",
+        stake=1.0,
+        price=0.50,
+        fee=0.0,
+        realized_pnl=99.0,  # exchange-reported value that must be ignored
+        timestamp=now,
+    )
+    ledger.record_fill(sell)
+    # Expected: (0.50 - 0.40) * 1.0 = 0.10, NOT 99.10
+    assert ledger.daily_realized_pnl() == pytest.approx(0.10)
+
+
+def test_open_stake_no_negative_float(session_factory) -> None:
+    """Selling exactly the open stake must leave open_stake at 0.0, not -epsilon."""
+    ledger = SqlPortfolioLedger(session_factory)
+    market = _market()
+    now = datetime.now(UTC)
+    ledger.record_fill(Fill(fill_id="b1", intent_id="i1", market=market, side="buy", stake=0.25, price=0.40, timestamp=now))
+    ledger.record_fill(Fill(fill_id="s1", intent_id="i2", market=market, side="sell", stake=0.25, price=0.50, timestamp=now))
+    assert ledger.open_positions() == []
+    assert ledger.market_exposure(market.symbol) == pytest.approx(0.0)
 
 
 def test_daily_realized_pnl_sums_today(session_factory) -> None:

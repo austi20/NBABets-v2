@@ -108,14 +108,14 @@ class SqlPortfolioLedger:
             )
             closing = min(fill_stake, position.open_stake)
             if closing > 0:
-                position.open_stake -= closing
+                position.open_stake = max(0.0, position.open_stake - closing)
                 position.weighted_price_total = avg_price * position.open_stake
                 computed_realized = (float(fill.price) - avg_price) * closing
         else:
             position.open_stake += fill_stake
             position.weighted_price_total += float(fill.price) * fill_stake
 
-        realized = fill.realized_pnl + computed_realized - fill.fee
+        realized = computed_realized - fill.fee
         position.realized_pnl += realized
         position.updated_at = fill.timestamp
 
@@ -128,10 +128,13 @@ class SqlPortfolioLedger:
 
     def open_positions(self) -> list[Position]:
         with self._session_factory() as session:
-            rows = session.execute(
-                select(TradingPosition).where(TradingPosition.open_stake > 0)
-            ).scalars().all()
-            results = [
+            stmt = (
+                select(TradingPosition)
+                .where(TradingPosition.open_stake > 0)
+                .order_by(TradingPosition.updated_at.desc())
+            )
+            rows = session.execute(stmt).scalars().all()
+            return [
                 Position(
                     market_symbol=row.market_symbol,
                     market_key=row.market_key,
@@ -146,8 +149,6 @@ class SqlPortfolioLedger:
                 )
                 for row in rows
             ]
-            results.sort(key=lambda r: r.updated_at, reverse=True)
-            return results
 
     def recent_fills(self, limit: int = 20) -> list[Fill]:
         bounded = max(0, int(limit))
