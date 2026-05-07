@@ -1,0 +1,7 @@
+{
+  "per_order_cap": 0.25,
+  "per_market_cap": 0.50,
+  "max_open_notional": 2.00,
+  "daily_loss_cap": 2.00,
+  "reject_cooldown_seconds": 300
+}

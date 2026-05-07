@@ -60,3 +60,7 @@ llm_train/outputs/
 _desktop_smoke_pid.txt
 *.bak
 *.spec.spec
+
+# Kalshi trading config (use .example.json files as templates)
+config/trading_limits.json
+config/kalshi_symbols.json
