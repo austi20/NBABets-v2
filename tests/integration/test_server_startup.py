@@ -66,8 +66,10 @@ class _FakeStartupCoordinator:
             ),
         ]
         self._snapshot_calls = 0
+        self.last_full_refresh: bool | None = None
 
-    def run_async(self) -> str:
+    def run_async(self, *, full_refresh: bool = False) -> str:
+        self.last_full_refresh = full_refresh
         return self._run_id
 
     def snapshot(self) -> StartupSnapshot:
@@ -78,12 +80,18 @@ class _FakeStartupCoordinator:
 
 def test_startup_run_and_snapshot_endpoints() -> None:
     async def _run() -> None:
-        app = create_app(startup_coordinator=_FakeStartupCoordinator())
+        coordinator = _FakeStartupCoordinator()
+        app = create_app(startup_coordinator=coordinator)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
             run_response = await client.post("/api/startup/run")
             assert run_response.status_code == 202
             assert run_response.json() == {"run_id": "run-123"}
+            assert coordinator.last_full_refresh is False
+
+            full_run = await client.post("/api/startup/run", json={"full_refresh": True})
+            assert full_run.status_code == 202
+            assert coordinator.last_full_refresh is True
 
             snapshot_response = await client.get("/api/startup/snapshot")
             assert snapshot_response.status_code == 200

@@ -7,7 +7,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 #[derive(Clone, Serialize)]
@@ -27,6 +27,12 @@ impl Default for SidecarState {
             config: Mutex::new(None),
             process: Mutex::new(None),
         }
+    }
+}
+
+impl Drop for SidecarState {
+    fn drop(&mut self) {
+        stop_sidecar(self);
     }
 }
 
@@ -155,6 +161,39 @@ fn spawn_sidecar(app: &AppHandle, state: &SidecarState) -> Result<(), String> {
     Ok(())
 }
 
+fn stop_sidecar(state: &SidecarState) {
+    if let Ok(mut guard) = state.process.lock() {
+        if let Some(mut child) = guard.take() {
+            match child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    terminate_child_tree(&mut child);
+                    let _ = child.wait();
+                }
+                Err(_) => {
+                    terminate_child_tree(&mut child);
+                    let _ = child.wait();
+                }
+            }
+        }
+    }
+    if let Ok(mut guard) = state.config.lock() {
+        *guard = None;
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn terminate_child_tree(child: &mut Child) {
+    let _ = Command::new("taskkill")
+        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .status();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn terminate_child_tree(child: &mut Child) {
+    let _ = child.kill();
+}
+
 fn main() {
     let sidecar_state = SidecarState::default();
     let logs_dir = logs_dir_path();
@@ -187,6 +226,12 @@ fn main() {
             let state = app_handle.state::<SidecarState>();
             spawn_sidecar(&app_handle, &state).map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::CloseRequested { .. }) {
+                let state = window.app_handle().state::<SidecarState>();
+                stop_sidecar(&state);
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

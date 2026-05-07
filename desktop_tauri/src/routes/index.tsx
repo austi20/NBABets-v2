@@ -222,6 +222,7 @@ function DashboardPage() {
     try {
       const side = item.opportunity.recommended_side.toLowerCase().startsWith("under") ? "under" : "over";
       const response = await api.tradingIntent({
+        game_id: item.opportunity.game_id,
         player_id: item.opportunity.player_id,
         market: item.opportunity.market_key,
         line: item.opportunity.consensus_line,

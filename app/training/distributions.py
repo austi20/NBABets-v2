@@ -23,6 +23,10 @@ class DistributionSummary:
     under_probability: float
     ci_low: float
     ci_high: float
+    p25: float = 0.0
+    p75: float = 0.0
+    boom_probability: float = 0.0
+    bust_probability: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -67,6 +71,48 @@ def summarize_line_probability(
         dist_family=dist_family,
     )
     return _summarize_samples(samples, line)
+
+
+def sample_market_outcomes(
+    *,
+    mean: float,
+    variance: float,
+    sample_size: int,
+    rng: np.random.Generator,
+    minutes_mean: float | None = None,
+    minutes_std: float | None = None,
+    market_key: str | None = None,
+    context: dict[str, float] | None = None,
+    dist_family: DistFamily = "legacy",
+) -> np.ndarray:
+    """Draw ``sample_size`` i.i.d. outcome samples aligned with Monte Carlo inference."""
+    return _sample_market_distribution(
+        mean=mean,
+        variance=variance,
+        sample_size=sample_size,
+        rng=rng,
+        minutes_mean=minutes_mean,
+        minutes_std=minutes_std,
+        market_key=market_key,
+        context=context,
+        dist_family=dist_family,
+    )
+
+
+def distribution_summary_from_samples(samples: np.ndarray, line: float) -> DistributionSummary:
+    return _summarize_samples(np.asarray(samples, dtype=float), line)
+
+
+def empirical_pit_cdf(samples: np.ndarray, actual: float) -> float:
+    """Mid-rank empirical CDF of ``actual`` under simulation ``samples`` (PIT uniforms if model is calibrated)."""
+    vals = np.asarray(samples, dtype=float)
+    total = vals.size
+    if total <= 0:
+        return 0.5
+    lt = np.sum(vals < actual)
+    eq = np.sum(vals == actual)
+    pit = (lt + 0.5 * eq) / total
+    return float(np.clip(pit, 1e-6, 1.0 - 1e-6))
 
 
 def simulate_line_probability(
@@ -241,6 +287,8 @@ def _sample_market_distribution(
     bounded_variance = max(variance, bounded_mean + 1e-6)
     if sampled_minutes is None:
         sampled_minutes = _sample_minutes(sample_size, rng, minutes_mean, minutes_std)
+    if sampled_minutes.size and float(np.nanmax(sampled_minutes)) <= 0.0:
+        return np.zeros(sample_size, dtype=float)
     if dist_family == "count_aware":
         return _sample_count_aware_distribution(
             bounded_mean,
@@ -277,8 +325,10 @@ def _sample_minutes(
     minutes_mean: float | None,
     minutes_std: float | None,
 ) -> np.ndarray:
-    if minutes_mean is None or minutes_mean <= 0:
+    if minutes_mean is None:
         return np.full(sample_size, 30.0, dtype=float)
+    if minutes_mean <= 0:
+        return np.zeros(sample_size, dtype=float)
     safe_minutes_mean = max(minutes_mean, 1.0)
     safe_minutes_std = max(minutes_std or np.sqrt(safe_minutes_mean) * 0.5, 1.0)
     return np.clip(rng.normal(loc=safe_minutes_mean, scale=safe_minutes_std, size=sample_size), 6.0, 48.0)
@@ -538,16 +588,24 @@ def _summarize_samples(samples: np.ndarray, line: float) -> DistributionSummary:
     total = max(len(samples), 1)
     over_hits = int(np.sum(samples > line))
     under_hits = int(np.sum(samples < line))
+    boom_threshold = line * 1.10 if line > 0 else float("inf")
+    bust_threshold = line * 0.70 if line > 0 else 0.0
+    boom_hits = int(np.sum(samples >= boom_threshold)) if np.isfinite(boom_threshold) else 0
+    bust_hits = int(np.sum(samples <= bust_threshold))
     return DistributionSummary(
         mean=float(np.mean(samples)),
         variance=float(np.var(samples)),
         median=float(np.quantile(samples, 0.5)),
         p10=float(np.quantile(samples, 0.1)),
+        p25=float(np.quantile(samples, 0.25)),
         p90=float(np.quantile(samples, 0.9)),
+        p75=float(np.quantile(samples, 0.75)),
         over_probability=_posterior_probability(over_hits, total),
         under_probability=_posterior_probability(under_hits, total),
         ci_low=float(np.quantile(samples, 0.1)),
         ci_high=float(np.quantile(samples, 0.9)),
+        boom_probability=float(boom_hits / total),
+        bust_probability=float(bust_hits / total),
     )
 
 

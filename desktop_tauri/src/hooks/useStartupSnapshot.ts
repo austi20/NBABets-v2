@@ -76,7 +76,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
   }, []);
 
   const refreshStartup = useCallback(async () => {
-    await api.runStartup();
+    await api.runStartup({ full_refresh: true });
     startupKickoffRef.current = true;
     reconnectStream();
   }, [reconnectStream]);

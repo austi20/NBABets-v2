@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from statistics import median
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
@@ -68,6 +69,12 @@ class PropOpportunity:
     player_position: str | None = None
     game_label: str | None = None
     game_start_time: str | None = None
+    percentile_25: float = 0.0
+    percentile_75: float = 0.0
+    dnp_risk: float = 0.0
+    boom_probability: float = 0.0
+    bust_probability: float = 0.0
+    availability_branches: int = 1
 
 
 class PropAnalysisService:
@@ -106,6 +113,12 @@ class PropAnalysisService:
                     player_position=row.player_position,
                     game_label=row.game_label,
                     game_start_time=row.game_start_time,
+                    percentile_25=row.percentile_25,
+                    percentile_75=row.percentile_75,
+                    dnp_risk=row.dnp_risk,
+                    boom_probability=row.boom_probability,
+                    bust_probability=row.bust_probability,
+                    availability_branches=row.availability_branches,
                 )
             )
         return ranked
@@ -168,6 +181,12 @@ class PropAnalysisService:
                     player_position=best_row.player_position,
                     game_label=best_row.game_label,
                     game_start_time=best_row.game_start_time,
+                    percentile_25=best_row.percentile_25,
+                    percentile_75=best_row.percentile_75,
+                    dnp_risk=best_row.dnp_risk,
+                    boom_probability=best_row.boom_probability,
+                    bust_probability=best_row.bust_probability,
+                    availability_branches=best_row.availability_branches,
                 )
             )
 
@@ -275,6 +294,7 @@ class PropAnalysisService:
                 str(sportsbook_key),
                 float(line_value),
             )
+            attr = _coerce_feature_summary(prediction.feature_attribution_summary)
             candidate = _QuotePredictionRow(
                 game_id=prediction.game_id,
                 player_id=prediction.player_id,
@@ -309,17 +329,23 @@ class PropAnalysisService:
                 hit_probability=hit_probability,
                 no_vig_market_probability=no_vig_market_probability,
                 top_features=list(
-                    prediction.feature_attribution_summary.get(
+                    attr.get(
                         "signal_summary",
-                        prediction.feature_attribution_summary.get("top_features", []),
+                        attr.get("top_features", []),
                     )
                 ),
                 data_sufficiency_tier=str(
-                    prediction.feature_attribution_summary.get("data_sufficiency_tier", "A")
+                    attr.get("data_sufficiency_tier", "A")
                 ),
                 data_confidence_score=float(
-                    prediction.feature_attribution_summary.get("data_confidence_score", 1.0)
+                    attr.get("data_confidence_score", 1.0)
                 ),
+                percentile_25=_float_attr(attr, "percentile_25"),
+                percentile_75=_float_attr(attr, "percentile_75"),
+                dnp_risk=_float_attr(attr, "dnp_risk"),
+                boom_probability=_float_attr(attr, "boom_probability"),
+                bust_probability=_float_attr(attr, "bust_probability"),
+                availability_branches=_int_attr(attr, "availability_branches", 1),
             )
             existing = latest.get(key)
             if existing is None or (candidate.predicted_at, candidate.timestamp) > (existing.predicted_at, existing.timestamp):
@@ -435,6 +461,12 @@ class _QuotePredictionRow:
     top_features: list[str]
     data_sufficiency_tier: str
     data_confidence_score: float
+    percentile_25: float = 0.0
+    percentile_75: float = 0.0
+    dnp_risk: float = 0.0
+    boom_probability: float = 0.0
+    bust_probability: float = 0.0
+    availability_branches: int = 1
 
 
 def _push_probability(over_probability: float, under_probability: float) -> float:
@@ -459,6 +491,24 @@ def _coerce_snapshot_meta(value: object) -> dict[str, object]:
         if isinstance(parsed, dict):
             return parsed
     return {}
+
+
+def _coerce_feature_summary(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _float_attr(payload: dict[str, Any], key: str, default: float = 0.0) -> float:
+    try:
+        return float(payload.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_attr(payload: dict[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(payload.get(key, default))
+    except (TypeError, ValueError):
+        return default
 
 
 def _quote_recommendation(

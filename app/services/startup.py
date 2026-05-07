@@ -23,7 +23,11 @@ from app.services.automation import generate_daily_automation_report
 from app.services.local_ai_server import local_ai_server
 from app.services.prop_analysis import PropAnalysisService, PropOpportunity
 from app.services.query import QueryService
-from app.services.startup_cache import StartupComputationCacheService, StartupRefreshCacheService
+from app.services.startup_cache import (
+    StartupCacheResetService,
+    StartupComputationCacheService,
+    StartupRefreshCacheService,
+)
 from app.services.startup_eta_history import load_step_estimates, record_step_duration
 from app.tasks.ingestion import refresh_all
 from app.training.data import DatasetLoader
@@ -594,6 +598,7 @@ class StartupCoordinator:
         on_success: Callable[[StartupRunResult], None] | None = None,
     ) -> None:
         self._thread: threading.Thread | None = None
+        self._state_lock = threading.Lock()
         self._poll_thread: threading.Thread | None = None
         self._poll_stop_event = threading.Event()
         self._runner = StartupRunner()
@@ -601,11 +606,18 @@ class StartupCoordinator:
         self._optional_steps = self._runner._optional_steps
         self._last_result: StartupRunResult | None = None
         self._active_run_id: str | None = None
+        self._pending_full_refresh = False
         self._on_start = on_start
         self._on_success = on_success
 
-    def start(self) -> None:
+    def start(self, *, full_refresh: bool = False) -> None:
         if self._thread and self._thread.is_alive():
+            if full_refresh:
+                with self._state_lock:
+                    self._pending_full_refresh = True
+                self._runner._append_log_line(
+                    "Full refresh requested while startup is running; scheduling a hard refresh rerun."
+                )
             return
         self._stop_lineup_poll()
         self._poll_stop_event = threading.Event()
@@ -613,6 +625,15 @@ class StartupCoordinator:
         self._steps = self._runner._steps
         self._optional_steps = self._runner._optional_steps
         self._last_result = None
+        if full_refresh:
+            today = date.today()
+            with session_scope() as session:
+                reset = StartupCacheResetService(session).hard_reset(target_date=today, board_date=today)
+            self._runner._append_log_line(
+                "Manual full refresh: cleared same-day provider caches, lines, and model artifacts "
+                f"(raw_payloads={reset.deleted_raw_payloads}, line_snapshots={reset.deleted_line_snapshots}, "
+                f"artifact_files={len(reset.deleted_artifacts)})"
+            )
         if self._on_start is not None:
             try:
                 self._on_start()
@@ -623,8 +644,8 @@ class StartupCoordinator:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def run_async(self) -> str:
-        self.start()
+    def run_async(self, *, full_refresh: bool = False) -> str:
+        self.start(full_refresh=full_refresh)
         return self._active_run_id or ""
 
     def snapshot(self) -> StartupSnapshot:
@@ -638,6 +659,15 @@ class StartupCoordinator:
 
     def _run(self) -> None:
         self._last_result = self._runner.run()
+        pending_full_refresh = False
+        with self._state_lock:
+            pending_full_refresh = self._pending_full_refresh
+            self._pending_full_refresh = False
+        if pending_full_refresh:
+            self._runner._append_log_line("Running queued hard refresh request.")
+            self._thread = None
+            self.start(full_refresh=True)
+            return
         if self._last_result.failed:
             return
         if self._on_success is not None:

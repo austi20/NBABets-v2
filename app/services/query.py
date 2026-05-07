@@ -289,10 +289,8 @@ class QueryService:
         market_key: str,
         sportsbook_line: float,
     ) -> PropPrediction:
-        top_features = prediction.feature_attribution_summary.get(
-            "signal_summary",
-            prediction.feature_attribution_summary.get("top_features", []),
-        )
+        attr = prediction.feature_attribution_summary
+        top_features = attr.get("signal_summary", attr.get("top_features", []))
         return PropPrediction(
             player_id=prediction.player_id,
             player_name=player_name,
@@ -308,16 +306,18 @@ class QueryService:
             percentile_10=prediction.confidence_interval_low,
             percentile_50=prediction.projected_median,
             percentile_90=prediction.confidence_interval_high,
+            percentile_25=float(attr.get("percentile_25", 0.0)),
+            percentile_75=float(attr.get("percentile_75", 0.0)),
+            dnp_risk=float(attr.get("dnp_risk", 0.0)),
+            boom_probability=float(attr.get("boom_probability", 0.0)),
+            bust_probability=float(attr.get("bust_probability", 0.0)),
+            availability_branches=int(attr.get("availability_branches", 1)),
             confidence_interval_low=prediction.confidence_interval_low,
             confidence_interval_high=prediction.confidence_interval_high,
             top_features=list(top_features),
             model_version="stored",
             feature_version="stored",
             data_freshness={"predicted_at": prediction.predicted_at},
-            data_sufficiency_tier=str(
-                prediction.feature_attribution_summary.get("data_sufficiency_tier", "A")
-            ),
-            data_confidence_score=float(
-                prediction.feature_attribution_summary.get("data_confidence_score", 1.0)
-            ),
+            data_sufficiency_tier=str(attr.get("data_sufficiency_tier", "A")),
+            data_confidence_score=float(attr.get("data_confidence_score", 1.0)),
         )

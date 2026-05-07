@@ -27,6 +27,7 @@ def generate_daily_automation_report(
     *,
     agent_mode: str | None = None,
     dry_run: bool | None = None,
+    shadow_compare: bool = False,
 ) -> Path:
     settings = get_settings()
     orchestrator = AIOrchestrator(session)
@@ -219,6 +220,29 @@ def generate_daily_automation_report(
                 "running recommend/auto."
             )
 
+    rotation_shadow_compare_lines: list[str] = []
+    if shadow_compare:
+        try:
+            from app.services.rotation_shadow_compare import run_shadow_compare_for_report
+
+            snap = run_shadow_compare_for_report(
+                session,
+                report_date,
+                reports_root=settings.reports_dir,
+                persist_authoritative_legacy=False,
+            )
+            rotation_shadow_compare_lines.extend(list(snap.markdown_lines))
+        except Exception:
+            logger.exception("Rotation shadow compare failed")
+            rotation_shadow_compare_lines.extend(
+                [
+                    "## Rotation Shock Shadow Compare",
+                    "",
+                    "_Shadow compare raised an exception; see logs for traceback._",
+                    "",
+                ]
+            )
+
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     report_path = settings.reports_dir / f"automation_daily_{timestamp}.md"
     report_path.write_text(
@@ -239,6 +263,7 @@ def generate_daily_automation_report(
                 f"- projection_line_divergences (>40% off line): {projection_line_divergence_count}",
                 f"- sentinel_status: {sentinel_status}",
                 "",
+                *rotation_shadow_compare_lines,
                 "## Model Health",
                 f"_provider: {model_section.provider} | model: {model_section.model}_",
                 "",

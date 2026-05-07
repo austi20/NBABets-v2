@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import sys
@@ -21,6 +22,7 @@ from app.db.models.trading import (
     TradingPosition,
 )
 from app.db.session import SessionLocal, configure_engine, get_engine
+from app.evaluation.prop_decision import PropDecision
 from app.providers.exchanges.kalshi_client import KalshiClient
 from app.trading.kalshi_adapter import KalshiAdapter
 from app.trading.live_limits import load_live_limits
@@ -28,6 +30,8 @@ from app.trading.loop import TradingLoop, _load_decisions, set_kill_switch
 from app.trading.risk import ExposureRiskEngine
 from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.symbol_resolver import load_symbol_resolver
+
+_REQUIRED_LIVE_DECISION_FIELDS = ("market_key", "recommendation", "line_value", "player_id", "game_date")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -61,6 +65,30 @@ def _confirm(args: argparse.Namespace) -> bool:
         return False
 
 
+def _load_live_decisions(path: Path) -> tuple[list[PropDecision], int]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"decisions file could not be read: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"decisions file is malformed JSON: {exc}") from exc
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("decisions file must contain a non-empty JSON list")
+    first = payload[0]
+    if not isinstance(first, dict):
+        raise ValueError("first live decision must be a JSON object")
+    missing = [field for field in _REQUIRED_LIVE_DECISION_FIELDS if first.get(field) in (None, "")]
+    if missing:
+        raise ValueError(f"first live decision missing required field(s): {', '.join(missing)}")
+    side = str(first["recommendation"]).strip().upper()
+    if side not in {"OVER", "UNDER"}:
+        raise ValueError("first live decision recommendation must be OVER or UNDER")
+    decisions = _load_decisions(path)
+    if not decisions:
+        raise ValueError("decisions file did not contain any executable decisions")
+    return decisions[:1], len(payload)
+
+
 def main() -> int:
     args = _parse_args()
     settings = get_settings()
@@ -76,14 +104,18 @@ def main() -> int:
         if not settings.kalshi_api_key_id or not settings.kalshi_private_key_path:
             print("ABORT: KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH are required.", file=sys.stderr)
             return 2
-
-        decisions = _load_decisions(Path(args.decisions))
-        if not decisions:
-            print("ABORT: decisions file did not contain any executable decisions.", file=sys.stderr)
+        private_key_path = Path(settings.kalshi_private_key_path)
+        if not private_key_path.exists():
+            print(f"ABORT: KALSHI_PRIVATE_KEY_PATH does not exist: {private_key_path}", file=sys.stderr)
             return 2
-        if len(decisions) > 1:
+
+        try:
+            decisions, decision_count = _load_live_decisions(Path(args.decisions))
+        except ValueError as exc:
+            print(f"ABORT: {exc}", file=sys.stderr)
+            return 2
+        if decision_count > 1:
             print("Spec 1 cap: using only the first decision; remaining decisions ignored.", file=sys.stderr)
-        decisions = decisions[:1]
 
         configure_engine()
         _ensure_tables()
@@ -92,7 +124,7 @@ def main() -> int:
 
         client = KalshiClient(
             api_key_id=settings.kalshi_api_key_id,
-            private_key_path=settings.kalshi_private_key_path,
+            private_key_path=private_key_path,
             base_url=settings.kalshi_base_url,
         )
         balance = client.get_balance()

@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.query import BoardAvailability
 from app.services.startup import StartupSnapshot, StartupStep
+
+
+class StartupRunRequest(BaseModel):
+    full_refresh: bool = Field(default=False, description="Clear daily caches and retrain from scratch")
 
 
 class StartupStepModel(BaseModel):

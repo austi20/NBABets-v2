@@ -61,6 +61,12 @@ class PropOpportunityModel(BaseModel):
     player_position: str | None
     game_label: str | None
     game_start_time: str | None
+    percentile_25: float
+    percentile_75: float
+    dnp_risk: float
+    boom_probability: float
+    bust_probability: float
+    availability_branches: int
 
     @classmethod
     def from_dataclass(cls, value: PropOpportunity) -> PropOpportunityModel:
@@ -90,6 +96,12 @@ class PropOpportunityModel(BaseModel):
             player_position=value.player_position,
             game_label=value.game_label,
             game_start_time=value.game_start_time,
+            percentile_25=value.percentile_25,
+            percentile_75=value.percentile_75,
+            dnp_risk=value.dnp_risk,
+            boom_probability=value.boom_probability,
+            bust_probability=value.bust_probability,
+            availability_branches=value.availability_branches,
         )
 
 

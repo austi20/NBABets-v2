@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.server.main import create_app
 from app.server.services.board_cache import BoardCacheEntry
+from app.services import rotation_audit
 from app.services.insights import (
     BoardSummary,
     InjuryStatusBadge,
@@ -69,6 +70,12 @@ class _FakeBoardCache:
             predicted_at=now.isoformat(),
             data_sufficiency_tier="A",
             data_confidence_score=0.9,
+            percentile_25=21.4,
+            percentile_75=30.1,
+            dnp_risk=0.15,
+            boom_probability=0.33,
+            bust_probability=0.18,
+            availability_branches=4,
         )
         prop_insight = PropInsight(
             best_quote=quote,
@@ -213,10 +220,13 @@ def test_board_props_parlays_and_insights_endpoints() -> None:
             assert props.status_code == 200
             assert props.json()["total"] == 1
             assert props.json()["items"][0]["insight"]["confidence_tier"] == "Strong"
+            assert props.json()["items"][0]["opportunity"]["dnp_risk"] == 0.15
+            assert props.json()["items"][0]["opportunity"]["availability_branches"] == 4
 
             prop_detail = await client.get("/api/props/42/points/24.5")
             assert prop_detail.status_code == 200
             assert prop_detail.json()["opportunity"]["player_name"] == "Test Player"
+            assert prop_detail.json()["opportunity"]["boom_probability"] == 0.33
 
             sgp = await client.get("/api/parlays/sgp?game_id=1001&book=book-a")
             assert sgp.status_code == 200
@@ -233,6 +243,29 @@ def test_board_props_parlays_and_insights_endpoints() -> None:
             injuries = await client.get("/api/insights/injuries?player_ids=42")
             assert injuries.status_code == 200
             assert injuries.json()["42"]["label"] == "Questionable"
+
+    asyncio.run(_run())
+
+
+def test_rotation_audit_endpoint_returns_redistribution_payload(tmp_path, monkeypatch) -> None:
+    async def _run() -> None:
+        monkeypatch.setattr(rotation_audit, "AUDIT_ROOT", tmp_path / "rotation_audit")
+        rotation_audit.write_game_audit(
+            game_id=1001,
+            absences=[{"player_id": 42, "player_name": "Missing Player"}],
+            adjustments=[{"player_id": 24, "minutes_delta": 6.0}],
+            team_environment={"team_id": 1, "rotation_shock_magnitude": 6.0},
+        )
+        app = create_app(board_cache=_FakeBoardCache())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props/rotation-audit/1001")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["absences"][0]["player_id"] == 42
+        assert payload["adjustments"][0]["minutes_delta"] == 6.0
+        assert payload["team_environment"][0]["rotation_shock_magnitude"] == 6.0
 
     asyncio.run(_run())
 

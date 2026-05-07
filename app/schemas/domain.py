@@ -130,6 +130,12 @@ class PropPrediction(BaseModel):
     percentile_10: float
     percentile_50: float
     percentile_90: float
+    percentile_25: float = 0.0
+    percentile_75: float = 0.0
+    dnp_risk: float = 0.0
+    boom_probability: float = 0.0
+    bust_probability: float = 0.0
+    availability_branches: int = 1
     confidence_interval_low: float
     confidence_interval_high: float
     top_features: list[str]

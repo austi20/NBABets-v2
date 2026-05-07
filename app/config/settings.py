@@ -20,16 +20,29 @@ def _resolve_env_files() -> list[str]:
     how the shortcut's working directory is configured.
     """
     candidates: list[str] = []
+
+    def _add_candidate(path: Path) -> None:
+        candidate = str(path)
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    def _add_parent_chain(start: Path) -> None:
+        for directory in (start, *start.parents):
+            _add_candidate(directory / ".env")
+
     if getattr(_sys, "frozen", False):
         # Exe directory (e.g. dist/) — highest priority when frozen
         exe_dir = Path(_sys.executable).parent
-        candidates.append(str(exe_dir / ".env"))
+        _add_parent_chain(exe_dir)
         # PyInstaller extraction temp dir (_MEIPASS) — bundled .env fallback
         meipass = getattr(_sys, "_MEIPASS", None)
         if meipass:
-            candidates.append(str(Path(meipass) / ".env"))
-    # Always include cwd-relative path as final fallback (dev / script mode)
-    candidates.append(".env")
+            _add_parent_chain(Path(meipass))
+    # Include cwd chain so sidecar processes launched from desktop_tauri/src-tauri
+    # still discover a repo-root .env during local development.
+    _add_parent_chain(Path.cwd())
+    # Keep plain cwd-relative fallback as final entry for compatibility.
+    _add_candidate(Path(".env"))
     return candidates
 
 
@@ -116,8 +129,6 @@ class Settings(BaseSettings):
         default=True,
         alias="PROVIDER_CACHE_ALLOW_PAST_ODDS_REUSE",
     )
-    kalshi_api_key_id: str = Field(default="", alias="KALSHI_API_KEY_ID")
-    kalshi_private_key_path: str = Field(default="", alias="KALSHI_PRIVATE_KEY_PATH")
     kalshi_base_url: str = Field(
         default="https://external-api.kalshi.com/trade-api/v2",
         alias="KALSHI_BASE_URL",
@@ -172,9 +183,13 @@ class Settings(BaseSettings):
     runtime_memory_fraction_limit: float = Field(default=0.75, alias="RUNTIME_MEMORY_FRACTION_LIMIT")
     runtime_cpu_fraction_limit: float = Field(default=0.85, alias="RUNTIME_CPU_FRACTION_LIMIT")
     simulation_target_margin: float = Field(default=0.01, alias="SIMULATION_TARGET_MARGIN")
-    simulation_min_samples: int = Field(default=50000, alias="SIMULATION_MIN_SAMPLES")
-    simulation_max_samples: int = Field(default=1000000, alias="SIMULATION_MAX_SAMPLES")
-    simulation_batch_size: int = Field(default=50000, alias="SIMULATION_BATCH_SIZE")
+    simulation_min_samples: int = Field(default=10000, alias="SIMULATION_MIN_SAMPLES")
+    simulation_max_samples: int = Field(default=100000, alias="SIMULATION_MAX_SAMPLES")
+    simulation_batch_size: int = Field(default=10000, alias="SIMULATION_BATCH_SIZE")
+    rotation_shock_enabled: bool = Field(default=True, alias="ROTATION_SHOCK_ENABLED")
+    rotation_shock_shadow_mode: bool = Field(default=False, alias="ROTATION_SHOCK_SHADOW_MODE")
+    rotation_shock_ablation_mode: str = Field(default="full", alias="ROTATION_SHOCK_ABLATION_MODE")
+    legacy_pipeline_enabled: bool = Field(default=True, alias="LEGACY_PIPELINE_ENABLED")
     data_sufficiency_tier_a_min_games: int = Field(default=10, alias="DATA_SUFFICIENCY_TIER_A_MIN_GAMES")
     data_sufficiency_tier_a_min_minutes: float = Field(
         default=100.0,
@@ -220,6 +235,11 @@ class Settings(BaseSettings):
     workflow_agent_error_threshold: int = Field(default=5, alias="WORKFLOW_AGENT_ERROR_THRESHOLD")
     workflow_agent_allow_auto_actions: bool = Field(default=False, alias="WORKFLOW_AGENT_ALLOW_AUTO_ACTIONS")
     data_quality_raw_payload_retention_days: int = Field(default=21, alias="DATA_QUALITY_RAW_PAYLOAD_RETENTION_DAYS")
+    trading_exchange: str = Field(default="paper", alias="TRADING_EXCHANGE")
+    trading_paper_adapter: str = Field(default="realistic", alias="TRADING_PAPER_ADAPTER")
+    trading_live_enabled: bool = Field(default=False, alias="TRADING_LIVE_ENABLED")
+    kalshi_api_key_id: str | None = Field(default=None, alias="KALSHI_API_KEY_ID")
+    kalshi_private_key_path: Path | None = Field(default=None, alias="KALSHI_PRIVATE_KEY_PATH")
     network_circuit_breaker_failures: int = Field(default=5, alias="NETWORK_CIRCUIT_BREAKER_FAILURES")
     network_circuit_breaker_open_seconds: int = Field(default=90, alias="NETWORK_CIRCUIT_BREAKER_OPEN_SECONDS")
     network_retry_attempts: int = Field(default=6, alias="NETWORK_RETRY_ATTEMPTS")
@@ -263,7 +283,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("ai_local_server_binary", "ai_local_model_path", mode="before")
+    @field_validator("ai_local_server_binary", "ai_local_model_path", "kalshi_private_key_path", mode="before")
     @classmethod
     def _empty_local_ai_paths(cls, value: object) -> object:
         if value is None or value == "":

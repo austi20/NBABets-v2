@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -154,3 +154,52 @@ def test_clean_when_no_issues() -> None:
     assert result.details["zero_minute_games"] == 0
     assert result.details["extreme_predictions"] == 0
     assert result.details["projection_line_divergences"] == 0
+
+
+def test_live_data_quality_maintenance_respects_auto_action_gate(monkeypatch) -> None:
+    from app.config.settings import get_settings
+
+    monkeypatch.setenv("WORKFLOW_AGENT_ALLOW_AUTO_ACTIONS", "false")
+    get_settings.cache_clear()
+    session = _make_session()
+    old = datetime.now(UTC) - timedelta(days=45)
+    session.execute(
+        text(
+            "INSERT INTO raw_payloads "
+            "(provider_type, provider_name, endpoint, fetched_at, content_hash, payload) "
+            "VALUES ('odds', 'test', '/old', :fetched_at, 'old-hash', '{}')"
+        ),
+        {"fetched_at": old.isoformat()},
+    )
+    session.commit()
+
+    class _Maintenance:
+        called = False
+
+        def prune_old_raw_payloads(self, _days: int) -> int:
+            self.called = True
+            return 1
+
+        def vacuum_and_analyze(self) -> bool:
+            self.called = True
+            return True
+
+    maintenance = _Maintenance()
+    agent = DataQualityAgent(session)
+    agent._maintenance = maintenance
+    task = AgentTask(
+        task_id="test-dq-live",
+        role="data_quality",
+        task_type="check",
+        input_payload={"weekly_maintenance": True},
+        dry_run=False,
+    )
+    try:
+        result = agent.handle(task)
+    finally:
+        get_settings.cache_clear()
+
+    assert maintenance.called is False
+    assert result.details["auto_actions_allowed"] is False
+    assert result.details["executed_actions"] == []
+    assert result.details["skipped_execution"] == ["auto_action_gate_disabled"]

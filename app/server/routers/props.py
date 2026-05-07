@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -11,6 +11,7 @@ from app.server.schemas.props import (
     PropWithInsightModel,
 )
 from app.server.services.board_cache import BoardCacheEntry
+from app.services import rotation_audit
 from app.services.prop_analysis import PropOpportunity
 
 router = APIRouter(prefix="/api/props", tags=["props"])
@@ -164,4 +165,9 @@ def prop_detail(
             insight=PropInsightModel.from_dataclass(entry.opportunity_insights[key]),
         )
     raise HTTPException(status_code=404, detail="Prop opportunity not found")
+
+
+@router.get("/rotation-audit/{game_id}", response_model=dict[str, Any])
+def rotation_audit_detail(game_id: int) -> dict[str, Any]:
+    return rotation_audit.get_redistribution(game_id)
 

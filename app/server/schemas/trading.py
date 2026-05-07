@@ -68,6 +68,7 @@ class TradingPnlModel(BaseModel):
 
 
 class TradingIntentRequestModel(BaseModel):
+    game_id: int | None = None
     player_id: int
     market: str
     line: float

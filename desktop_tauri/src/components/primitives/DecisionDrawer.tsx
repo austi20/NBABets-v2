@@ -96,6 +96,7 @@ export function DecisionDrawer({
                   projectedVariance={item.opportunity.projected_variance}
                   line={item.opportunity.consensus_line}
                 />
+                <RotationContext item={item} />
               </section>
 
               <section className="decision-section">
@@ -212,6 +213,27 @@ function ProbabilityBar({ label, value, accent }: { label: string; value: number
   );
 }
 
+function RotationContext({ item }: { item: PropWithInsight }) {
+  return (
+    <div className="rotation-risk-grid">
+      <MetricValue label="DNP risk" value={formatPercent(item.opportunity.dnp_risk)} />
+      <MetricValue label="Boom" value={formatPercent(item.opportunity.boom_probability)} />
+      <MetricValue label="Bust" value={formatPercent(item.opportunity.bust_probability)} />
+      <MetricValue label="IQR" value={`${formatNumber(item.opportunity.percentile_25)} - ${formatNumber(item.opportunity.percentile_75)}`} />
+      <MetricValue label="Branches" value={String(item.opportunity.availability_branches)} />
+    </div>
+  );
+}
+
+function MetricValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rotation-risk-item">
+      <span className="micro-label">{label}</span>
+      <strong className="tabular">{value}</strong>
+    </div>
+  );
+}
+
 function SortButton({
   active,
   onClick,
@@ -263,6 +285,13 @@ function formatAmericanOdds(odds: number | null): string {
 
 function formatPercent(value: number): string {
   return `${(Math.max(0, Math.min(1, value)) * 100).toFixed(1)}%`;
+}
+
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return value.toFixed(1);
 }
 
 function formatSignedPercent(value: number): string {

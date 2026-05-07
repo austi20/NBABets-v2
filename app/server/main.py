@@ -26,6 +26,7 @@ from app.server.routers.startup import router as startup_router
 from app.server.routers.trading import router as trading_router
 from app.server.services.board_cache import BoardCache
 from app.services.startup import StartupCoordinator
+from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.risk import ExposureRiskEngine
 
@@ -143,6 +144,9 @@ def create_app(
     app.state.board_cache = resolved_board_cache
     app.state.trading_ledger = InMemoryPortfolioLedger()
     app.state.trading_risk = ExposureRiskEngine()
+    exchange_config = build_exchange_adapter()
+    app.state.trading_exchange = exchange_config.exchange
+    app.state.trading_adapter = exchange_config.adapter
     app.state.app_token = app_token or secrets.token_urlsafe(24)
     app.add_middleware(
         AppTokenMiddleware,

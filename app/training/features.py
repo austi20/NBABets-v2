@@ -810,13 +810,18 @@ class FeatureEngineer:
         return (frame["game_date"] - previous).dt.days.fillna(4).clip(lower=0)
 
     def _role_stability(self, frame: pd.DataFrame, predicted_minutes_column: str | None) -> pd.Series:
-        minutes_avg_10 = pd.to_numeric(frame.get("minutes_avg_10", 0.0), errors="coerce").fillna(0.0)
+        zero = pd.Series(0.0, index=frame.index)
+        half = pd.Series(0.5, index=frame.index)
+        minutes_avg_10 = pd.to_numeric(frame.get("minutes_avg_10", zero), errors="coerce").fillna(0.0)
         minutes_avg_20 = pd.to_numeric(frame.get("minutes_avg_20", minutes_avg_10), errors="coerce").fillna(0.0)
-        minutes_std_10 = pd.to_numeric(frame.get("minutes_std_10", 0.0), errors="coerce").fillna(0.0)
-        starter_consistency = pd.to_numeric(frame.get("starter_consistency_10", 0.5), errors="coerce").fillna(0.5)
-        team_injuries_avg_10 = pd.to_numeric(frame.get("team_injuries_avg_10", frame.get("team_injuries", 0.0)), errors="coerce").fillna(0.0)
+        minutes_std_10 = pd.to_numeric(frame.get("minutes_std_10", zero), errors="coerce").fillna(0.0)
+        starter_consistency = pd.to_numeric(frame.get("starter_consistency_10", half), errors="coerce").fillna(0.5)
+        team_injuries_avg_10 = pd.to_numeric(
+            frame.get("team_injuries_avg_10", frame.get("team_injuries", zero)),
+            errors="coerce",
+        ).fillna(0.0)
         lineup_instability = pd.to_numeric(
-            frame.get("lineup_instability_score", frame.get("lineup_instability_score_avg_10", 0.0)),
+            frame.get("lineup_instability_score", frame.get("lineup_instability_score_avg_10", zero)),
             errors="coerce",
         ).fillna(0.0)
         missing_starters = pd.to_numeric(
@@ -1155,7 +1160,12 @@ class FeatureEngineer:
                     "player_games_since_return",
                     "days_since_extended_absence",
                     "team_changed_recently",
+                    "baseline_",
                     "projected_",
+                    "adjusted_",
+                    "rotation_shock",
+                    "team_efficiency_delta",
+                    "pace_delta",
                     "missing_starter",
                     "minutes_uncertainty",
                     "opponent_allowed_",

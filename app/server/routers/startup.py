@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Body, Request, Response, status
 from sse_starlette.sse import EventSourceResponse
 
-from app.server.schemas.startup import StartupSnapshotModel
+from app.server.schemas.startup import StartupRunRequest, StartupSnapshotModel
 from app.services.startup import StartupCoordinator
 
 router = APIRouter(prefix="/api/startup", tags=["startup"])
@@ -17,9 +17,13 @@ def _coordinator_from_request(request: Request) -> StartupCoordinator:
 
 
 @router.post("/run", status_code=status.HTTP_202_ACCEPTED)
-def run_startup(request: Request) -> dict[str, str]:
+def run_startup(
+    request: Request,
+    body: Annotated[StartupRunRequest | None, Body()] = None,
+) -> dict[str, str]:
     coordinator = _coordinator_from_request(request)
-    run_id = coordinator.run_async()
+    effective = body if body is not None else StartupRunRequest()
+    run_id = coordinator.run_async(full_refresh=bool(effective.full_refresh))
     response = {"run_id": run_id}
     return response
 

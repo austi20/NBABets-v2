@@ -27,6 +27,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="When provided, never execute suggested actions, only report recommendations.",
     )
+    parser.add_argument(
+        "--shadow-compare",
+        action="store_true",
+        help="Append a dry-run rotation-shock vs legacy inference comparison.",
+    )
     return parser.parse_args()
 
 
@@ -38,6 +43,7 @@ def main() -> None:
             session,
             agent_mode=args.agent_mode,
             dry_run=args.dry_run or args.agent_mode != "auto",
+            shadow_compare=bool(args.shadow_compare),
         )
     print(f"Generated automation report: {report_path}")
 

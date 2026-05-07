@@ -1443,6 +1443,27 @@
     height: 230px;
   }
 
+  .rotation-risk-grid {
+    border-top: 1px solid var(--color-smoke);
+    margin-top: 10px;
+    padding-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .rotation-risk-item {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+  }
+
+  .rotation-risk-item strong {
+    font-size: 13px;
+    color: var(--color-fg-primary);
+    overflow-wrap: anywhere;
+  }
+
   .decision-table-head {
     display: flex;
     justify-content: space-between;
@@ -1657,6 +1678,7 @@
 
   @media (max-width: 1120px) {
     .decision-grid-two,
+    .rotation-risk-grid,
     .decision-lists {
       grid-template-columns: 1fr;
     }

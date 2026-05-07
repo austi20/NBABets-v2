@@ -200,7 +200,9 @@ class DataQualityAgent:
             )
 
         executed: list[str] = []
-        if not task.dry_run:
+        skipped_execution: list[str] = []
+        auto_actions_allowed = bool(self._settings.workflow_agent_allow_auto_actions)
+        if not task.dry_run and auto_actions_allowed:
             for action in actions:
                 if action.action_type != "cache_prune":
                     continue
@@ -209,6 +211,8 @@ class DataQualityAgent:
             if task.input_payload.get("weekly_maintenance", False):
                 if self._maintenance.vacuum_and_analyze():
                     executed.append("vacuum_analyze")
+        elif not task.dry_run:
+            skipped_execution.append("auto_action_gate_disabled")
 
         status = "ok" if not actions else "recommendation"
         summary = "Data quality checks passed." if not actions else f"Detected {len(actions)} data quality issue(s)."
@@ -229,6 +233,8 @@ class DataQualityAgent:
                 "extreme_predictions": extreme_predictions,
                 "projection_line_divergences": projection_line_divergences,
                 "executed_actions": executed,
+                "skipped_execution": skipped_execution,
                 "dry_run": task.dry_run,
+                "auto_actions_allowed": auto_actions_allowed,
             },
         )

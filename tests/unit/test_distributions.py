@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.training.distributions import _sample_points, _sample_rebounds, _sample_turnovers, summarize_line_probability
+from app.training.distributions import (
+    _sample_points,
+    _sample_rebounds,
+    _sample_turnovers,
+    sample_market_outcomes,
+    summarize_line_probability,
+)
 
 
 def test_turnover_zero_inflation_increases_zero_rate_for_lower_mean() -> None:
@@ -129,3 +135,21 @@ def test_summarize_line_probability_supports_dist_family_switch() -> None:
         assert 0.0 <= summary.under_probability <= 1.0
         assert summary.mean >= 0.0
     assert abs(legacy.over_probability - count_aware.over_probability) <= 0.25
+
+
+def test_zero_projected_minutes_produces_zero_outcome_samples() -> None:
+    samples = sample_market_outcomes(
+        mean=24.0,
+        variance=36.0,
+        sample_size=1000,
+        rng=np.random.default_rng(12),
+        minutes_mean=0.0,
+        minutes_std=1.0,
+        market_key="points",
+        context={
+            "field_goal_attempts_per_minute": 0.6,
+            "estimated_three_point_attempts_per_minute": 0.2,
+            "free_throw_attempts_per_minute": 0.15,
+        },
+    )
+    assert np.max(samples) == 0.0

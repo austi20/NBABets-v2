@@ -87,6 +87,7 @@ export type TradingPnl = {
 };
 
 export type TradingIntentRequest = {
+  game_id?: number | null;
   player_id: number;
   market: string;
   line: number;
@@ -180,6 +181,12 @@ export type PropOpportunity = {
   player_position: string | null;
   game_label: string | null;
   game_start_time: string | null;
+  percentile_25: number;
+  percentile_75: number;
+  dnp_risk: number;
+  boom_probability: number;
+  bust_probability: number;
+  availability_branches: number;
 };
 
 export type PropInsight = {
@@ -356,7 +363,11 @@ export const api = {
   health: () => apiFetch<HealthResponse>("/api/health"),
   settings: () => apiFetch<Record<string, unknown>>("/api/settings"),
   startupSnapshot: () => apiFetch<StartupSnapshot>("/api/startup/snapshot"),
-  runStartup: () => apiFetch<StartupRunResponse>("/api/startup/run", { method: "POST" }),
+  runStartup: (options?: { full_refresh?: boolean }) =>
+    apiFetch<StartupRunResponse>("/api/startup/run", {
+      method: "POST",
+      body: JSON.stringify({ full_refresh: options?.full_refresh ?? false }),
+    }),
   boardAvailability: () => apiFetch<BoardAvailability>("/api/board/availability"),
   boardSummary: () => apiFetch<BoardSummary>("/api/board/summary"),
   props: (query: PropsQuery = {}) => apiFetch<PropListResponse>(withQuery("/api/props", query)),
