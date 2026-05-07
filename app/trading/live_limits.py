@@ -34,9 +34,8 @@ def load_live_limits(path: Path | str) -> RiskLimits:
     for field in _REQUIRED_FIELDS:
         if field not in payload:
             raise LimitsConfigError(f"limits config missing field: {field}")
-    for field in _REQUIRED_FIELDS:
         value = payload[field]
-        if not isinstance(value, int | float):
+        if isinstance(value, bool) or not isinstance(value, int | float):
             raise LimitsConfigError(f"limits field {field} must be a number")
         if value < 0:
             raise LimitsConfigError(f"limits field {field} must be >= 0")

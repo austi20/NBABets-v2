@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from app.trading.live_limits import LimitsConfigError, load_live_limits
 
+from app.trading.live_limits import LimitsConfigError, load_live_limits
 from app.trading.risk import RiskLimits
 
 
@@ -62,4 +62,28 @@ def test_load_live_limits_negative_value_raises(tmp_path: Path) -> None:
         )
     )
     with pytest.raises(LimitsConfigError, match="must be"):
+        load_live_limits(bad)
+
+
+def test_load_live_limits_non_dict_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "array.json"
+    bad.write_text("[1, 2, 3]")
+    with pytest.raises(LimitsConfigError, match="JSON object"):
+        load_live_limits(bad)
+
+
+def test_load_live_limits_wrong_type_field_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "strval.json"
+    bad.write_text(
+        json.dumps(
+            {
+                "per_order_cap": "a lot",
+                "per_market_cap": 0.50,
+                "max_open_notional": 2.00,
+                "daily_loss_cap": 2.00,
+                "reject_cooldown_seconds": 300,
+            }
+        )
+    )
+    with pytest.raises(LimitsConfigError, match="must be a number"):
         load_live_limits(bad)
