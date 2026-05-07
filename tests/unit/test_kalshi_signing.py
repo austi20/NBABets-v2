@@ -4,9 +4,10 @@ import base64
 from pathlib import Path
 
 import pytest
-from app.providers.exchanges.kalshi_signing import sign_request
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+from app.providers.exchanges.kalshi_signing import _load_private_key, sign_request
 
 
 @pytest.fixture()
@@ -42,3 +43,24 @@ def test_sign_request_caches_key_load(private_key_pem: Path) -> None:
     sig1 = sign_request(private_key_pem, "1", "GET", "/x")
     sig2 = sign_request(private_key_pem, "2", "GET", "/x")
     assert sig1 != sig2  # different timestamps yield different signatures
+
+
+def test_sign_request_non_rsa_key_raises(tmp_path: Path) -> None:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    _load_private_key.cache_clear()
+    key = ec.generate_private_key(ec.SECP256R1())
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    path = tmp_path / "ec_key.pem"
+    path.write_bytes(pem)
+    with pytest.raises(ValueError, match="not an RSA key"):
+        sign_request(path, "1", "GET", "/x")
+
+
+def test_sign_request_missing_file_raises(tmp_path: Path) -> None:
+    _load_private_key.cache_clear()
+    with pytest.raises(FileNotFoundError):
+        sign_request(tmp_path / "missing.pem", "1", "GET", "/x")

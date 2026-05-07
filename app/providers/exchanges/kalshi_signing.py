@@ -8,6 +8,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
+_PSS_SALT_LENGTH = 32  # SHA-256 digest size; matches Kalshi API PSS spec
+
 
 @lru_cache(maxsize=4)
 def _load_private_key(path_str: str) -> RSAPrivateKey:
@@ -24,13 +26,13 @@ def sign_request(
     method: str,
     path: str,
 ) -> str:
-    key = _load_private_key(str(private_key_path))
+    key = _load_private_key(str(Path(private_key_path).resolve()))
     message = (timestamp_ms + method.upper() + path).encode("utf-8")
     signature = key.sign(
         message,
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=hashes.SHA256.digest_size,
+            salt_length=_PSS_SALT_LENGTH,
         ),
         hashes.SHA256(),
     )
