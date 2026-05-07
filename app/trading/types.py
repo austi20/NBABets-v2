@@ -47,6 +47,10 @@ class OrderEvent:
     status: str
     message: str
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    market: MarketRef | None = None
+    side: OrderSide | None = None
+    stake: float | None = None
+    exchange_order_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,8 @@ class Fill:
     fee: float = 0.0
     realized_pnl: float = 0.0
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    exchange_order_id: str | None = None
+    exchange_trade_id: str | None = None
 
 
 @dataclass(frozen=True)

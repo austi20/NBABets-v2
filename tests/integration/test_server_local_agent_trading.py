@@ -2,15 +2,27 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.db.base import Base
+from app.db.models.trading import (
+    TradingDailyPnL,
+    TradingFill,
+    TradingKillSwitch,
+    TradingOrder,
+    TradingPosition,
+)
 from app.server.main import create_app
 from app.services.insights import LocalAgentStatus
+from app.trading.risk import ExposureRiskEngine, RiskLimits
 from app.trading.types import Fill, MarketRef
 
 
-def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch) -> None:
+def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch, tmp_path: Path) -> None:
     async def _run() -> None:
         fake_status = LocalAgentStatus(
             enabled=True,
@@ -37,7 +49,22 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch) -> None:
             lambda **kwargs: None,  # noqa: ARG005
         )
 
+        engine = create_engine(f"sqlite:///{tmp_path / 'trading.sqlite'}", future=True)
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                TradingOrder.__table__,
+                TradingFill.__table__,
+                TradingPosition.__table__,
+                TradingKillSwitch.__table__,
+                TradingDailyPnL.__table__,
+            ],
+        )
+        factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
         app = create_app(app_token="secret-token")
+        app.state.trading_session_factory = factory
+        app.state.trading_risk = ExposureRiskEngine(RiskLimits(per_order_cap=0.25))
         ledger = app.state.trading_ledger
         ledger.record_fill(
             Fill(
@@ -69,6 +96,7 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch) -> None:
             pnl = await client.get("/api/trading/pnl")
             assert pnl.status_code == 200
             assert pnl.json()["kill_switch_active"] is False
+            assert pnl.json()["active_limits"]["per_order_cap"] == 0.25
 
             fills = await client.get("/api/trading/fills/recent?limit=10")
             assert fills.status_code == 200
@@ -96,6 +124,10 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch) -> None:
             )
             assert authorized_kill.status_code == 200
             assert authorized_kill.json()["kill_switch_active"] is True
+            with factory() as session:
+                row = session.get(TradingKillSwitch, 1)
+                assert row is not None
+                assert row.killed is True
 
             intent_payload = {
                 "player_id": 42,

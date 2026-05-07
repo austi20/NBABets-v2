@@ -116,6 +116,21 @@ class Settings(BaseSettings):
         default=True,
         alias="PROVIDER_CACHE_ALLOW_PAST_ODDS_REUSE",
     )
+    kalshi_api_key_id: str = Field(default="", alias="KALSHI_API_KEY_ID")
+    kalshi_private_key_path: str = Field(default="", alias="KALSHI_PRIVATE_KEY_PATH")
+    kalshi_base_url: str = Field(
+        default="https://external-api.kalshi.com/trade-api/v2",
+        alias="KALSHI_BASE_URL",
+    )
+    kalshi_live_trading: bool = Field(default=False, alias="KALSHI_LIVE_TRADING")
+    trading_limits_path: str = Field(
+        default="config/trading_limits.json",
+        alias="TRADING_LIMITS_PATH",
+    )
+    kalshi_symbols_path: str = Field(
+        default="config/kalshi_symbols.json",
+        alias="KALSHI_SYMBOLS_PATH",
+    )
     stats_provider: str = Field(default="balldontlie", alias="STATS_PROVIDER")
     odds_provider: str = Field(default="balldontlie", alias="ODDS_PROVIDER")
     injury_provider: str = Field(default="balldontlie", alias="INJURY_PROVIDER")

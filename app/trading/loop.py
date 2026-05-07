@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
+from app.db.models.trading import TradingKillSwitch
 from app.evaluation.prop_decision import PropDecision
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.mapper import signal_to_market_ref
@@ -33,12 +36,21 @@ class TradingLoop:
         ledger: PortfolioLedger,
         adapter: ExchangeAdapter,
         market_mapper: Callable[[Signal, str], MarketRef] = signal_to_market_ref,
+        session_factory: Callable[[], Session] | None = None,
     ) -> None:
         self._risk = risk_engine
         self._ledger = ledger
         self._adapter = adapter
         self._market_mapper = market_mapper
         self._sequence = 0
+        self._session_factory = session_factory
+
+    def _kill_switch_active(self) -> bool:
+        if self._session_factory is None:
+            return False
+        with self._session_factory() as session:
+            row = session.get(TradingKillSwitch, 1)
+            return bool(row and row.killed)
 
     def run_signals(
         self,
@@ -52,6 +64,18 @@ class TradingLoop:
         fill_count = 0
         event_count = 0
         for signal in signals:
+            if self._kill_switch_active():
+                rejected += 1
+                event = OrderEvent(
+                    intent_id=f"{signal.signal_id}-intent",
+                    event_type="rejected",
+                    status="blocked",
+                    message="kill switch active",
+                    timestamp=datetime.now(UTC),
+                )
+                self._ledger.record_order_event(event)
+                event_count += 1
+                continue
             market_ref = self._market_mapper(signal, exchange)
             intent = ExecutionIntent(
                 intent_id=f"{signal.signal_id}-intent",
@@ -101,9 +125,30 @@ class TradingLoop:
     def _decision_to_signal(self, decision: PropDecision) -> Signal:
         self._sequence += 1
         signal_id = f"decision-{self._sequence}"
-        synthetic_player_id = abs(
-            hash((decision.market_key, round(float(decision.line_value), 2), decision.recommendation.upper()))
-        ) % 10_000_000
+        metadata: dict[str, object] = {
+            "signal_id": signal_id,
+            "market_prob": float(
+                decision.market_prob
+                if decision.market_prob > 0
+                else american_to_prob(decision.over_odds if decision.recommendation.upper() == "OVER" else decision.under_odds)
+            ),
+            "no_vig_market_prob": float(
+                decision.no_vig_market_prob
+                if decision.no_vig_market_prob > 0
+                else no_vig_over_probability(decision.over_odds, decision.under_odds)
+            ),
+            "driver": decision.driver,
+        }
+        if decision.game_id is not None:
+            metadata["game_id"] = decision.game_id
+        if decision.player_id is not None:
+            metadata["player_id"] = int(decision.player_id)
+        if decision.game_date is not None:
+            metadata["game_date"] = (
+                decision.game_date.isoformat()
+                if hasattr(decision.game_date, "isoformat")
+                else str(decision.game_date)
+            )
         return Signal(
             signal_id=signal_id,
             created_at=datetime.now(UTC),
@@ -113,23 +158,27 @@ class TradingLoop:
             edge=float(decision.ev),
             model_probability=float(decision.model_prob),
             line_value=float(decision.line_value),
-            metadata={
-                "signal_id": signal_id,
-                "game_id": 0,
-                "player_id": synthetic_player_id,
-                "market_prob": float(
-                    decision.market_prob
-                    if decision.market_prob > 0
-                    else american_to_prob(decision.over_odds if decision.recommendation.upper() == "OVER" else decision.under_odds)
-                ),
-                "no_vig_market_prob": float(
-                    decision.no_vig_market_prob
-                    if decision.no_vig_market_prob > 0
-                    else no_vig_over_probability(decision.over_odds, decision.under_odds)
-                ),
-                "driver": decision.driver,
-            },
+            metadata=metadata,
         )
+
+
+def set_kill_switch(
+    session_factory: Callable[[], Session],
+    *,
+    killed: bool,
+    set_by: str = "system",
+) -> None:
+    with session_factory() as session:
+        row = session.get(TradingKillSwitch, 1)
+        now = datetime.now(UTC)
+        if row is None:
+            row = TradingKillSwitch(id=1, killed=killed, set_at=now, set_by=set_by)
+            session.add(row)
+        else:
+            row.killed = killed
+            row.set_at = now
+            row.set_by = set_by
+        session.commit()
 
 
 def _load_decisions(path: Path) -> list[PropDecision]:
@@ -153,6 +202,9 @@ def _load_decisions(path: Path) -> list[PropDecision]:
                 line_value=float(row.get("line_value", 0.0)),
                 over_odds=(int(row["over_odds"]) if row.get("over_odds") is not None else None),
                 under_odds=(int(row["under_odds"]) if row.get("under_odds") is not None else None),
+                player_id=(int(row["player_id"]) if row.get("player_id") is not None else None),
+                game_id=row.get("game_id"),
+                game_date=(str(row["game_date"]) if row.get("game_date") is not None else None),
             )
         )
     return decisions
