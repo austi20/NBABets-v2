@@ -25,6 +25,8 @@ class _KalshiClientLike(Protocol):
         client_order_id: str,
         time_in_force: str = "fill_or_kill",
         self_trade_prevention_type: str = "taker_at_cross",
+        post_only: bool | None = None,
+        cancel_order_on_pause: bool | None = None,
     ) -> dict[str, Any]: ...
     def get_order(self, order_id: str) -> dict[str, Any]: ...
     def get_fills(
@@ -83,6 +85,23 @@ class KalshiAdapter:
                             market=intent.market, side=intent.side, stake=intent.stake)],
                 [],
             )
+        max_price = self._decimal_to_float(intent.signal.metadata.get("max_price_dollars"))
+        if max_price is not None and quote.contract_cost_dollars > max_price:
+            return (
+                [OrderEvent(
+                    intent_id=intent.intent_id,
+                    event_type="rejected",
+                    status="blocked",
+                    message=(
+                        f"contract price {quote.contract_cost_dollars:.4f} "
+                        f"exceeds max price {max_price:.4f}"
+                    ),
+                    market=intent.market,
+                    side=intent.side,
+                    stake=intent.stake,
+                )],
+                [],
+            )
         count = int(intent.stake // quote.contract_cost_dollars)
         if count < 1:
             return (
@@ -108,6 +127,9 @@ class KalshiAdapter:
                 count=count,
                 price_dollars=quote.order_price_dollars,
                 client_order_id=client_order_id,
+                time_in_force=str(intent.signal.metadata.get("time_in_force") or "fill_or_kill"),
+                post_only=self._bool_metadata(intent.signal.metadata.get("post_only")),
+                cancel_order_on_pause=True,
             )
         except KalshiApiError as exc:
             return (
@@ -207,6 +229,18 @@ class KalshiAdapter:
             return float(Decimal(str(value)))
         except (InvalidOperation, ValueError):
             return None
+
+    def _bool_metadata(self, value: Any) -> bool | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "y"}:
+            return True
+        if text in {"0", "false", "no", "n"}:
+            return False
+        return None
 
     def _extract_fills(
         self,

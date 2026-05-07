@@ -133,6 +133,10 @@ class Settings(BaseSettings):
         default="https://external-api.kalshi.com/trade-api/v2",
         alias="KALSHI_BASE_URL",
     )
+    kalshi_market_data_base_url: str = Field(
+        default="https://external-api.kalshi.com/trade-api/v2",
+        alias="KALSHI_MARKET_DATA_BASE_URL",
+    )
     kalshi_live_trading: bool = Field(default=False, alias="KALSHI_LIVE_TRADING")
     trading_limits_path: str = Field(
         default="config/trading_limits.json",
@@ -141,6 +145,14 @@ class Settings(BaseSettings):
     kalshi_symbols_path: str = Field(
         default="config/kalshi_symbols.json",
         alias="KALSHI_SYMBOLS_PATH",
+    )
+    kalshi_resolution_targets_path: str = Field(
+        default="config/kalshi_resolution_targets.json",
+        alias="KALSHI_RESOLUTION_TARGETS_PATH",
+    )
+    kalshi_decisions_path: str = Field(
+        default="data/decisions/decisions.json",
+        alias="KALSHI_DECISIONS_PATH",
     )
     stats_provider: str = Field(default="balldontlie", alias="STATS_PROVIDER")
     odds_provider: str = Field(default="balldontlie", alias="ODDS_PROVIDER")

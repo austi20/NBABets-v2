@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-07T17:58:29Z",
+  "source": "Kalshi public /markets lookup",
+  "symbols": [
+    {
+      "target_id": "nba.2026-05-07.lal.okc.game_total.222_5.observe",
+      "market_key": "nba.game.total_points",
+      "game_date": "2026-05-07",
+      "player_id": null,
+      "line_value": 222.5,
+      "recommendation": "observe_only",
+      "kalshi_ticker": "KXNBATOTAL-26MAY07LALOKC-222",
+      "event_ticker": "KXNBATOTAL-26MAY07LALOKC",
+      "title": "Game 2: Los Angeles L at Oklahoma City: Total Points",
+      "subtitle": null,
+      "yes_sub_title": "Over 222.5 points scored",
+      "no_sub_title": "Over 222.5 points scored",
+      "last_price_dollars": "0.2500",
+      "yes_bid_dollars": "0.2400",
+      "yes_ask_dollars": "0.2500",
+      "matched_at": "2026-05-07T17:58:29Z",
+      "match_quality": "current_market_verified"
+    }
+  ],
+  "unresolved": []
+}

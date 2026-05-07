@@ -75,6 +75,34 @@ def test_decision_to_signal_preserves_real_resolution_metadata() -> None:
     assert sig.metadata["game_date"] == "2026-05-06"
 
 
+def test_decision_to_signal_preserves_string_player_ids_and_decision_metadata() -> None:
+    loop = TradingLoop(
+        risk_engine=ExposureRiskEngine(),
+        ledger=InMemoryPortfolioLedger(),
+        adapter=FakePaperAdapter(),
+    )
+    decision = PropDecision(
+        model_prob=0.6,
+        market_prob=0.5,
+        no_vig_market_prob=0.5,
+        ev=0.05,
+        recommendation="OVER",
+        confidence="high",
+        driver="test",
+        market_key="nba.player.points",
+        line_value=25.5,
+        over_odds=-110,
+        under_odds=-110,
+        player_id="lebron_james",
+        game_date="2026-05-07",
+        metadata={"max_price_dollars": "0.6200", "post_only": True},
+    )
+    sig = loop._decision_to_signal(decision)  # type: ignore[attr-defined]
+    assert sig.metadata["player_id"] == "lebron_james"
+    assert sig.metadata["max_price_dollars"] == "0.6200"
+    assert sig.metadata["post_only"] is True
+
+
 def test_decision_to_signal_does_not_invent_resolution_metadata() -> None:
     loop = TradingLoop(
         risk_engine=ExposureRiskEngine(),

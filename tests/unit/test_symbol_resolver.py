@@ -18,7 +18,7 @@ from app.trading.types import (
 )
 
 
-def _signal(player_id: int, market_key: str, side: str, line: float, game_date: str | None) -> Signal:
+def _signal(player_id: int | str, market_key: str, side: str, line: float, game_date: str | None) -> Signal:
     metadata: dict = {"player_id": player_id, "game_id": 1}
     if game_date is not None:
         metadata["game_date"] = game_date
@@ -70,6 +70,57 @@ def test_resolver_exact_match(tmp_path: Path) -> None:
     resolver = load_symbol_resolver(config)
     intent = _intent(_signal(237, "points", "OVER", 25.5, "2026-05-06"))
     assert resolver.resolve(intent) == "KX-LEBRON-OPTS25"
+
+
+def test_resolver_accepts_generated_symbols_object_and_string_player_id(tmp_path: Path) -> None:
+    config = tmp_path / "syms.json"
+    config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {
+                        "target_id": "t1",
+                        "market_key": "nba.player.points",
+                        "recommendation": "buy_yes",
+                        "line_value": 25.5,
+                        "player_id": "lebron_james",
+                        "game_date": "2026-05-07",
+                        "kalshi_ticker": "KX-LEBRON-OPTS25",
+                    },
+                    {
+                        "target_id": "observe",
+                        "market_key": "nba.game.total_points",
+                        "recommendation": "observe_only",
+                        "line_value": 222.5,
+                        "player_id": None,
+                        "game_date": "2026-05-07",
+                        "kalshi_ticker": "KXNBATOTAL-26MAY07LALOKC-222",
+                    },
+                ],
+                "unresolved": [],
+            }
+        )
+    )
+    resolver = load_symbol_resolver(config)
+    intent = _intent(_signal("lebron_james", "nba.player.points", "OVER", 25.5, "2026-05-07"))
+    assert resolver.resolve(intent) == "KX-LEBRON-OPTS25"
+    assert resolver.ticker_count == 1
+
+
+def test_resolver_rejects_generated_symbols_with_unresolved_targets(tmp_path: Path) -> None:
+    config = tmp_path / "syms.json"
+    config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [],
+                "unresolved": [{"target_id": "missing", "reason": "no exact live market match"}],
+            }
+        )
+    )
+    with pytest.raises(SymbolResolverConfigError, match="unresolved"):
+        load_symbol_resolver(config)
 
 
 def test_resolver_miss_returns_none(tmp_path: Path) -> None:

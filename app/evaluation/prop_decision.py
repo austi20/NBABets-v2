@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class PropDecision:
     line_value: float
     over_odds: int | None
     under_odds: int | None
-    player_id: int | None = None
+    player_id: int | str | None = None
     game_id: int | str | None = None
     game_date: date | str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)

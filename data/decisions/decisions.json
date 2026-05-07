@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "created_at": "2026-05-07T17:58:29Z",
+  "decisions": [
+    {
+      "decision_id": "nba.2026-05-07.lal.okc.game_total.observe",
+      "mode": "observe",
+      "source_model": "manual_bootstrap",
+      "market_key": "nba.game.total_points",
+      "recommendation": "observe_only",
+      "confidence": 0.0,
+      "edge_bps": 0,
+      "line_value": 222.5,
+      "player_id": null,
+      "game_date": "2026-05-07",
+      "kalshi": {
+        "target_id": "nba.2026-05-07.lal.okc.game_total.222_5.observe",
+        "ticker": "KXNBATOTAL-26MAY07LALOKC-222",
+        "event_ticker": "KXNBATOTAL-26MAY07LALOKC",
+        "contracts": "0.00",
+        "max_price_dollars": null,
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      },
+      "gates": {
+        "symbol_resolved": true,
+        "fresh_market_snapshot": true,
+        "spread_within_limit": false,
+        "one_order_cap_ok": true,
+        "price_within_limit": false
+      },
+      "execution": {
+        "allow_live_submit": false,
+        "client_order_id": null
+      },
+      "notes": [
+        "Current NBA Kalshi total-points market verified through the public /markets API.",
+        "This is observe-only and will be rejected by the live CLI."
+      ]
+    },
+    {
+      "decision_id": "nba.2026-05-07.lal.okc.sga.assists.over.staged",
+      "mode": "observe",
+      "source_model": "nba_prop_model_v1",
+      "market_key": "nba.player.assists",
+      "recommendation": "buy_yes",
+      "confidence": null,
+      "edge_bps": null,
+      "line_value": null,
+      "player_id": "shai_gilgeous_alexander",
+      "game_date": "2026-05-07",
+      "kalshi": {
+        "target_id": "nba.2026-05-07.lal.okc.sga.assists.over",
+        "ticker": null,
+        "event_ticker": null,
+        "contracts": "1.00",
+        "max_price_dollars": "0.6200",
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      },
+      "gates": {
+        "symbol_resolved": false,
+        "fresh_market_snapshot": false,
+        "spread_within_limit": false,
+        "one_order_cap_ok": true,
+        "price_within_limit": false
+      },
+      "execution": {
+        "allow_live_submit": false,
+        "client_order_id": null
+      },
+      "notes": [
+        "Blocked until the model supplies a line and the resolver returns an exact live strike ticker.",
+        "Do not permit fallback to hand-edited ticker strings."
+      ]
+    }
+  ]
+}

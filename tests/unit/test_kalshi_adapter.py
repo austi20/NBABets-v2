@@ -92,6 +92,23 @@ def _intent(stake: float = 0.50, player_id: int = 237) -> ExecutionIntent:
     )
 
 
+def _intent_with_metadata(metadata: dict[str, Any], stake: float = 0.50) -> ExecutionIntent:
+    intent = _intent(stake=stake)
+    signal = Signal(
+        **{
+            **intent.signal.__dict__,
+            "metadata": {**intent.signal.metadata, **metadata},
+        }
+    )
+    return ExecutionIntent(
+        intent_id=intent.intent_id,
+        signal=signal,
+        market=intent.market,
+        side=intent.side,
+        stake=intent.stake,
+    )
+
+
 def test_place_order_resolves_ticker_and_fires_create() -> None:
     client = _FakeClient()
     adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
@@ -107,6 +124,34 @@ def test_place_order_resolves_ticker_and_fires_create() -> None:
     assert fills[0].price == pytest.approx(0.40)
     assert fills[0].market.symbol == _intent().market.symbol
     assert fills[0].exchange_order_id == "ord1"
+
+
+def test_place_order_honors_decision_execution_metadata() -> None:
+    client = _FakeClient()
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+    events, fills = adapter.place_order(
+        _intent_with_metadata(
+            {
+                "max_price_dollars": "0.6200",
+                "post_only": True,
+                "time_in_force": "good_till_canceled",
+            }
+        )
+    )
+    assert client.create_calls[0]["post_only"] is True
+    assert client.create_calls[0]["time_in_force"] == "good_till_canceled"
+    assert any(e.status == "filled" for e in events)
+    assert len(fills) == 1
+
+
+def test_place_order_rejects_above_decision_max_price() -> None:
+    client = _FakeClient()
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+    events, fills = adapter.place_order(_intent_with_metadata({"max_price_dollars": "0.3900"}))
+    assert client.create_calls == []
+    assert fills == []
+    assert events[0].status == "blocked"
+    assert "exceeds max price" in events[0].message
 
 
 def test_place_order_unresolved_ticker_emits_rejected_no_call() -> None:

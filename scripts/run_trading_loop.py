@@ -8,7 +8,7 @@ import os
 import signal
 import sys
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import Table
 
@@ -26,12 +26,19 @@ from app.evaluation.prop_decision import PropDecision
 from app.providers.exchanges.kalshi_client import KalshiClient
 from app.trading.kalshi_adapter import KalshiAdapter
 from app.trading.live_limits import load_live_limits
-from app.trading.loop import TradingLoop, _load_decisions, set_kill_switch
+from app.trading.loop import TradingLoop, set_kill_switch
 from app.trading.risk import ExposureRiskEngine
 from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.symbol_resolver import load_symbol_resolver
 
 _REQUIRED_LIVE_DECISION_FIELDS = ("market_key", "recommendation", "line_value", "player_id", "game_date")
+_LIVE_GATE_FIELDS = (
+    "symbol_resolved",
+    "fresh_market_snapshot",
+    "spread_within_limit",
+    "one_order_cap_ok",
+    "price_within_limit",
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -65,6 +72,89 @@ def _confirm(args: argparse.Namespace) -> bool:
         return False
 
 
+def _decision_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("decisions"), list):
+        rows = payload["decisions"]
+    else:
+        raise ValueError("decisions file must contain a non-empty JSON list or a decisions array")
+    if not rows:
+        raise ValueError("decisions file must contain a non-empty JSON list")
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("live decisions must be JSON objects")
+    return rows
+
+
+def _live_side(raw: object) -> str | None:
+    value = str(raw).strip().lower()
+    if value in {"over", "buy_yes", "yes"}:
+        return "OVER"
+    if value in {"under", "buy_no", "no"}:
+        return "UNDER"
+    if value in {"observe", "observe_only", "watch"}:
+        return None
+    raise ValueError("first live decision recommendation must be OVER, UNDER, buy_yes, or buy_no")
+
+
+def _require_rich_live_gates(row: dict[str, Any]) -> None:
+    if "execution" not in row and "gates" not in row and "kalshi" not in row:
+        return
+    mode = str(row.get("mode", "")).strip().lower()
+    if mode != "live":
+        raise ValueError("first live decision is not in live mode")
+    execution = row.get("execution")
+    if not isinstance(execution, dict) or execution.get("allow_live_submit") is not True:
+        raise ValueError("first live decision is not live-submit enabled")
+    gates = row.get("gates")
+    if not isinstance(gates, dict):
+        raise ValueError("first live decision missing execution gates")
+    failed = [field for field in _LIVE_GATE_FIELDS if gates.get(field) is not True]
+    if failed:
+        raise ValueError(f"first live decision failed gate(s): {', '.join(failed)}")
+    kalshi = row.get("kalshi")
+    if not isinstance(kalshi, dict) or not kalshi.get("ticker"):
+        raise ValueError("first live decision missing resolved Kalshi ticker")
+
+
+def _confidence_label(value: object) -> str:
+    if isinstance(value, int | float):
+        return "high" if float(value) >= 0.60 else "watch"
+    text = str(value or "watch").strip().lower()
+    return text or "watch"
+
+
+def _decision_from_row(row: dict[str, Any], side: str) -> PropDecision:
+    kalshi = row.get("kalshi") if isinstance(row.get("kalshi"), dict) else {}
+    edge_bps = row.get("edge_bps")
+    metadata: dict[str, Any] = {}
+    if isinstance(kalshi, dict):
+        for key in ("max_price_dollars", "post_only", "time_in_force"):
+            if kalshi.get(key) is not None:
+                metadata[key] = kalshi[key]
+        if kalshi.get("ticker") is not None:
+            metadata["kalshi_ticker"] = kalshi["ticker"]
+        if kalshi.get("target_id") is not None:
+            metadata["kalshi_target_id"] = kalshi["target_id"]
+    return PropDecision(
+        model_prob=float(row.get("model_prob", row.get("model_probability", row.get("confidence", 0.5))) or 0.5),
+        market_prob=float(row.get("market_prob", row.get("kalshi_market_prob", 0.5)) or 0.5),
+        no_vig_market_prob=float(row.get("no_vig_market_prob", row.get("market_prob", 0.5)) or 0.5),
+        ev=float(row.get("ev", (float(edge_bps) / 10000.0 if edge_bps is not None else 0.0)) or 0.0),
+        recommendation=side,
+        confidence=_confidence_label(row.get("confidence")),
+        driver=str(row.get("driver", row.get("source_model", "kalshi_decision_file"))),
+        market_key=str(row["market_key"]),
+        line_value=float(row["line_value"]),
+        over_odds=(int(row["over_odds"]) if row.get("over_odds") is not None else None),
+        under_odds=(int(row["under_odds"]) if row.get("under_odds") is not None else None),
+        player_id=row.get("player_id"),
+        game_id=row.get("game_id"),
+        game_date=str(row["game_date"]),
+        metadata=metadata,
+    )
+
+
 def _load_live_decisions(path: Path) -> tuple[list[PropDecision], int]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -72,21 +162,17 @@ def _load_live_decisions(path: Path) -> tuple[list[PropDecision], int]:
         raise ValueError(f"decisions file could not be read: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"decisions file is malformed JSON: {exc}") from exc
-    if not isinstance(payload, list) or not payload:
-        raise ValueError("decisions file must contain a non-empty JSON list")
-    first = payload[0]
-    if not isinstance(first, dict):
-        raise ValueError("first live decision must be a JSON object")
+    rows = _decision_rows(payload)
+    first = rows[0]
+    _require_rich_live_gates(first)
     missing = [field for field in _REQUIRED_LIVE_DECISION_FIELDS if first.get(field) in (None, "")]
     if missing:
         raise ValueError(f"first live decision missing required field(s): {', '.join(missing)}")
-    side = str(first["recommendation"]).strip().upper()
-    if side not in {"OVER", "UNDER"}:
-        raise ValueError("first live decision recommendation must be OVER or UNDER")
-    decisions = _load_decisions(path)
-    if not decisions:
-        raise ValueError("decisions file did not contain any executable decisions")
-    return decisions[:1], len(payload)
+    side = _live_side(first["recommendation"])
+    if side is None:
+        raise ValueError("first live decision is observe-only")
+    decisions = [_decision_from_row(first, side)]
+    return decisions, len(rows)
 
 
 def main() -> int:

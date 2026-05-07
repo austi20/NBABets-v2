@@ -117,6 +117,8 @@ class KalshiClient:
         client_order_id: str,
         time_in_force: str = "fill_or_kill",
         self_trade_prevention_type: str = "taker_at_cross",
+        post_only: bool | None = None,
+        cancel_order_on_pause: bool | None = None,
     ) -> dict[str, Any]:
         normalized_side = side.strip().lower()
         if normalized_side not in {"bid", "ask"}:
@@ -130,6 +132,10 @@ class KalshiClient:
             "time_in_force": time_in_force,
             "self_trade_prevention_type": self_trade_prevention_type,
         }
+        if post_only is not None:
+            body["post_only"] = bool(post_only)
+        if cancel_order_on_pause is not None:
+            body["cancel_order_on_pause"] = bool(cancel_order_on_pause)
         return self._request("POST", "/portfolio/events/orders", json_body=body)
 
     def get_order(self, order_id: str) -> dict[str, Any]:

@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-07T17:58:29Z",
+  "exchange": "production",
+  "defaults": {
+    "market_status": "open",
+    "exclude_multivariate": true,
+    "contracts": "1.00",
+    "post_only": true,
+    "time_in_force": "good_till_canceled",
+    "max_price_dollars": "0.6200"
+  },
+  "targets": [
+    {
+      "target_id": "nba.2026-05-07.lal.okc.game_total.222_5.observe",
+      "sport": "nba",
+      "market_type": "game_total",
+      "market_key": "nba.game.total_points",
+      "game_date": "2026-05-07",
+      "home_team": "OKC",
+      "away_team": "LAL",
+      "player_id": null,
+      "player_name": null,
+      "stat": "total_points",
+      "recommendation": "observe_only",
+      "line_value": 222.5,
+      "event_or_page_hint": "KXNBATOTAL-26MAY07LALOKC",
+      "match_rules": {
+        "title_contains_all": ["Los Angeles", "Oklahoma City"],
+        "stat_contains_any": ["total points", "points scored", "over"],
+        "acceptable_line_values": [222.5],
+        "status": "open",
+        "mve_filter": "exclude"
+      },
+      "risk": {
+        "contracts": "0.00",
+        "max_price_dollars": null,
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      }
+    },
+    {
+      "target_id": "nba.2026-05-07.lal.okc.sga.assists.over",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "nba.player.assists",
+      "game_date": "2026-05-07",
+      "home_team": "OKC",
+      "away_team": "LAL",
+      "player_id": "shai_gilgeous_alexander",
+      "player_name": "Shai Gilgeous-Alexander",
+      "stat": "assists",
+      "recommendation": "buy_yes",
+      "line_value": "MODEL_OUTPUT_REQUIRED",
+      "match_rules": {
+        "title_contains_all": ["Los Angeles", "Oklahoma City"],
+        "player_name_contains_any": ["Shai Gilgeous-Alexander", "Shai"],
+        "stat_contains_any": ["assists", "ast"],
+        "status": "open",
+        "mve_filter": "exclude"
+      },
+      "risk": {
+        "contracts": "1.00",
+        "max_price_dollars": "0.6200",
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      }
+    },
+    {
+      "target_id": "nba.2026-05-07.lal.okc.chet.threes.over",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "nba.player.threes",
+      "game_date": "2026-05-07",
+      "home_team": "OKC",
+      "away_team": "LAL",
+      "player_id": "chet_holmgren",
+      "player_name": "Chet Holmgren",
+      "stat": "three_pointers",
+      "recommendation": "buy_yes",
+      "line_value": "MODEL_OUTPUT_REQUIRED",
+      "match_rules": {
+        "title_contains_all": ["Los Angeles", "Oklahoma City"],
+        "player_name_contains_any": ["Chet Holmgren", "Chet"],
+        "stat_contains_any": ["three", "3pt", "three pointers"],
+        "status": "open",
+        "mve_filter": "exclude"
+      },
+      "risk": {
+        "contracts": "1.00",
+        "max_price_dollars": "0.6200",
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      }
+    },
+    {
+      "target_id": "nba.2026-05-07.cle.det.mobley.rebounds.over",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "nba.player.rebounds",
+      "game_date": "2026-05-07",
+      "home_team": "DET",
+      "away_team": "CLE",
+      "player_id": "evan_mobley",
+      "player_name": "Evan Mobley",
+      "stat": "rebounds",
+      "recommendation": "buy_yes",
+      "line_value": "MODEL_OUTPUT_REQUIRED",
+      "match_rules": {
+        "title_contains_all": ["Cleveland", "Detroit"],
+        "player_name_contains_any": ["Evan Mobley", "Mobley"],
+        "stat_contains_any": ["rebounds", "reb"],
+        "status": "open",
+        "mve_filter": "exclude"
+      },
+      "risk": {
+        "contracts": "1.00",
+        "max_price_dollars": "0.6200",
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      }
+    }
+  ]
+}

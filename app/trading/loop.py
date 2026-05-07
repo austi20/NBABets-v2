@@ -125,7 +125,8 @@ class TradingLoop:
     def _decision_to_signal(self, decision: PropDecision) -> Signal:
         self._sequence += 1
         signal_id = f"decision-{self._sequence}"
-        metadata: dict[str, object] = {
+        metadata: dict[str, object] = dict(decision.metadata)
+        metadata.update({
             "signal_id": signal_id,
             "market_prob": float(
                 decision.market_prob
@@ -138,11 +139,11 @@ class TradingLoop:
                 else no_vig_over_probability(decision.over_odds, decision.under_odds)
             ),
             "driver": decision.driver,
-        }
+        })
         if decision.game_id is not None:
             metadata["game_id"] = decision.game_id
         if decision.player_id is not None:
-            metadata["player_id"] = int(decision.player_id)
+            metadata["player_id"] = decision.player_id
         if decision.game_date is not None:
             metadata["game_date"] = (
                 decision.game_date.isoformat()
@@ -202,9 +203,10 @@ def _load_decisions(path: Path) -> list[PropDecision]:
                 line_value=float(row.get("line_value", 0.0)),
                 over_odds=(int(row["over_odds"]) if row.get("over_odds") is not None else None),
                 under_odds=(int(row["under_odds"]) if row.get("under_odds") is not None else None),
-                player_id=(int(row["player_id"]) if row.get("player_id") is not None else None),
+                player_id=(row["player_id"] if row.get("player_id") is not None else None),
                 game_id=row.get("game_id"),
                 game_date=(str(row["game_date"]) if row.get("game_date") is not None else None),
+                metadata=dict(row.get("metadata", {})) if isinstance(row.get("metadata"), dict) else {},
             )
         )
     return decisions

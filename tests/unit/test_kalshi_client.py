@@ -77,6 +77,8 @@ def test_create_order_sends_payload(private_key_pem: Path) -> None:
             count=1,
             price_dollars=0.56,
             client_order_id="intent-1",
+            post_only=True,
+            cancel_order_on_pause=True,
         )
     assert result["order_id"] == "ord123"
     assert captured_path["path"] == "/trade-api/v2/portfolio/events/orders"
@@ -86,6 +88,8 @@ def test_create_order_sends_payload(private_key_pem: Path) -> None:
     assert captured_body["json"]["price"] == "0.5600"
     assert captured_body["json"]["time_in_force"] == "fill_or_kill"
     assert captured_body["json"]["client_order_id"] == "intent-1"
+    assert captured_body["json"]["post_only"] is True
+    assert captured_body["json"]["cancel_order_on_pause"] is True
 
 
 def test_get_balance_401_raises_auth(private_key_pem: Path) -> None:

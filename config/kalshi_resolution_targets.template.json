@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-07T00:00:00Z",
+  "exchange": "production",
+  "defaults": {
+    "market_status": "open",
+    "exclude_multivariate": true,
+    "contracts": "1.00",
+    "post_only": true,
+    "time_in_force": "good_till_canceled",
+    "max_price_dollars": "0.6200"
+  },
+  "targets": [
+    {
+      "target_id": "template.nba.player.points.over",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "nba.player.points",
+      "game_date": "2026-05-07",
+      "home_team": "OKC",
+      "away_team": "LAL",
+      "player_id": "lebron_james",
+      "player_name": "LeBron James",
+      "stat": "points",
+      "recommendation": "buy_yes",
+      "line_value": 20.5,
+      "match_rules": {
+        "title_contains_all": ["Los Angeles", "Oklahoma City"],
+        "player_name_contains_any": ["LeBron James", "LeBron"],
+        "stat_contains_any": ["points", "pts"],
+        "acceptable_line_values": [20.5, 21.5],
+        "status": "open",
+        "mve_filter": "exclude"
+      },
+      "risk": {
+        "contracts": "1.00",
+        "max_price_dollars": "0.6200",
+        "post_only": true,
+        "time_in_force": "good_till_canceled"
+      }
+    }
+  ]
+}
