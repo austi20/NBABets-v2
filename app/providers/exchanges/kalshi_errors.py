@@ -63,8 +63,8 @@ def classify_response(status: int, body: bytes, headers: Mapping[str, str]) -> N
         raise KalshiMarketError(status, body)
     if status == 429:
         raise KalshiRateLimited(status, body, _parse_retry_after(headers))
-    if _looks_like_insufficient_funds(body):
-        raise KalshiInsufficientFunds(status, body)
     if status >= 500:
         raise KalshiServerError(status, body)
+    if _looks_like_insufficient_funds(body):
+        raise KalshiInsufficientFunds(status, body)
     raise KalshiApiError(status, body)

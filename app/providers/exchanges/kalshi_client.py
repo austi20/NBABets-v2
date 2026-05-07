@@ -65,7 +65,7 @@ class KalshiClient:
             method,
             path,
             headers=headers,
-            content=json.dumps(json_body).encode("utf-8") if json_body else None,
+            content=json.dumps(json_body).encode("utf-8") if json_body is not None else None,
         )
         classify_response(response.status_code, response.content, dict(response.headers))
         if not response.content:

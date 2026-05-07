@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
-from app.providers.exchanges.kalshi_client import KalshiClient
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.providers.exchanges.kalshi_client import KalshiClient
 from app.providers.exchanges.kalshi_errors import KalshiAuthError, KalshiMarketError
 
 
@@ -41,8 +42,8 @@ def test_get_balance_includes_signing_headers(private_key_pem: Path) -> None:
         captured["headers"] = dict(request.headers)
         return httpx.Response(200, json={"balance": 5000})
 
-    client = _client_with(private_key_pem, httpx.MockTransport(handler))
-    result = client.get_balance()
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        result = client.get_balance()
     assert result["balance"] == 5000
     assert captured["headers"]["kalshi-access-key"] == "test-key"
     assert "kalshi-access-timestamp" in captured["headers"]
@@ -53,9 +54,9 @@ def test_get_market_404_raises_market_error(private_key_pem: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": {"code": "market_not_found"}})
 
-    client = _client_with(private_key_pem, httpx.MockTransport(handler))
-    with pytest.raises(KalshiMarketError):
-        client.get_market("FAKE-TICKER")
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        with pytest.raises(KalshiMarketError):
+            client.get_market("FAKE-TICKER")
 
 
 def test_create_order_sends_payload(private_key_pem: Path) -> None:
@@ -67,14 +68,14 @@ def test_create_order_sends_payload(private_key_pem: Path) -> None:
             200, json={"order": {"order_id": "ord123", "status": "executed"}}
         )
 
-    client = _client_with(private_key_pem, httpx.MockTransport(handler))
-    result = client.create_order(
-        ticker="X-TICKER",
-        side="yes",
-        count=1,
-        order_type="market",
-        client_order_id="intent-1",
-    )
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        result = client.create_order(
+            ticker="X-TICKER",
+            side="yes",
+            count=1,
+            order_type="market",
+            client_order_id="intent-1",
+        )
     assert result["order"]["order_id"] == "ord123"
     assert captured_body["json"]["ticker"] == "X-TICKER"
     assert captured_body["json"]["count"] == 1
@@ -85,6 +86,19 @@ def test_get_balance_401_raises_auth(private_key_pem: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"error": "bad sig"})
 
-    client = _client_with(private_key_pem, httpx.MockTransport(handler))
-    with pytest.raises(KalshiAuthError):
-        client.get_balance()
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        with pytest.raises(KalshiAuthError):
+            client.get_balance()
+
+
+def test_get_order_sends_correct_path(private_key_pem: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(200, json={"order": {"order_id": "ord1", "status": "executed", "fills": []}})
+
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        result = client.get_order("ord1")
+    assert "ord1" in captured["path"]
+    assert result["order"]["order_id"] == "ord1"
