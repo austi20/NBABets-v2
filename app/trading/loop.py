@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
+from app.db.models.trading import TradingKillSwitch
 from app.evaluation.prop_decision import PropDecision
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.mapper import signal_to_market_ref
@@ -33,12 +36,21 @@ class TradingLoop:
         ledger: PortfolioLedger,
         adapter: ExchangeAdapter,
         market_mapper: Callable[[Signal, str], MarketRef] = signal_to_market_ref,
+        session_factory: Callable[[], Session] | None = None,
     ) -> None:
         self._risk = risk_engine
         self._ledger = ledger
         self._adapter = adapter
         self._market_mapper = market_mapper
         self._sequence = 0
+        self._session_factory = session_factory
+
+    def _kill_switch_active(self) -> bool:
+        if self._session_factory is None:
+            return False
+        with self._session_factory() as session:
+            row = session.get(TradingKillSwitch, 1)
+            return bool(row and row.killed)
 
     def run_signals(
         self,
@@ -52,6 +64,18 @@ class TradingLoop:
         fill_count = 0
         event_count = 0
         for signal in signals:
+            if self._kill_switch_active():
+                rejected += 1
+                event = OrderEvent(
+                    intent_id=f"{signal.signal_id}-intent",
+                    event_type="rejected",
+                    status="blocked",
+                    message="kill switch active",
+                    timestamp=datetime.now(UTC),
+                )
+                self._ledger.record_order_event(event)
+                event_count += 1
+                continue
             market_ref = self._market_mapper(signal, exchange)
             intent = ExecutionIntent(
                 intent_id=f"{signal.signal_id}-intent",
@@ -128,8 +152,28 @@ class TradingLoop:
                     else no_vig_over_probability(decision.over_odds, decision.under_odds)
                 ),
                 "driver": decision.driver,
+                "game_date": datetime.now(UTC).date().isoformat(),
             },
         )
+
+
+def set_kill_switch(
+    session_factory: Callable[[], Session],
+    *,
+    killed: bool,
+    set_by: str = "system",
+) -> None:
+    with session_factory() as session:
+        row = session.get(TradingKillSwitch, 1)
+        now = datetime.now(UTC)
+        if row is None:
+            row = TradingKillSwitch(id=1, killed=killed, set_at=now, set_by=set_by)
+            session.add(row)
+        else:
+            row.killed = killed
+            row.set_at = now
+            row.set_by = set_by
+        session.commit()
 
 
 def _load_decisions(path: Path) -> list[PropDecision]:
