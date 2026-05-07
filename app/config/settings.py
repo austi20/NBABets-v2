@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     kalshi_api_key_id: str = Field(default="", alias="KALSHI_API_KEY_ID")
     kalshi_private_key_path: str = Field(default="", alias="KALSHI_PRIVATE_KEY_PATH")
     kalshi_base_url: str = Field(
-        default="https://api.elections.kalshi.com",
+        default="https://external-api.kalshi.com/trade-api/v2",
         alias="KALSHI_BASE_URL",
     )
     kalshi_live_trading: bool = Field(default=False, alias="KALSHI_LIVE_TRADING")

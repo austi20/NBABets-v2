@@ -15,6 +15,29 @@ from app.db.models.trading import (
 from app.trading.types import Fill, MarketRef, OrderEvent, Position
 
 
+def _event_status(event: OrderEvent) -> str:
+    if event.event_type == "filled" and event.status == "ok":
+        return "filled"
+    return event.status
+
+
+def _line_value_from_symbol(symbol: str) -> float:
+    parts = symbol.split(":")
+    if len(parts) >= 4:
+        try:
+            return float(parts[3])
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _market_side_from_symbol(symbol: str, fallback: str) -> str:
+    parts = symbol.split(":")
+    if len(parts) >= 3 and parts[2].lower() in {"over", "under", "yes", "no"}:
+        return parts[2].upper()
+    return fallback.upper()
+
+
 class SqlPortfolioLedger:
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
@@ -23,22 +46,36 @@ class SqlPortfolioLedger:
         with self._session_factory() as session:
             order = session.get(TradingOrder, event.intent_id)
             now = event.timestamp
+            market = event.market
             if order is None:
                 order = TradingOrder(
                     intent_id=event.intent_id,
-                    kalshi_order_id=None,
-                    market_symbol="",
-                    market_key="",
-                    side="",
-                    stake=0.0,
-                    status=event.status,
+                    kalshi_order_id=event.exchange_order_id,
+                    market_symbol=market.symbol if market else "",
+                    market_key=market.market_key if market else "",
+                    side=event.side or (market.side if market else ""),
+                    stake=float(event.stake) if event.stake is not None else 0.0,
+                    status=_event_status(event),
                     message=event.message,
                     created_at=now,
                     updated_at=now,
                 )
                 session.add(order)
             else:
-                order.status = event.status
+                if event.exchange_order_id and not order.kalshi_order_id:
+                    order.kalshi_order_id = event.exchange_order_id
+                if market is not None:
+                    if not order.market_symbol:
+                        order.market_symbol = market.symbol
+                    if not order.market_key:
+                        order.market_key = market.market_key
+                    if not order.side:
+                        order.side = market.side
+                if event.side is not None and not order.side:
+                    order.side = event.side
+                if event.stake is not None and order.stake <= 0:
+                    order.stake = float(event.stake)
+                order.status = _event_status(event)
                 order.message = event.message
                 order.updated_at = now
             session.commit()
@@ -48,12 +85,13 @@ class SqlPortfolioLedger:
             if session.get(TradingFill, fill.fill_id) is not None:
                 return  # idempotent
             # Ensure a parent TradingOrder row exists (FK requirement)
-            if session.get(TradingOrder, fill.intent_id) is None:
+            order = session.get(TradingOrder, fill.intent_id)
+            if order is None:
                 now = fill.timestamp
                 session.add(
                     TradingOrder(
                         intent_id=fill.intent_id,
-                        kalshi_order_id=None,
+                        kalshi_order_id=fill.exchange_order_id,
                         market_symbol=fill.market.symbol,
                         market_key=fill.market.market_key,
                         side=fill.side,
@@ -64,6 +102,19 @@ class SqlPortfolioLedger:
                         updated_at=now,
                     )
                 )
+            else:
+                if fill.exchange_order_id and not order.kalshi_order_id:
+                    order.kalshi_order_id = fill.exchange_order_id
+                if not order.market_symbol:
+                    order.market_symbol = fill.market.symbol
+                if not order.market_key:
+                    order.market_key = fill.market.market_key
+                if not order.side:
+                    order.side = fill.side
+                if order.stake <= 0:
+                    order.stake = float(fill.stake)
+                order.status = "filled"
+                order.updated_at = fill.timestamp
             self._upsert_position(session, fill)
             session.add(
                 TradingFill(
@@ -76,7 +127,7 @@ class SqlPortfolioLedger:
                     price=float(fill.price),
                     fee=float(fill.fee),
                     realized_pnl=float(fill.realized_pnl),
-                    kalshi_trade_id=None,
+                    kalshi_trade_id=fill.exchange_trade_id,
                     filled_at=fill.timestamp,
                 )
             )
@@ -166,8 +217,8 @@ class SqlPortfolioLedger:
                         exchange="kalshi",
                         symbol=row.market_symbol,
                         market_key=row.market_key,
-                        side=row.side,
-                        line_value=0.0,
+                        side=_market_side_from_symbol(row.market_symbol, row.side),
+                        line_value=_line_value_from_symbol(row.market_symbol),
                     ),
                     side=row.side,  # type: ignore[arg-type]
                     stake=row.stake,

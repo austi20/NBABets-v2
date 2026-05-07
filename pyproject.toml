@@ -68,6 +68,9 @@ packages = ["app", "llm_train"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --basetemp=.tmp_pytest"
+markers = [
+  "integration: tests that require external services or live/demo credentials",
+]
 
 [tool.ruff]
 line-length = 120

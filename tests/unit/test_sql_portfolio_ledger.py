@@ -114,7 +114,7 @@ def test_recent_fills_returns_in_reverse_order(session_factory) -> None:
             Fill(
                 fill_id=f"f{idx}",
                 intent_id=f"i{idx}",
-                market=_market("a"),
+                market=_market(),
                 side="buy",
                 stake=0.25,
                 price=0.40,
@@ -123,6 +123,76 @@ def test_recent_fills_returns_in_reverse_order(session_factory) -> None:
         )
     fills = ledger.recent_fills(limit=2)
     assert [f.fill_id for f in fills] == ["f2", "f1"]
+    assert fills[0].market.side == "OVER"
+    assert fills[0].market.line_value == pytest.approx(25.5)
+
+
+def test_record_fill_backfills_existing_order_event(session_factory) -> None:
+    ledger = SqlPortfolioLedger(session_factory)
+    ledger.record_order_event(
+        OrderEvent(
+            intent_id="i1",
+            event_type="accepted",
+            status="ok",
+            message="kalshi order ord1",
+            exchange_order_id="ord1",
+        )
+    )
+    ledger.record_fill(
+        Fill(
+            fill_id="f1",
+            intent_id="i1",
+            market=_market(),
+            side="buy",
+            stake=0.25,
+            price=0.40,
+            exchange_order_id="ord1",
+            exchange_trade_id="trade1",
+            timestamp=datetime.now(UTC),
+        )
+    )
+    with session_factory() as session:
+        order = session.get(TradingOrder, "i1")
+        assert order is not None
+        assert order.kalshi_order_id == "ord1"
+        assert order.market_symbol == "kalshi:points:over:25.5:g0:p237"
+        assert order.market_key == "points"
+        assert order.side == "buy"
+        assert order.stake == pytest.approx(0.25)
+        assert order.status == "filled"
+        db_fill = session.get(TradingFill, "f1")
+        assert db_fill is not None
+        assert db_fill.kalshi_trade_id == "trade1"
+
+
+def test_positions_keep_yes_no_exposure_separate_for_same_ticker(session_factory) -> None:
+    ledger = SqlPortfolioLedger(session_factory)
+    now = datetime.now(UTC)
+    ledger.record_fill(
+        Fill(
+            fill_id="yes",
+            intent_id="i-yes",
+            market=_market("kalshi:points:over:25.5:g1:p237"),
+            side="buy",
+            stake=0.25,
+            price=0.40,
+            timestamp=now,
+        )
+    )
+    ledger.record_fill(
+        Fill(
+            fill_id="no",
+            intent_id="i-no",
+            market=_market("kalshi:points:under:25.5:g1:p237"),
+            side="buy",
+            stake=0.25,
+            price=0.60,
+            timestamp=now,
+        )
+    )
+    positions = sorted(ledger.open_positions(), key=lambda position: position.market_symbol)
+    assert len(positions) == 2
+    assert positions[0].market_symbol != positions[1].market_symbol
 
 
 def test_sell_fill_no_double_count_realized_pnl(session_factory) -> None:

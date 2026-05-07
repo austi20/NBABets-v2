@@ -87,3 +87,36 @@ def test_load_live_limits_wrong_type_field_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(LimitsConfigError, match="must be a number"):
         load_live_limits(bad)
+
+
+def test_load_live_limits_rejects_nan_and_infinity(tmp_path: Path) -> None:
+    for token in ("NaN", "Infinity", "-Infinity"):
+        bad = tmp_path / f"{token}.json"
+        bad.write_text(
+            """{
+              "per_order_cap": TOKEN,
+              "per_market_cap": 0.50,
+              "max_open_notional": 2.00,
+              "daily_loss_cap": 2.00,
+              "reject_cooldown_seconds": 300
+            }""".replace("TOKEN", token)
+        )
+        with pytest.raises(LimitsConfigError, match="non-finite"):
+            load_live_limits(bad)
+
+
+def test_load_live_limits_rejects_fractional_cooldown(tmp_path: Path) -> None:
+    bad = tmp_path / "fractional-cooldown.json"
+    bad.write_text(
+        json.dumps(
+            {
+                "per_order_cap": 0.25,
+                "per_market_cap": 0.50,
+                "max_open_notional": 2.00,
+                "daily_loss_cap": 2.00,
+                "reject_cooldown_seconds": 0.5,
+            }
+        )
+    )
+    with pytest.raises(LimitsConfigError, match="whole number"):
+        load_live_limits(bad)

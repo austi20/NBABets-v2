@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from app.providers.exchanges.kalshi_errors import (
     KalshiApiError,
     KalshiAuthError,

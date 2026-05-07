@@ -5,12 +5,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest  # noqa: F401 - used by pytest fixtures implicitly
+
 from app.trading.symbol_resolver import (
     SymbolResolver,
     SymbolResolverConfigError,
     load_symbol_resolver,
 )
-
 from app.trading.types import (
     ExecutionIntent,
     MarketRef,
@@ -80,7 +80,7 @@ def test_resolver_miss_returns_none(tmp_path: Path) -> None:
     assert resolver.resolve(intent) is None
 
 
-def test_resolver_uses_signal_created_date_when_metadata_absent(tmp_path: Path) -> None:
+def test_resolver_requires_game_date_metadata(tmp_path: Path) -> None:
     today = datetime.now(UTC).date().isoformat()
     config = tmp_path / "syms.json"
     config.write_text(
@@ -99,7 +99,7 @@ def test_resolver_uses_signal_created_date_when_metadata_absent(tmp_path: Path) 
     )
     resolver = load_symbol_resolver(config)
     intent = _intent(_signal(237, "points", "OVER", 25.5, game_date=None))
-    assert resolver.resolve(intent) == "KX-LEBRON-OPTS25"
+    assert resolver.resolve(intent) is None
 
 
 def test_resolver_malformed_json_raises(tmp_path: Path) -> None:

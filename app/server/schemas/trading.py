@@ -53,9 +53,18 @@ class FillModel(BaseModel):
         )
 
 
+class ActiveLimitsModel(BaseModel):
+    per_order_cap: float
+    per_market_cap: float
+    max_open_notional: float
+    daily_loss_cap: float
+    reject_cooldown_seconds: int
+
+
 class TradingPnlModel(BaseModel):
     daily_realized_pnl: float
     kill_switch_active: bool
+    active_limits: ActiveLimitsModel | None = None
 
 
 class TradingIntentRequestModel(BaseModel):

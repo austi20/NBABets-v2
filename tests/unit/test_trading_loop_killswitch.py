@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -36,6 +34,7 @@ def _decision(market_key: str = "points") -> PropDecision:
         model_prob=0.6, market_prob=0.5, no_vig_market_prob=0.5,
         ev=0.05, recommendation="OVER", confidence="high", driver="test",
         market_key=market_key, line_value=25.5, over_odds=-110, under_odds=-110,
+        player_id=237, game_id=1, game_date="2026-05-06",
     )
 
 
@@ -64,13 +63,30 @@ def test_loop_runs_normally_when_kill_switch_off(session_factory) -> None:
     assert result.accepted == 1
 
 
-def test_decision_to_signal_includes_game_date_metadata() -> None:
+def test_decision_to_signal_preserves_real_resolution_metadata() -> None:
     loop = TradingLoop(
         risk_engine=ExposureRiskEngine(),
         ledger=InMemoryPortfolioLedger(),
         adapter=FakePaperAdapter(),
     )
     sig = loop._decision_to_signal(_decision())  # type: ignore[attr-defined]
-    assert "game_date" in sig.metadata
-    today = datetime.now(UTC).date().isoformat()
-    assert sig.metadata["game_date"] == today
+    assert sig.metadata["player_id"] == 237
+    assert sig.metadata["game_id"] == 1
+    assert sig.metadata["game_date"] == "2026-05-06"
+
+
+def test_decision_to_signal_does_not_invent_resolution_metadata() -> None:
+    loop = TradingLoop(
+        risk_engine=ExposureRiskEngine(),
+        ledger=InMemoryPortfolioLedger(),
+        adapter=FakePaperAdapter(),
+    )
+    decision = PropDecision(
+        model_prob=0.6, market_prob=0.5, no_vig_market_prob=0.5,
+        ev=0.05, recommendation="OVER", confidence="high", driver="test",
+        market_key="points", line_value=25.5, over_odds=-110, under_odds=-110,
+    )
+    sig = loop._decision_to_signal(decision)  # type: ignore[attr-defined]
+    assert "player_id" not in sig.metadata
+    assert "game_id" not in sig.metadata
+    assert "game_date" not in sig.metadata

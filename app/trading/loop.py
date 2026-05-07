@@ -63,9 +63,8 @@ class TradingLoop:
         rejected = 0
         fill_count = 0
         event_count = 0
-        kill_switch_active = self._kill_switch_active()
         for signal in signals:
-            if kill_switch_active:
+            if self._kill_switch_active():
                 rejected += 1
                 event = OrderEvent(
                     intent_id=f"{signal.signal_id}-intent",
@@ -126,9 +125,30 @@ class TradingLoop:
     def _decision_to_signal(self, decision: PropDecision) -> Signal:
         self._sequence += 1
         signal_id = f"decision-{self._sequence}"
-        synthetic_player_id = abs(
-            hash((decision.market_key, round(float(decision.line_value), 2), decision.recommendation.upper()))
-        ) % 10_000_000
+        metadata: dict[str, object] = {
+            "signal_id": signal_id,
+            "market_prob": float(
+                decision.market_prob
+                if decision.market_prob > 0
+                else american_to_prob(decision.over_odds if decision.recommendation.upper() == "OVER" else decision.under_odds)
+            ),
+            "no_vig_market_prob": float(
+                decision.no_vig_market_prob
+                if decision.no_vig_market_prob > 0
+                else no_vig_over_probability(decision.over_odds, decision.under_odds)
+            ),
+            "driver": decision.driver,
+        }
+        if decision.game_id is not None:
+            metadata["game_id"] = decision.game_id
+        if decision.player_id is not None:
+            metadata["player_id"] = int(decision.player_id)
+        if decision.game_date is not None:
+            metadata["game_date"] = (
+                decision.game_date.isoformat()
+                if hasattr(decision.game_date, "isoformat")
+                else str(decision.game_date)
+            )
         return Signal(
             signal_id=signal_id,
             created_at=datetime.now(UTC),
@@ -138,23 +158,7 @@ class TradingLoop:
             edge=float(decision.ev),
             model_probability=float(decision.model_prob),
             line_value=float(decision.line_value),
-            metadata={
-                "signal_id": signal_id,
-                "game_id": 0,
-                "player_id": synthetic_player_id,
-                "market_prob": float(
-                    decision.market_prob
-                    if decision.market_prob > 0
-                    else american_to_prob(decision.over_odds if decision.recommendation.upper() == "OVER" else decision.under_odds)
-                ),
-                "no_vig_market_prob": float(
-                    decision.no_vig_market_prob
-                    if decision.no_vig_market_prob > 0
-                    else no_vig_over_probability(decision.over_odds, decision.under_odds)
-                ),
-                "driver": decision.driver,
-                "game_date": datetime.now(UTC).date().isoformat(),
-            },
+            metadata=metadata,
         )
 
 
@@ -198,6 +202,9 @@ def _load_decisions(path: Path) -> list[PropDecision]:
                 line_value=float(row.get("line_value", 0.0)),
                 over_odds=(int(row["over_odds"]) if row.get("over_odds") is not None else None),
                 under_odds=(int(row["under_odds"]) if row.get("under_odds") is not None else None),
+                player_id=(int(row["player_id"]) if row.get("player_id") is not None else None),
+                game_id=row.get("game_id"),
+                game_date=(str(row["game_date"]) if row.get("game_date") is not None else None),
             )
         )
     return decisions

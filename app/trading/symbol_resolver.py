@@ -42,7 +42,9 @@ class SymbolResolver:
         player_id = signal.metadata.get("player_id")
         if player_id is None:
             return None
-        game_date_raw = signal.metadata.get("game_date") or signal.created_at.date().isoformat()
+        game_date_raw = signal.metadata.get("game_date")
+        if game_date_raw is None:
+            return None
         try:
             key = _key(
                 signal.market_key,
