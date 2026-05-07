@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -55,6 +55,7 @@ class TradingPosition(Base):
 
 class TradingKillSwitch(Base):
     __tablename__ = "trading_kill_switch"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_kill_switch_singleton"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     killed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -65,5 +66,5 @@ class TradingKillSwitch(Base):
 class TradingDailyPnL(Base):
     __tablename__ = "trading_daily_pnl"
 
-    date: Mapped[datetime] = mapped_column(Date, primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
