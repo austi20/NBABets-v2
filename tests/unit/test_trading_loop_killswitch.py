@@ -28,7 +28,7 @@ def session_factory():
         TradingOrder.__table__, TradingFill.__table__, TradingPosition.__table__,
         TradingKillSwitch.__table__, TradingDailyPnL.__table__,
     ])
-    return sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    return sessionmaker(engine, autoflush=False, autocommit=False, future=True)
 
 
 def _decision(market_key: str = "points") -> PropDecision:

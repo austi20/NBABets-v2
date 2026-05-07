@@ -63,8 +63,9 @@ class TradingLoop:
         rejected = 0
         fill_count = 0
         event_count = 0
+        kill_switch_active = self._kill_switch_active()
         for signal in signals:
-            if self._kill_switch_active():
+            if kill_switch_active:
                 rejected += 1
                 event = OrderEvent(
                     intent_id=f"{signal.signal_id}-intent",
