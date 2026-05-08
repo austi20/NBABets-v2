@@ -3,39 +3,41 @@
   "created_at": "2026-05-07T17:58:29Z",
   "decisions": [
     {
-      "decision_id": "nba.2026-05-07.lal.okc.game_total.observe",
-      "mode": "observe",
+      "decision_id": "nba.2026-05-07.lal.okc.game_total.supervised_live",
+      "mode": "live",
       "source_model": "manual_bootstrap",
       "market_key": "nba.game.total_points",
-      "recommendation": "observe_only",
+      "recommendation": "buy_yes",
       "confidence": 0.0,
       "edge_bps": 0,
       "line_value": 222.5,
-      "player_id": null,
+      "player_id": "game_total",
       "game_date": "2026-05-07",
       "kalshi": {
-        "target_id": "nba.2026-05-07.lal.okc.game_total.222_5.observe",
+        "target_id": "nba.2026-05-07.lal.okc.game_total.222_5",
         "ticker": "KXNBATOTAL-26MAY07LALOKC-222",
         "event_ticker": "KXNBATOTAL-26MAY07LALOKC",
-        "contracts": "0.00",
-        "max_price_dollars": null,
+        "contracts": "1.00",
+        "max_price_dollars": "0.99",
         "post_only": true,
         "time_in_force": "good_till_canceled"
       },
       "gates": {
         "symbol_resolved": true,
         "fresh_market_snapshot": true,
-        "spread_within_limit": false,
+        "market_open": false,
+        "event_not_stale": false,
+        "spread_within_limit": true,
         "one_order_cap_ok": true,
-        "price_within_limit": false
+        "price_within_limit": true
       },
       "execution": {
-        "allow_live_submit": false,
+        "allow_live_submit": true,
         "client_order_id": null
       },
       "notes": [
-        "Current NBA Kalshi total-points market verified through the public /markets API.",
-        "This is observe-only and will be rejected by the live CLI."
+        "Supervised RMT: YES/OVER on 222.5 total; flip recommendation to buy_no if you intend UNDER before arming KALSHI_LIVE_TRADING.",
+        "Ticker verified via public Kalshi /markets API; max_price_dollars is a hard adapter ceiling (0.99 ~= Kalshi dollar cap)."
       ]
     },
     {
@@ -61,6 +63,8 @@
       "gates": {
         "symbol_resolved": false,
         "fresh_market_snapshot": false,
+        "market_open": false,
+        "event_not_stale": false,
         "spread_within_limit": false,
         "one_order_cap_ok": true,
         "price_within_limit": false

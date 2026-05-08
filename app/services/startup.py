@@ -675,6 +675,7 @@ class StartupCoordinator:
                 self._on_success(self._last_result)
             except Exception as exc:  # pragma: no cover - defensive logging path
                 self._runner._append_log_line(f"Board cache warmup failed: {exc}")
+                _startup_log.warning("Board cache warmup failed: %s", exc, exc_info=True)
         self._start_lineup_poll()
 
     def stop(self) -> None:

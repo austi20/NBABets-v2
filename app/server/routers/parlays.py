@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 
+from app.server.board_access import board_cache_entry_or_503
 from app.server.schemas.parlays import (
     MultiGameParlaysResponseModel,
     ParlayInsightModel,
@@ -11,18 +12,6 @@ from app.server.schemas.parlays import (
 )
 
 router = APIRouter(prefix="/api/parlays", tags=["parlays"])
-
-
-def _cached_entry_or_503(request: Request):
-    cache = request.app.state.board_cache
-    get_cached = getattr(cache, "get_cached", None)
-    if callable(get_cached):
-        entry = get_cached()
-    else:  # compatibility for tests injecting lightweight doubles
-        entry = cache.get_or_build()
-    if entry is None:
-        raise HTTPException(status_code=503, detail="Board cache is not ready. Run startup first.")
-    return entry
 
 
 def _book_matches(entry_key: str, selected_book: str) -> bool:
@@ -37,7 +26,7 @@ def same_game_parlays(
     game_id: int | None = Query(default=None),
     book: str = Query(default=""),
 ) -> SameGameParlaysResponseModel:
-    entry = _cached_entry_or_503(request)
+    entry = board_cache_entry_or_503(request)
     sections: dict[str, dict[str, dict[str, list[ParlayWithInsightModel]]]] = {}
     for sportsbook_key, by_leg_count in entry.same_game_sections_by_book.items():
         if not _book_matches(sportsbook_key, book):
@@ -72,7 +61,7 @@ def multi_game_parlays(
     request: Request,
     book: str = Query(default=""),
 ) -> MultiGameParlaysResponseModel:
-    entry = _cached_entry_or_503(request)
+    entry = board_cache_entry_or_503(request)
     sections: dict[str, dict[str, list[ParlayWithInsightModel]]] = {}
     for sportsbook_key, by_leg_count in entry.multi_game_sections_by_book.items():
         if not _book_matches(sportsbook_key, book):

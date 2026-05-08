@@ -75,6 +75,9 @@ class SymbolResolver:
 
     def resolve(self, intent: ExecutionIntent) -> str | None:
         signal = intent.signal
+        explicit_ticker = signal.metadata.get("kalshi_ticker")
+        if explicit_ticker and signal.metadata.get("kalshi_ticker_verified") is True:
+            return str(explicit_ticker)
         player_id = signal.metadata.get("player_id")
         if player_id is None:
             return None

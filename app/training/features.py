@@ -509,6 +509,8 @@ class FeatureEngineer:
             _ctx_rename["home_team_abbreviation"] = "last_game_venue_abbr"
         player_context = latest_per_player[["player_id", "game_date", *_ctx_feats]].rename(columns=_ctx_rename)
         merged = upcoming.merge(player_context, on="player_id", how="left")
+        if "player_team_id" not in merged.columns and "team_id" in merged.columns:
+            merged["player_team_id"] = merged["team_id"]
         merged["position_group"] = merged["position"].fillna("").astype(str).str.upper().str[:1].replace("", "UNK")
         merged["last_game_date"] = pd.to_datetime(merged["last_game_date"])
         fallback_days_rest = (merged["game_date"] - merged["last_game_date"]).dt.days.fillna(3).clip(lower=0)
@@ -726,6 +728,8 @@ class FeatureEngineer:
 
     def _add_environment_features(self, frame: pd.DataFrame) -> pd.DataFrame:
         result = frame.copy()
+        if "player_team_id" not in result.columns and "team_id" in result.columns:
+            result["player_team_id"] = result["team_id"]
         if "pace_proxy_avg_10" in result.columns:
             pace_source = result["pace_proxy_avg_10"]
         else:

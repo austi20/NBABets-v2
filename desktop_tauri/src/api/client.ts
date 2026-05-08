@@ -81,9 +81,18 @@ export type BoardAvailability = {
   has_pregame_options: boolean;
 };
 
+export type TradingActiveLimits = {
+  per_order_cap: number;
+  per_market_cap: number;
+  max_open_notional: number;
+  daily_loss_cap: number;
+  reject_cooldown_seconds: number;
+};
+
 export type TradingPnl = {
   daily_realized_pnl: number;
   kill_switch_active: boolean;
+  active_limits: TradingActiveLimits | null;
 };
 
 export type TradingIntentRequest = {
@@ -128,6 +137,113 @@ export type TradingFill = {
   fee: number;
   realized_pnl: number;
   timestamp: string;
+};
+
+export type TradingQuote = {
+  ticker: string;
+  market_key: string;
+  side: string | null;
+  line_value: number | null;
+  player_id: string | null;
+  game_date: string | null;
+  title: string | null;
+  status: string | null;
+  yes_bid: number | null;
+  yes_ask: number | null;
+  no_bid: number | null;
+  no_ask: number | null;
+  last_price: number | null;
+  entry_price: number | null;
+  exit_price: number | null;
+  spread: number | null;
+  observed_at: string;
+  error?: string | null;
+};
+
+export type TradingLivePosition = {
+  market_symbol: string;
+  market_key: string;
+  side: string;
+  ticker: string | null;
+  open_stake: number;
+  contract_count: number;
+  avg_price: number;
+  current_exit_price: number | null;
+  current_value: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  realized_pnl: number;
+  updated_at: string;
+  quote: TradingQuote | null;
+};
+
+export type TradingExchangePosition = {
+  ticker: string;
+  side: string;
+  contract_count: number;
+  net_position: number;
+  market_exposure: number | null;
+  fees_paid: number | null;
+  realized_pnl: number | null;
+  current_exit_price: number | null;
+  current_value: number | null;
+  updated_at: string | null;
+  quote: TradingQuote | null;
+};
+
+export type TradingRestingOrder = {
+  order_id: string;
+  client_order_id: string | null;
+  ticker: string | null;
+  side: string | null;
+  status: string | null;
+  remaining_count: number | null;
+  price: number | null;
+  created_at: string | null;
+};
+
+export type TradingSnapshot = {
+  observed_at: string;
+  daily_realized_pnl: number;
+  daily_unrealized_pnl: number;
+  total_daily_pnl: number;
+  open_notional: number;
+  budget_used: number;
+  budget_remaining: number;
+  max_open_notional: number;
+  daily_loss_cap: number;
+  loss_progress: number;
+  kill_switch_active: boolean;
+  positions: TradingLivePosition[];
+  quotes: TradingQuote[];
+  account_positions: TradingExchangePosition[];
+  resting_orders: TradingRestingOrder[];
+  errors: string[];
+};
+
+export type TradingReadinessCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "fail" | "warn" | string;
+  detail: string;
+};
+
+export type TradingReadiness = {
+  observed_at: string;
+  state: "ready" | "blocked" | string;
+  summary: string;
+  live_trading_enabled: boolean;
+  credentials_configured: boolean;
+  account_sync_enabled: boolean;
+  decisions_path: string;
+  symbols_path: string;
+  decision_id: string | null;
+  ticker: string | null;
+  game_date: string | null;
+  market_status: string | null;
+  executable_symbol_count: number;
+  unresolved_symbol_count: number;
+  checks: TradingReadinessCheck[];
 };
 
 export type SportsbookQuote = {
@@ -392,6 +508,8 @@ export const api = {
     }),
   tradingPositions: () => apiFetch<TradingPosition[]>("/api/trading/positions"),
   tradingPnl: () => apiFetch<TradingPnl>("/api/trading/pnl"),
+  tradingSnapshot: () => apiFetch<TradingSnapshot>("/api/trading/snapshot"),
+  tradingReadiness: () => apiFetch<TradingReadiness>("/api/trading/readiness"),
   tradingRecentFills: (limit = 50) => apiFetch<TradingFill[]>(withQuery("/api/trading/fills/recent", { limit })),
   tradingKillSwitch: () => apiFetch<TradingPnl>("/api/trading/kill-switch", { method: "POST" }),
   tradingIntent: (body: TradingIntentRequest) =>

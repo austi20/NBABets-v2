@@ -77,6 +77,22 @@ _SHADOW_BASELINE_MINUTES_THRESHOLD = 12.0
 _ROTATION_SHOCK_VERSION = "v1_phase9"
 
 
+def _ensure_player_team_id_column(frame: pd.DataFrame) -> pd.DataFrame:
+    """Align with historical loaders: player's team must appear as ``player_team_id``.
+
+    Some upcoming/projection frames only expose ``team_id``; rotation and pace groupbys require
+    ``player_team_id``.
+    """
+
+    if frame.empty or "player_team_id" in frame.columns:
+        return frame
+    if "team_id" not in frame.columns:
+        return frame
+    result = frame.copy()
+    result["player_team_id"] = result["team_id"]
+    return result
+
+
 def _compute_data_confidence(
     tier: str,
     variance: float,
@@ -523,7 +539,7 @@ class TrainingPipeline:
         if frame.empty:
             return frame
 
-        result = frame.copy()
+        result = _ensure_player_team_id_column(frame.copy())
         if "baseline_projected_minutes" not in result.columns:
             result["baseline_projected_minutes"] = pd.to_numeric(result.get("predicted_minutes", 0.0), errors="coerce").fillna(0.0)
         if "baseline_usage_share" not in result.columns:
@@ -538,6 +554,9 @@ class TrainingPipeline:
         result["adjusted_projected_minutes"] = result["baseline_projected_minutes"]
         result["adjusted_usage_share"] = result["baseline_usage_share"]
         result["adjusted_usage_rate"] = result["baseline_usage_rate"]
+
+        if "player_team_id" not in result.columns:
+            return result
 
         weights_table = self._load_rotation_weights_table()
         absence_profiles = self._load_rotation_shadow_absence_profiles(result)
@@ -611,7 +630,7 @@ class TrainingPipeline:
         mode = _rotation_shock_mode()
         if mode == "off" or frame.empty:
             return frame
-        result = self._ensure_rotation_baseline_columns(frame.copy())
+        result = self._ensure_rotation_baseline_columns(_ensure_player_team_id_column(frame.copy()))
         result = _with_neutral_rotation_environment(result)
         if mode == "full":
             result = self._apply_rotation_adjustments(result, write_audit=write_audit, historical_frame=historical_frame)
@@ -639,7 +658,9 @@ class TrainingPipeline:
         write_audit: bool,
         historical_frame: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
-        result = frame.copy()
+        result = _ensure_player_team_id_column(frame.copy())
+        if "player_team_id" not in result.columns:
+            return result
         weights_table = self._load_rotation_weights_table()
         absence_profiles = self._load_rotation_shadow_absence_profiles(result, historical_frame=historical_frame)
         game_audits: dict[int, dict[str, list[dict[str, Any]]]] = {}
@@ -1336,9 +1357,12 @@ class TrainingPipeline:
     ) -> dict[tuple[int, int], list[tuple[float, pd.DataFrame]]]:
         if frame.empty or _rotation_shock_mode() != "full":
             return {}
+        working = _ensure_player_team_id_column(frame.copy())
+        if "player_team_id" not in working.columns:
+            return {}
         weights_table = self._load_rotation_weights_table()
         result: dict[tuple[int, int], list[tuple[float, pd.DataFrame]]] = {}
-        for (game_id, team_id), group in frame.groupby(["game_id", "player_team_id"], dropna=False):
+        for (game_id, team_id), group in working.groupby(["game_id", "player_team_id"], dropna=False):
             game_id_int = _coerce_int(game_id)
             team_id_int = _coerce_int(team_id)
             if game_id_int is None or team_id_int is None:
@@ -1926,6 +1950,9 @@ def _availability_branch_context(
     sampled_branch_count: int,
 ) -> dict[tuple[int, int, int], dict[str, float | int]]:
     if frame.empty:
+        return {}
+    frame = _ensure_player_team_id_column(frame.copy())
+    if "player_team_id" not in frame.columns:
         return {}
     profile_map: dict[tuple[int, int, int], float] = {}
     if not absence_profiles.empty:

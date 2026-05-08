@@ -144,6 +144,17 @@ def test_place_order_honors_decision_execution_metadata() -> None:
     assert len(fills) == 1
 
 
+def test_place_order_caps_contract_count_from_metadata() -> None:
+    client = _FakeClient()
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+
+    events, fills = adapter.place_order(_intent_with_metadata({"max_contracts": "1.00"}, stake=1.00))
+
+    assert client.create_calls[0]["count"] == 1
+    assert any(e.status == "filled" for e in events)
+    assert len(fills) == 1
+
+
 def test_place_order_rejects_above_decision_max_price() -> None:
     client = _FakeClient()
     adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))

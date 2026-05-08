@@ -148,3 +148,52 @@ def test_get_fills_filters_by_order_id_without_signing_query(private_key_pem: Pa
     assert "order_id=ord1" in captured["query"]
     assert "ticker=T1" in captured["query"]
     assert result["fills"][0]["fill_id"] == "f1"
+
+
+def test_get_orderbook_positions_orders_and_cancel_paths(private_key_pem: Path) -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.url.query.decode()))
+        if request.url.path.endswith("/orderbook"):
+            return httpx.Response(200, json={"orderbook": {"yes": [[50, 1]], "no": [[48, 1]]}})
+        if request.url.path.endswith("/portfolio/positions"):
+            return httpx.Response(200, json={"market_positions": [{"ticker": "T1", "position": 1}]})
+        if request.url.path.endswith("/portfolio/orders") and request.method == "GET":
+            return httpx.Response(200, json={"orders": [{"order_id": "ord1"}]})
+        if request.url.path.endswith("/portfolio/events/orders/ord1"):
+            return httpx.Response(200, json={"order": {"order_id": "ord1", "status": "canceled"}})
+        return httpx.Response(404, json={})
+
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        assert client.get_orderbook("T1", depth=5)["orderbook"]["yes"]
+        assert client.get_positions(ticker="T1")["market_positions"][0]["ticker"] == "T1"
+        assert client.get_orders(status="resting")["orders"][0]["order_id"] == "ord1"
+        assert client.cancel_order("ord1")["order"]["status"] == "canceled"
+
+    assert ("GET", "/trade-api/v2/markets/T1/orderbook", "depth=5") in seen
+    assert any(method == "GET" and path == "/trade-api/v2/portfolio/positions" for method, path, _query in seen)
+    assert any(method == "GET" and path == "/trade-api/v2/portfolio/orders" for method, path, _query in seen)
+    assert ("DELETE", "/trade-api/v2/portfolio/events/orders/ord1", "") in seen
+
+
+def test_create_exit_order_for_no_converts_to_yes_book_reduce_only(private_key_pem: Path) -> None:
+    captured_body: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_body.update(json.loads(request.content))
+        return httpx.Response(201, json={"order_id": "exit1"})
+
+    with _client_with(private_key_pem, httpx.MockTransport(handler)) as client:
+        result = client.create_exit_order(
+            ticker="T1",
+            held_side="no",
+            count=1,
+            exit_price_dollars=0.65,
+            client_order_id="exit-no-1",
+        )
+
+    assert result["order_id"] == "exit1"
+    assert captured_body["side"] == "bid"
+    assert captured_body["price"] == "0.3500"
+    assert captured_body["reduce_only"] is True

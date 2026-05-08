@@ -8,14 +8,24 @@ import threading
 import traceback
 from importlib import metadata
 from logging.handlers import RotatingFileHandler
-from typing import Any
+from typing import Any, cast
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import Table
 from sqlalchemy.engine import make_url
 
 from app.config.settings import get_settings
+from app.db.base import Base
+from app.db.models.trading import (
+    TradingDailyPnL,
+    TradingFill,
+    TradingKillSwitch,
+    TradingOrder,
+    TradingPosition,
+)
+from app.db.session import SessionLocal, get_engine
 from app.server.auth import AppTokenMiddleware
 from app.server.routers.board import router as board_router
 from app.server.routers.insights import router as insights_router
@@ -28,9 +38,31 @@ from app.server.services.board_cache import BoardCache
 from app.services.startup import StartupCoordinator
 from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
+from app.trading.live_limits import LimitsConfigError, load_live_limits
 from app.trading.risk import ExposureRiskEngine
 
 _ALLOWED_ORIGINS = ("*",)
+
+
+def _ensure_trading_tables() -> None:
+    Base.metadata.create_all(
+        get_engine(),
+        tables=[
+            cast(Table, TradingOrder.__table__),
+            cast(Table, TradingFill.__table__),
+            cast(Table, TradingPosition.__table__),
+            cast(Table, TradingKillSwitch.__table__),
+            cast(Table, TradingDailyPnL.__table__),
+        ],
+    )
+
+
+def _build_trading_risk() -> ExposureRiskEngine:
+    settings = get_settings()
+    try:
+        return ExposureRiskEngine(load_live_limits(settings.trading_limits_path))
+    except LimitsConfigError:
+        return ExposureRiskEngine()
 
 
 def _app_version() -> str:
@@ -142,8 +174,10 @@ def create_app(
 
     app.state.startup_coordinator = resolved_startup_coordinator
     app.state.board_cache = resolved_board_cache
+    _ensure_trading_tables()
+    app.state.trading_session_factory = SessionLocal
     app.state.trading_ledger = InMemoryPortfolioLedger()
-    app.state.trading_risk = ExposureRiskEngine()
+    app.state.trading_risk = _build_trading_risk()
     exchange_config = build_exchange_adapter()
     app.state.trading_exchange = exchange_config.exchange
     app.state.trading_adapter = exchange_config.adapter

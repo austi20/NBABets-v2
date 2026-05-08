@@ -119,6 +119,7 @@ class KalshiClient:
         self_trade_prevention_type: str = "taker_at_cross",
         post_only: bool | None = None,
         cancel_order_on_pause: bool | None = None,
+        reduce_only: bool | None = None,
     ) -> dict[str, Any]:
         normalized_side = side.strip().lower()
         if normalized_side not in {"bid", "ask"}:
@@ -136,10 +137,64 @@ class KalshiClient:
             body["post_only"] = bool(post_only)
         if cancel_order_on_pause is not None:
             body["cancel_order_on_pause"] = bool(cancel_order_on_pause)
+        if reduce_only is not None:
+            body["reduce_only"] = bool(reduce_only)
         return self._request("POST", "/portfolio/events/orders", json_body=body)
+
+    def create_exit_order(
+        self,
+        *,
+        ticker: str,
+        held_side: str,
+        count: int | float | Decimal | str,
+        exit_price_dollars: int | float | Decimal | str,
+        client_order_id: str,
+        time_in_force: str = "immediate_or_cancel",
+        self_trade_prevention_type: str = "taker_at_cross",
+        cancel_order_on_pause: bool | None = True,
+    ) -> dict[str, Any]:
+        normalized = held_side.strip().lower()
+        if normalized in {"yes", "over", "buy_yes"}:
+            order_side = "ask"
+            yes_book_price = Decimal(str(exit_price_dollars))
+        elif normalized in {"no", "under", "buy_no"}:
+            order_side = "bid"
+            yes_book_price = Decimal("1") - Decimal(str(exit_price_dollars))
+        else:
+            raise ValueError("held_side must be yes/over or no/under")
+        if yes_book_price < 0 or yes_book_price > 1:
+            raise ValueError("exit_price_dollars must convert to a YES-book price between 0 and 1")
+        return self.create_order(
+            ticker=ticker,
+            side=order_side,
+            count=count,
+            price_dollars=yes_book_price,
+            client_order_id=client_order_id,
+            time_in_force=time_in_force,
+            self_trade_prevention_type=self_trade_prevention_type,
+            cancel_order_on_pause=cancel_order_on_pause,
+            reduce_only=True,
+        )
 
     def get_order(self, order_id: str) -> dict[str, Any]:
         return self._request("GET", f"/portfolio/orders/{order_id}")
+
+    def get_orders(
+        self,
+        *,
+        ticker: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"limit": max(1, min(int(limit), 1000))}
+        if ticker:
+            params["ticker"] = ticker
+        if status:
+            params["status"] = status
+        return self._request("GET", "/portfolio/orders", params=params)
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/portfolio/events/orders/{order_id}")
 
     def get_fills(
         self,
@@ -154,3 +209,24 @@ class KalshiClient:
         if ticker:
             params["ticker"] = ticker
         return self._request("GET", "/portfolio/fills", params=params)
+
+    def get_positions(
+        self,
+        *,
+        ticker: str | None = None,
+        event_ticker: str | None = None,
+        count_filter: str | None = "position,total_traded",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"limit": max(1, min(int(limit), 1000))}
+        if ticker:
+            params["ticker"] = ticker
+        if event_ticker:
+            params["event_ticker"] = event_ticker
+        if count_filter:
+            params["count_filter"] = count_filter
+        return self._request("GET", "/portfolio/positions", params=params)
+
+    def get_orderbook(self, ticker: str, *, depth: int = 0) -> dict[str, Any]:
+        params: dict[str, str | int] = {"depth": max(0, min(int(depth), 100))}
+        return self._request("GET", f"/markets/{ticker}/orderbook", params=params)

@@ -27,6 +27,7 @@ class _KalshiClientLike(Protocol):
         self_trade_prevention_type: str = "taker_at_cross",
         post_only: bool | None = None,
         cancel_order_on_pause: bool | None = None,
+        reduce_only: bool | None = None,
     ) -> dict[str, Any]: ...
     def get_order(self, order_id: str) -> dict[str, Any]: ...
     def get_fills(
@@ -103,6 +104,9 @@ class KalshiAdapter:
                 [],
             )
         count = int(intent.stake // quote.contract_cost_dollars)
+        max_contracts = self._max_contract_count(intent.signal.metadata)
+        if max_contracts is not None:
+            count = min(count, max_contracts)
         if count < 1:
             return (
                 [OrderEvent(
@@ -241,6 +245,17 @@ class KalshiAdapter:
         if text in {"0", "false", "no", "n"}:
             return False
         return None
+
+    def _max_contract_count(self, metadata: dict[str, Any]) -> int | None:
+        raw = (
+            metadata.get("max_contracts")
+            if metadata.get("max_contracts") is not None
+            else metadata.get("contracts")
+        )
+        value = self._decimal_to_float(raw)
+        if value is None:
+            return None
+        return max(0, int(value))
 
     def _extract_fills(
         self,

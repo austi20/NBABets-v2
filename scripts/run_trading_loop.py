@@ -1,16 +1,20 @@
 """Guarded live Kalshi trading entry point for Spec 1."""
+# ruff: noqa: E402
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import signal
 import sys
 from pathlib import Path
 from typing import Any, cast
 
 from sqlalchemy import Table
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from app.config.settings import get_settings
 from app.db.base import Base
@@ -29,12 +33,14 @@ from app.trading.live_limits import load_live_limits
 from app.trading.loop import TradingLoop, set_kill_switch
 from app.trading.risk import ExposureRiskEngine
 from app.trading.sql_ledger import SqlPortfolioLedger
-from app.trading.symbol_resolver import load_symbol_resolver
+from app.trading.symbol_resolver import SymbolResolver, SymbolResolverConfigError, load_symbol_resolver
 
 _REQUIRED_LIVE_DECISION_FIELDS = ("market_key", "recommendation", "line_value", "player_id", "game_date")
 _LIVE_GATE_FIELDS = (
     "symbol_resolved",
     "fresh_market_snapshot",
+    "market_open",
+    "event_not_stale",
     "spread_within_limit",
     "one_order_cap_ok",
     "price_within_limit",
@@ -45,6 +51,11 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one guarded live Kalshi trading cycle.")
     parser.add_argument("--live", action="store_true", help="Required confirmation flag for live execution.")
     parser.add_argument("--decisions", required=True, help="Path to a JSON list of PropDecision-like objects.")
+    parser.add_argument(
+        "--sync-pack",
+        action="store_true",
+        help="Regenerate the decisions file from Kalshi symbol rows + fresh public quotes before loading.",
+    )
     parser.add_argument("--yes", action="store_true", help="Skip the final operator confirmation prompt.")
     return parser.parse_args()
 
@@ -98,11 +109,11 @@ def _live_side(raw: object) -> str | None:
 
 
 def _require_rich_live_gates(row: dict[str, Any]) -> None:
-    if "execution" not in row and "gates" not in row and "kalshi" not in row:
-        return
     mode = str(row.get("mode", "")).strip().lower()
     if mode != "live":
-        raise ValueError("first live decision is not in live mode")
+        return
+    if "execution" not in row or "gates" not in row or "kalshi" not in row:
+        raise ValueError("first live decision in live mode must include execution, gates, and kalshi blocks")
     execution = row.get("execution")
     if not isinstance(execution, dict) or execution.get("allow_live_submit") is not True:
         raise ValueError("first live decision is not live-submit enabled")
@@ -129,11 +140,14 @@ def _decision_from_row(row: dict[str, Any], side: str) -> PropDecision:
     edge_bps = row.get("edge_bps")
     metadata: dict[str, Any] = {}
     if isinstance(kalshi, dict):
-        for key in ("max_price_dollars", "post_only", "time_in_force"):
+        for key in ("max_price_dollars", "post_only", "time_in_force", "contracts"):
             if kalshi.get(key) is not None:
                 metadata[key] = kalshi[key]
+        if kalshi.get("contracts") is not None:
+            metadata["max_contracts"] = kalshi["contracts"]
         if kalshi.get("ticker") is not None:
             metadata["kalshi_ticker"] = kalshi["ticker"]
+            metadata["kalshi_ticker_verified"] = True
         if kalshi.get("target_id") is not None:
             metadata["kalshi_target_id"] = kalshi["target_id"]
     return PropDecision(
@@ -184,8 +198,8 @@ def main() -> int:
         if not args.live:
             print("ABORT: --live flag is required.", file=sys.stderr)
             return 2
-        if os.environ.get("KALSHI_LIVE_TRADING") != "1":
-            print("ABORT: KALSHI_LIVE_TRADING must be exactly '1'.", file=sys.stderr)
+        if not settings.kalshi_live_trading:
+            print("ABORT: KALSHI_LIVE_TRADING must be enabled in the environment or .env.", file=sys.stderr)
             return 2
         if not settings.kalshi_api_key_id or not settings.kalshi_private_key_path:
             print("ABORT: KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH are required.", file=sys.stderr)
@@ -195,8 +209,23 @@ def main() -> int:
             print(f"ABORT: KALSHI_PRIVATE_KEY_PATH does not exist: {private_key_path}", file=sys.stderr)
             return 2
 
+        decisions_path = Path(args.decisions)
+        if args.sync_pack:
+            from app.trading.live_pack_builder import LivePackBuildError, write_live_decision_pack
+
+            try:
+                write_live_decision_pack(
+                    decisions_path=decisions_path,
+                    settings=settings,
+                    arm_live=True,
+                )
+            except LivePackBuildError as exc:
+                print(f"ABORT: could not build live decision pack: {exc}", file=sys.stderr)
+                return 2
+            print(f"sync-pack: wrote {decisions_path}", file=sys.stderr)
+
         try:
-            decisions, decision_count = _load_live_decisions(Path(args.decisions))
+            decisions, decision_count = _load_live_decisions(decisions_path)
         except ValueError as exc:
             print(f"ABORT: {exc}", file=sys.stderr)
             return 2
@@ -206,7 +235,18 @@ def main() -> int:
         configure_engine()
         _ensure_tables()
         limits = load_live_limits(settings.trading_limits_path)
-        resolver = load_symbol_resolver(settings.kalshi_symbols_path)
+        try:
+            resolver = load_symbol_resolver(settings.kalshi_symbols_path)
+        except SymbolResolverConfigError as exc:
+            if all(decision.metadata.get("kalshi_ticker_verified") is True for decision in decisions):
+                print(
+                    "WARN: symbol map did not load, using verified ticker(s) from live decision pack: "
+                    f"{exc}",
+                    file=sys.stderr,
+                )
+                resolver = SymbolResolver(entries=[])
+            else:
+                raise
 
         client = KalshiClient(
             api_key_id=settings.kalshi_api_key_id,

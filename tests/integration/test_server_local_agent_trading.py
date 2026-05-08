@@ -19,6 +19,7 @@ from app.db.models.trading import (
 from app.server.main import create_app
 from app.services.insights import LocalAgentStatus
 from app.trading.risk import ExposureRiskEngine, RiskLimits
+from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.types import ExecutionIntent, Fill, MarketRef, OrderEvent
 
 
@@ -86,7 +87,7 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch, tmp_path:
         app = create_app(app_token="secret-token")
         app.state.trading_session_factory = factory
         app.state.trading_risk = ExposureRiskEngine(RiskLimits(per_order_cap=0.25))
-        ledger = app.state.trading_ledger
+        ledger = SqlPortfolioLedger(factory)
         ledger.record_fill(
             Fill(
                 fill_id="f1",

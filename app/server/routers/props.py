@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.server.board_access import board_cache_entry_or_503
 from app.server.schemas.props import (
     PropInsightModel,
     PropListResponseModel,
@@ -18,18 +19,6 @@ router = APIRouter(prefix="/api/props", tags=["props"])
 
 _CONFIDENCE_ORDER = {"Fragile": 0, "Watch": 1, "Solid": 2, "Strong": 3, "Elite": 4}
 _CONFIDENCE_FILTER_MIN = {"Watch+": 1, "Solid+": 2, "Strong+": 3, "Elite": 4}
-
-
-def _cached_entry_or_503(request: Request) -> BoardCacheEntry:
-    cache = request.app.state.board_cache
-    get_cached = getattr(cache, "get_cached", None)
-    if callable(get_cached):
-        entry = get_cached()
-    else:  # compatibility for tests injecting lightweight doubles
-        entry = cache.get_or_build()
-    if entry is None:
-        raise HTTPException(status_code=503, detail="Board cache is not ready. Run startup first.")
-    return cast(BoardCacheEntry, entry)
 
 
 def _passes_confidence_filter(tier: str, selected_filter: str) -> bool:
@@ -115,7 +104,7 @@ def list_props(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> PropListResponseModel:
-    entry = _cached_entry_or_503(request)
+    entry = board_cache_entry_or_503(request)
 
     filtered: list[PropOpportunity] = []
     for opportunity in entry.opportunities:
@@ -151,7 +140,7 @@ def prop_detail(
     market: str,
     line: float,
 ) -> PropWithInsightModel:
-    entry = _cached_entry_or_503(request)
+    entry = board_cache_entry_or_503(request)
     for opportunity in entry.opportunities:
         if opportunity.player_id != player_id:
             continue

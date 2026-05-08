@@ -71,7 +71,7 @@ def test_load_live_decisions_rejects_observe_only_decision_pack(tmp_path: Path) 
                         "market_key": "nba.game.total_points",
                         "recommendation": "observe_only",
                         "line_value": 222.5,
-                        "player_id": None,
+                        "player_id": "game_total",
                         "game_date": "2026-05-07",
                         "kalshi": {"ticker": "KXNBATOTAL-26MAY07LALOKC-222"},
                         "gates": {"symbol_resolved": True},
@@ -83,7 +83,7 @@ def test_load_live_decisions_rejects_observe_only_decision_pack(tmp_path: Path) 
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="not in live mode"):
+    with pytest.raises(ValueError, match="observe-only"):
         _load_live_decisions(path)
 
 
@@ -109,12 +109,15 @@ def test_load_live_decisions_accepts_live_decision_pack(tmp_path: Path) -> None:
                             "target_id": "target1",
                             "ticker": "KX-LEBRON-20",
                             "max_price_dollars": "0.6200",
+                            "contracts": "1.00",
                             "post_only": True,
                             "time_in_force": "good_till_canceled",
                         },
                         "gates": {
                             "symbol_resolved": True,
                             "fresh_market_snapshot": True,
+                            "market_open": True,
+                            "event_not_stale": True,
                             "spread_within_limit": True,
                             "one_order_cap_ok": True,
                             "price_within_limit": True,
@@ -135,3 +138,30 @@ def test_load_live_decisions_accepts_live_decision_pack(tmp_path: Path) -> None:
     assert decisions[0].ev == pytest.approx(0.048)
     assert decisions[0].metadata["max_price_dollars"] == "0.6200"
     assert decisions[0].metadata["post_only"] is True
+    assert decisions[0].metadata["max_contracts"] == "1.00"
+    assert decisions[0].metadata["kalshi_ticker_verified"] is True
+
+
+def test_load_live_decisions_live_mode_requires_rich_blocks(tmp_path: Path) -> None:
+    path = tmp_path / "incomplete_live.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "decisions": [
+                    {
+                        "decision_id": "x",
+                        "mode": "live",
+                        "market_key": "nba.player.points",
+                        "recommendation": "buy_yes",
+                        "line_value": 20.5,
+                        "player_id": "a",
+                        "game_date": "2026-05-07",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must include execution"):
+        _load_live_decisions(path)

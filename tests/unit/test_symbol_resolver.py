@@ -131,6 +131,23 @@ def test_resolver_miss_returns_none(tmp_path: Path) -> None:
     assert resolver.resolve(intent) is None
 
 
+def test_resolver_allows_verified_decision_ticker_override() -> None:
+    resolver = SymbolResolver(entries=[])
+    signal = _signal(999, "points", "OVER", 25.5, "2026-05-06")
+    signal = Signal(
+        **{
+            **signal.__dict__,
+            "metadata": {
+                **signal.metadata,
+                "kalshi_ticker": "KX-VERIFIED",
+                "kalshi_ticker_verified": True,
+            },
+        }
+    )
+
+    assert resolver.resolve(_intent(signal)) == "KX-VERIFIED"
+
+
 def test_resolver_requires_game_date_metadata(tmp_path: Path) -> None:
     today = datetime.now(UTC).date().isoformat()
     config = tmp_path / "syms.json"

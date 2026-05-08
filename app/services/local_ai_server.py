@@ -28,20 +28,19 @@ class LocalAIServer:
 
     def ensure_running(self) -> dict[str, Any]:
         settings = get_settings()
-        if self._is_healthy(settings):
-            return {
-                "status": "already_running",
-                "message": "Local AI server already running.",
-                "owned": False,
-                "endpoint": settings.ai_local_endpoint,
-            }
-
         binary_path = settings.ai_local_server_binary
         model_path = settings.ai_local_model_path
         if binary_path is None or model_path is None:
             return {
                 "status": "skipped",
                 "message": "Local AI server auto-start skipped: AI_LOCAL_SERVER_BINARY and AI_LOCAL_MODEL_PATH are not configured.",
+                "owned": False,
+                "endpoint": settings.ai_local_endpoint,
+            }
+        if self._is_healthy(settings):
+            return {
+                "status": "already_running",
+                "message": "Local AI server already running.",
                 "owned": False,
                 "endpoint": settings.ai_local_endpoint,
             }

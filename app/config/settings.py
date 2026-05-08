@@ -31,19 +31,59 @@ def _resolve_env_files() -> list[str]:
             _add_candidate(directory / ".env")
 
     if getattr(_sys, "frozen", False):
-        # Exe directory (e.g. dist/) — highest priority when frozen
+        # Exe directory (e.g. dist/) - highest priority when frozen
         exe_dir = Path(_sys.executable).parent
         _add_parent_chain(exe_dir)
-        # PyInstaller extraction temp dir (_MEIPASS) — bundled .env fallback
+        # PyInstaller extraction temp dir (_MEIPASS) - bundled .env fallback
         meipass = getattr(_sys, "_MEIPASS", None)
         if meipass:
             _add_parent_chain(Path(meipass))
     # Include cwd chain so sidecar processes launched from desktop_tauri/src-tauri
     # still discover a repo-root .env during local development.
     _add_parent_chain(Path.cwd())
+    local_app_data = getenv("LOCALAPPDATA")
+    if local_app_data:
+        app_env = Path(local_app_data) / "NBAPropEngine" / ".env"
+        if app_env.is_file():
+            _add_candidate(app_env)
     # Keep plain cwd-relative fallback as final entry for compatibility.
     _add_candidate(Path(".env"))
+    # Set by the Tauri host when spawning the sidecar: absolute repo .env (last wins in pydantic-settings).
+    explicit = getenv("NBA_PROP_ENV_FILE")
+    if explicit:
+        exp_path = Path(explicit).expanduser()
+        try:
+            exp_resolved = exp_path.resolve()
+        except OSError:
+            exp_resolved = exp_path
+        if exp_resolved.is_file():
+            _add_candidate(exp_resolved)
     return candidates
+
+
+def _runtime_root_dir() -> Path:
+    explicit = getenv("NBA_PROP_ENV_FILE")
+    if explicit:
+        explicit_path = Path(explicit).expanduser()
+        try:
+            resolved = explicit_path.resolve()
+        except OSError:
+            resolved = explicit_path
+        if resolved.is_file():
+            return resolved.parent
+    for directory in (Path.cwd(), *Path.cwd().parents):
+        if (directory / "pyproject.toml").is_file():
+            return directory
+    return Path.cwd()
+
+
+def _resolve_runtime_path(value: object) -> object:
+    if value in (None, ""):
+        return value
+    path = Path(str(value)).expanduser()
+    if path.is_absolute():
+        return str(path)
+    return str((_runtime_root_dir() / path).resolve())
 
 
 def _default_app_data_dir() -> Path:
@@ -294,6 +334,29 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return None
         return value
+
+    @field_validator("kalshi_live_trading", mode="before")
+    @classmethod
+    def _kalshi_live_trading_coerce(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().strip('"').strip("'").lower()
+            return normalized in {"1", "true", "yes", "on"}
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        return value
+
+    @field_validator(
+        "trading_limits_path",
+        "kalshi_symbols_path",
+        "kalshi_resolution_targets_path",
+        "kalshi_decisions_path",
+        mode="before",
+    )
+    @classmethod
+    def _relative_runtime_paths(cls, value: object) -> object:
+        return _resolve_runtime_path(value)
 
     @field_validator("ai_local_server_binary", "ai_local_model_path", "kalshi_private_key_path", mode="before")
     @classmethod

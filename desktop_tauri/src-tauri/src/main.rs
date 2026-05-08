@@ -103,6 +103,38 @@ fn pick_port() -> Result<u16, String> {
     Ok(port)
 }
 
+fn find_dotenv_in_ancestors(mut dir: PathBuf) -> Option<PathBuf> {
+    loop {
+        let candidate = dir.join(".env");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Locate repo-root `.env` for Kalshi and other secrets. GUI apps often have a useless cwd
+/// (e.g. System32); walking from the sidecar binary or the Tauri host exe finds the project.
+fn nba_prop_dotenv_path(sidecar_executable: &std::path::Path) -> Option<PathBuf> {
+    if let Some(parent) = sidecar_executable.parent() {
+        if let Some(found) = find_dotenv_in_ancestors(parent.to_path_buf()) {
+            return Some(found);
+        }
+    }
+    if let Ok(host_exe) = env::current_exe() {
+        if let Some(parent) = host_exe.parent() {
+            if let Some(found) = find_dotenv_in_ancestors(parent.to_path_buf()) {
+                return Some(found);
+            }
+        }
+    }
+    env::current_dir()
+        .ok()
+        .and_then(|cwd| find_dotenv_in_ancestors(cwd))
+}
+
 fn sidecar_executable_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let resource_dir = app
         .path()
@@ -137,14 +169,18 @@ fn spawn_sidecar(app: &AppHandle, state: &SidecarState) -> Result<(), String> {
     let logs_dir = logs_dir_path();
     std::fs::create_dir_all(&logs_dir)
         .map_err(|error| format!("create log dir failed ({}): {error}", logs_dir.display()))?;
-    let child = Command::new(&executable)
-        .arg("--host")
+    let mut cmd = Command::new(&executable);
+    cmd.arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
         .arg(port.to_string())
         .arg("--app-token")
         .arg(&app_token)
-        .env("LOGS_DIR", logs_dir.display().to_string())
+        .env("LOGS_DIR", logs_dir.display().to_string());
+    if let Some(dotenv_path) = nba_prop_dotenv_path(&executable) {
+        cmd.env("NBA_PROP_ENV_FILE", dotenv_path.as_os_str());
+    }
+    let child = cmd
         .spawn()
         .map_err(|error| format!("spawn sidecar failed ({}): {error}", executable.display()))?;
 

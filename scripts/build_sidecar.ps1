@@ -10,7 +10,7 @@ if (-not (Test-Path $outputDir)) {
 }
 
 Write-Host "Building Python sidecar with PyInstaller..."
-& py -3.14 -m PyInstaller `
+& py -3 -m PyInstaller `
     --noconfirm `
     --clean `
     --onefile `

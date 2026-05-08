@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pandas as pd
 
-from app.training.pipeline import TrainingPipeline
+from app.training.pipeline import TrainingPipeline, _availability_branch_context
 
 
 def _fixture_frame() -> pd.DataFrame:
@@ -77,3 +78,58 @@ def test_rotation_treatment_full_uses_adjusted_minutes_for_effective_input(monke
     assert treated["adjusted_projected_minutes"].iloc[0] == 36.0
     assert treated["predicted_minutes"].iloc[0] == 36.0
     assert treated["expected_possessions"].iloc[0] == 72.0
+
+
+def test_rotation_adjustments_falls_back_to_team_id_when_player_team_id_missing(monkeypatch) -> None:
+    pipeline = _pipeline()
+    frame = pd.DataFrame(
+        [
+            {
+                "game_id": 7001,
+                "player_id": 41,
+                "team_id": 90,
+                "predicted_minutes": 30.0,
+                "baseline_projected_minutes": 30.0,
+                "baseline_usage_share": 0.22,
+                "baseline_usage_rate": 0.22,
+            }
+        ]
+    )
+    monkeypatch.setattr(pipeline, "_load_rotation_weights_table", lambda: pd.DataFrame())
+    monkeypatch.setattr(
+        pipeline,
+        "_load_rotation_shadow_absence_profiles",
+        lambda base_frame, historical_frame=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr("app.training.pipeline._matching_absence_profiles", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr("app.training.pipeline._build_rotation_profiles", lambda group, absent_rows=None: ([], {}))
+    monkeypatch.setattr(
+        "app.training.pipeline.redistribute",
+        lambda **kwargs: SimpleNamespace(
+            team_efficiency_delta=0.0,
+            pace_delta=0.0,
+            rotation_shock_magnitude=0.0,
+            rotation_shock_confidence=0.0,
+            adjusted_players=[
+                SimpleNamespace(
+                    player_id=41,
+                    adjusted_minutes=32.0,
+                    adjusted_usage_share=0.24,
+                )
+            ],
+            absences=[],
+            teammate_adjustments=[],
+        ),
+    )
+
+    adjusted = pipeline._apply_rotation_adjustments(frame, write_audit=False)
+
+    assert "player_team_id" in adjusted.columns
+    assert adjusted.loc[0, "player_team_id"] == 90
+    assert adjusted.loc[0, "adjusted_projected_minutes"] == 32.0
+
+
+def test_availability_branch_context_derives_player_team_from_team_id() -> None:
+    frame = pd.DataFrame([{"game_id": 7, "team_id": 10, "player_id": 501}])
+    ctx = _availability_branch_context(frame, pd.DataFrame(), max_exact_players=8, sampled_branch_count=4)
+    assert (7, 10, 501) in ctx
