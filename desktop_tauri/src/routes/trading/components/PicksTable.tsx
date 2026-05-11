@@ -1,6 +1,6 @@
 // desktop_tauri/src/routes/trading/components/PicksTable.tsx
-import { Fragment } from "react";
-import { useTradingStore, selectVisiblePicks } from "../store";
+import { Fragment, useMemo } from "react";
+import { useTradingStore } from "../store";
 import { PickRow } from "./PickRow";
 import { FilterPills } from "./FilterPills";
 import { BulkActions } from "./BulkActions";
@@ -26,8 +26,28 @@ function formatSigned(n: number): string {
 export function PicksTable() {
   const setSort = useTradingStore((s) => s.setSort);
   const expandedId = useTradingStore((s) => s.expandedCandidateId);
-  const visible = useTradingStore(selectVisiblePicks);
   const snapshot = useTradingStore((s) => s.snapshot);
+  const allPicks = useTradingStore((s) => s.snapshot?.picks);
+  const sortKey = useTradingStore((s) => s.sortKey);
+  const sortDir = useTradingStore((s) => s.sortDir);
+  const filter = useTradingStore((s) => s.filter);
+
+  const visible = useMemo(() => {
+    if (!allPicks) return [];
+    const filtered = allPicks.filter((row) => {
+      switch (filter) {
+        case "queued": return row.state === "queued";
+        case "excluded": return row.state === "excluded";
+        case "blocked": return row.state === "blocked";
+        default: return true;
+      }
+    });
+    return [...filtered].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "candidate_id") return a.candidate_id.localeCompare(b.candidate_id) * dir;
+      return (Number(a[sortKey]) - Number(b[sortKey])) * dir;
+    });
+  }, [allPicks, filter, sortKey, sortDir]);
 
   if (!snapshot) {
     return (

@@ -99,17 +99,21 @@ export function LimitsModal() {
 
   useEffect(() => {
     if (open) {
-      void tradingActions.readLimits().then((data) => {
-        setForm({
-          max_open_notional: String(data.max_open_notional ?? ""),
-          daily_loss_cap: String(data.daily_loss_cap ?? ""),
-          reject_cooldown_seconds: String(data.reject_cooldown_seconds ?? ""),
-          per_order_cap_override:
-            data.per_order_cap_override !== null && data.per_order_cap_override !== undefined
-              ? String(data.per_order_cap_override)
-              : "",
+      void tradingActions.readLimits()
+        .then((data) => {
+          setForm({
+            max_open_notional: String(data.max_open_notional ?? ""),
+            daily_loss_cap: String(data.daily_loss_cap ?? ""),
+            reject_cooldown_seconds: String(data.reject_cooldown_seconds ?? ""),
+            per_order_cap_override:
+              data.per_order_cap_override !== null && data.per_order_cap_override !== undefined
+                ? String(data.per_order_cap_override)
+                : "",
+          });
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : "failed to load limits");
         });
-      });
     } else {
       setForm(EMPTY);
       setError(null);

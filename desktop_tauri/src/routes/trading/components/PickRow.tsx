@@ -19,7 +19,6 @@ const fmtUsdSigned = (v: number) => `${v >= 0 ? "+" : ""}$${v.toFixed(2)}`;
 
 export function PickRow({ pick }: Props) {
   const toggleExpand = useTradingStore((s) => s.toggleExpand);
-  const expandedId = useTradingStore((s) => s.expandedCandidateId);
 
   const onBulletClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -34,7 +33,12 @@ export function PickRow({ pick }: Props) {
   const rowCls = pick.state === "blocked" ? "blocked" : pick.state === "excluded" ? "excluded" : "";
 
   return (
-    <tr className={rowCls} onClick={onRowClick} aria-expanded={expandedId === pick.candidate_id}>
+    <tr
+      className={rowCls}
+      onClick={onRowClick}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(); } }}
+    >
       <td onClick={(e) => void onBulletClick(e)} style={{ width: 18 }}>
         <span
           className={bulletCls}

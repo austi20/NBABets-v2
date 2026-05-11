@@ -49,10 +49,14 @@ export function ControlBar() {
   };
 
   const triggerKill = async () => {
-    await fetch(`${resolveBase()}/api/trading/kill-switch`, {
-      method: "POST",
-      headers: authHeaders(),
-    });
+    try {
+      await fetch(`${resolveBase()}/api/trading/kill-switch`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    } catch {
+      // kill-switch failure is visible via SSE snapshot update or disconnect chip
+    }
   };
 
   return (
