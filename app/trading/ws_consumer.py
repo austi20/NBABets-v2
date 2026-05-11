@@ -154,6 +154,7 @@ class KalshiWebSocketConsumer:
                 await self._send_subscribe(ws)
                 await self._receive_loop(ws)
             finally:
+                self._state.is_connected = False
                 self._ws = None
 
     def _signed_headers(self) -> dict[str, str]:
