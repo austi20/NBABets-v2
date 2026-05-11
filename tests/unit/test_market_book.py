@@ -138,3 +138,63 @@ def test_snapshot_returns_independent_copy():
 
     snap = asyncio.run(runner())
     assert snap["KXTEST-G"].yes_bid == 0.50  # snap not mutated by later update
+
+
+@pytest.mark.asyncio
+async def test_subscribe_receives_updates():
+    book = MarketBook()
+    received: list[BookUpdate] = []
+
+    async def consumer():
+        async for upd in book.subscribe():
+            received.append(upd)
+            if len(received) == 2:
+                return
+
+    task = asyncio.create_task(consumer())
+    await asyncio.sleep(0.01)  # let subscribe register
+    await book.update(_entry("KXTEST-H", 0.50))
+    await book.update(_entry("KXTEST-H", 0.55, ts_seconds=1))
+    await asyncio.wait_for(task, timeout=1.0)
+    assert [u.after.yes_bid for u in received] == [0.50, 0.55]
+
+
+@pytest.mark.asyncio
+async def test_multiple_subscribers_each_receive_updates():
+    book = MarketBook()
+
+    async def collect(n: int) -> list[BookUpdate]:
+        out: list[BookUpdate] = []
+        async for upd in book.subscribe():
+            out.append(upd)
+            if len(out) == n:
+                return out
+        return out
+
+    t1 = asyncio.create_task(collect(1))
+    t2 = asyncio.create_task(collect(1))
+    await asyncio.sleep(0.01)
+    await book.update(_entry("KXTEST-I", 0.50))
+    r1 = await asyncio.wait_for(t1, timeout=1.0)
+    r2 = await asyncio.wait_for(t2, timeout=1.0)
+    assert r1[0].after.ticker == "KXTEST-I"
+    assert r2[0].after.ticker == "KXTEST-I"
+
+
+@pytest.mark.asyncio
+async def test_slow_subscriber_drops_oldest_under_backpressure():
+    book = MarketBook(subscriber_queue_size=2)
+    drained: list[BookUpdate] = []
+
+    sub = book.subscribe()
+    await asyncio.sleep(0.01)
+    for i in range(5):
+        await book.update(_entry("KXTEST-J", 0.50 + i * 0.01, ts_seconds=i))
+    # consumer wakes up; should only see the last 2 updates retained
+    async def drain():
+        async for upd in sub:
+            drained.append(upd)
+            if len(drained) == 2:
+                return
+    await asyncio.wait_for(drain(), timeout=1.0)
+    assert [round(u.after.yes_bid, 2) for u in drained] == [0.53, 0.54]
