@@ -32,6 +32,7 @@ def test_load_live_decisions_rejects_missing_file(tmp_path: Path) -> None:
 
 
 def test_load_live_decisions_caps_to_first_decision(tmp_path: Path) -> None:
+    # Previous behavior capped to first decision; new behavior loads all valid rows.
     base = {
         "model_prob": 0.58,
         "market_prob": 0.51,
@@ -54,8 +55,9 @@ def test_load_live_decisions_caps_to_first_decision(tmp_path: Path) -> None:
     decisions, decision_count = _load_live_decisions(path)
 
     assert decision_count == 2
-    assert len(decisions) == 1
+    assert len(decisions) == 2
     assert decisions[0].player_id == 237
+    assert decisions[1].player_id == 999
 
 
 def test_load_live_decisions_rejects_observe_only_decision_pack(tmp_path: Path) -> None:
@@ -143,6 +145,8 @@ def test_load_live_decisions_accepts_live_decision_pack(tmp_path: Path) -> None:
 
 
 def test_load_live_decisions_live_mode_requires_rich_blocks(tmp_path: Path) -> None:
+    # Rows missing execution/gates/kalshi blocks are silently skipped; if all rows
+    # fail gate checks the function raises "no live-executable decisions found".
     path = tmp_path / "incomplete_live.json"
     path.write_text(
         json.dumps(
@@ -163,5 +167,5 @@ def test_load_live_decisions_live_mode_requires_rich_blocks(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="must include execution"):
+    with pytest.raises(ValueError, match="no live-executable decisions found"):
         _load_live_decisions(path)
