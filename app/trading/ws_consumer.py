@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from app.providers.exchanges.kalshi_signing import sign_request
 from app.trading.market_book import MarketBook
@@ -29,6 +29,11 @@ from app.trading.ws_frames import parse_frame
 
 _LOG = logging.getLogger(__name__)
 _DEFAULT_CHANNELS: tuple[str, ...] = ("ticker",)
+
+
+def _is_auth_status(exc: InvalidStatus) -> bool:
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status in (401, 403)
 
 
 @dataclass(frozen=True)
@@ -100,21 +105,51 @@ class KalshiWebSocketConsumer:
                 pass
 
     async def run(self) -> None:
-        # Single-iteration runner; reconnect added in Task 8.
         if not self._tickers:
             _LOG.info("Kalshi WS consumer started with no tickers; idling")
             await self._stop_event.wait()
             return
-        try:
-            await self._run_once()
-        finally:
-            self._state.is_connected = False
+        backoff = 1.0
+        while not self._state.stopped and not self._state.fatal_auth_failure:
+            try:
+                await self._run_once()
+                backoff = 1.0  # reset on clean exit
+            except InvalidStatus as exc:
+                if _is_auth_status(exc):
+                    self._state.consecutive_auth_failures += 1
+                    _LOG.error(
+                        "Kalshi WS auth rejected (%d/%d)",
+                        self._state.consecutive_auth_failures,
+                        self._max_auth_failures,
+                    )
+                    if self._state.consecutive_auth_failures >= self._max_auth_failures:
+                        self._state.fatal_auth_failure = True
+                        break
+                else:
+                    _LOG.warning("Kalshi WS handshake failed: %s", exc)
+            except (ConnectionClosed, OSError) as exc:
+                _LOG.info("Kalshi WS disconnected: %s", exc)
+            except Exception:
+                _LOG.exception("Unexpected Kalshi WS error")
+            finally:
+                self._state.is_connected = False
+            if self._state.stopped or self._state.fatal_auth_failure:
+                break
+            self._state.reconnect_count += 1
+            sleep_for = min(backoff, float(self._max_backoff))
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=sleep_for)
+                break  # stopped while sleeping
+            except TimeoutError:
+                pass
+            backoff = min(backoff * 2.0, float(self._max_backoff))
 
     async def _run_once(self) -> None:
         headers = self._signed_headers()
         async with connect(self._base_url, additional_headers=headers) as ws:
             self._ws = ws
             self._state.is_connected = True
+            self._state.consecutive_auth_failures = 0
             try:
                 await self._send_subscribe(ws)
                 await self._receive_loop(ws)

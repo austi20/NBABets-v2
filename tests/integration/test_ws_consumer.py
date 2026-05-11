@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 import websockets
-from app.trading.ws_consumer import KalshiWebSocketConsumer, KalshiWsCredentials
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.trading.market_book import MarketBook
+from app.trading.ws_consumer import KalshiWebSocketConsumer, KalshiWsCredentials
 
 
 @pytest.fixture
@@ -144,3 +144,45 @@ async def test_consumer_connects_signs_and_subscribes(fake_server, rsa_key_file)
     assert (
         "KALSHI-ACCESS-TIMESTAMP" in headers or "kalshi-access-timestamp" in headers
     )
+
+
+async def test_consumer_reconnects_after_server_close(fake_server, rsa_key_file):
+    book = MarketBook()
+    creds = KalshiWsCredentials(api_key_id="key-abc", private_key_path=rsa_key_file)
+    fake_server.queue_frame({
+        "type": "ticker",
+        "msg": {
+            "market_ticker": "KXNBA-LAL-W",
+            "yes_bid_dollars": 0.50,
+            "yes_ask_dollars": 0.55,
+        },
+    })
+    consumer = KalshiWebSocketConsumer(
+        base_url=f"ws://127.0.0.1:{fake_server.port}",
+        credentials=creds,
+        book=book,
+        tickers=["KXNBA-LAL-W"],
+        ping_interval_seconds=60,
+        max_backoff_seconds=1,
+        max_consecutive_auth_failures=5,
+    )
+    task = asyncio.create_task(consumer.run())
+    # wait for first connect + frame
+    for _ in range(100):
+        if consumer.is_connected and book.get("KXNBA-LAL-W") is not None:
+            break
+        await asyncio.sleep(0.02)
+    assert consumer.is_connected
+
+    # force-close server side, expect reconnect
+    for ws in list(fake_server._connections):
+        await ws.close()
+    for _ in range(200):
+        if consumer.reconnect_count >= 1 and consumer.is_connected:
+            break
+        await asyncio.sleep(0.02)
+    assert consumer.reconnect_count >= 1
+    assert consumer.is_connected
+
+    await consumer.stop()
+    await asyncio.wait_for(task, timeout=2.0)
