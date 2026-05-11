@@ -756,6 +756,13 @@
     background: rgba(255, 59, 48, 0.12);
   }
 
+  .readiness-description {
+    margin: 0 0 8px;
+    color: var(--color-fg-muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
   .readiness-summary {
     margin: 0;
     color: var(--color-fg-primary);
@@ -1832,4 +1839,32 @@
       grid-template-columns: 1fr;
     }
   }
+}
+
+/* ---- Trading terminal design tokens (Phase 5) ---- */
+:root {
+  --trading-bg: #0a0d14;
+  --trading-surface: #111827;
+  --trading-surface-alt: #0f1421;
+  --trading-border: #1f2937;
+  --trading-border-soft: #374151;
+
+  --trading-fg: #e5e7eb;
+  --trading-fg-muted: #9ca3af;
+  --trading-fg-subtle: #6b7280;
+
+  --trading-accent-pnl: #2ecc71;
+  --trading-accent-budget: #3b82f6;
+  --trading-accent-picks: #00d4aa;
+  --trading-accent-system: #f59e0b;
+  --trading-accent-danger: #ef4444;
+
+  --trading-font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, monospace;
+
+  --trading-pad-sm: 8px;
+  --trading-pad-md: 12px;
+  --trading-pad-lg: 14px;
+
+  --trading-pulse-positive: rgba(46, 204, 113, 0.25);
+  --trading-pulse-negative: rgba(239, 68, 68, 0.25);
 }
