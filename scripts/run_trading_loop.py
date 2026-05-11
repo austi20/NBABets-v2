@@ -28,6 +28,7 @@ from app.db.models.trading import (
 from app.db.session import SessionLocal, configure_engine, get_engine
 from app.evaluation.prop_decision import PropDecision
 from app.providers.exchanges.kalshi_client import KalshiClient
+from app.trading.allocation import AllocationPick, allocate_proportional_with_soft_cap
 from app.trading.kalshi_adapter import KalshiAdapter
 from app.trading.live_limits import load_live_limits
 from app.trading.loop import TradingLoop, set_kill_switch
@@ -178,14 +179,24 @@ def _load_live_decisions(path: Path) -> tuple[list[PropDecision], int]:
         raise ValueError(f"decisions file is malformed JSON: {exc}") from exc
     rows = _decision_rows(payload)
     first = rows[0]
-    _require_rich_live_gates(first)
     missing = [field for field in _REQUIRED_LIVE_DECISION_FIELDS if first.get(field) in (None, "")]
     if missing:
         raise ValueError(f"first live decision missing required field(s): {', '.join(missing)}")
-    side = _live_side(first["recommendation"])
-    if side is None:
-        raise ValueError("first live decision is observe-only")
-    decisions = [_decision_from_row(first, side)]
+    decisions: list[PropDecision] = []
+    for row in rows:
+        row_missing = [field for field in _REQUIRED_LIVE_DECISION_FIELDS if row.get(field) in (None, "")]
+        if row_missing:
+            continue
+        try:
+            _require_rich_live_gates(row)
+        except ValueError:
+            continue
+        side = _live_side(row["recommendation"])
+        if side is None:
+            continue
+        decisions.append(_decision_from_row(row, side))
+    if not decisions:
+        raise ValueError("no live-executable decisions found (all rows are observe-only or failed gate checks)")
     return decisions, len(rows)
 
 
@@ -229,8 +240,7 @@ def main() -> int:
         except ValueError as exc:
             print(f"ABORT: {exc}", file=sys.stderr)
             return 2
-        if decision_count > 1:
-            print("Spec 1 cap: using only the first decision; remaining decisions ignored.", file=sys.stderr)
+        print(f"Targeting {len(decisions)} executable decision(s) out of {decision_count} total rows.", file=sys.stderr)
 
         configure_engine()
         _ensure_tables()
@@ -283,13 +293,31 @@ def main() -> int:
             adapter=adapter,
             session_factory=SessionLocal,
         )
-        result = loop.run_decisions(decisions, exchange="kalshi", stake=limits.per_order_cap)
+        alloc_picks = [
+            AllocationPick(candidate_id=d.market_key, model_prob=float(d.model_prob))
+            for d in decisions
+        ]
+        stakes_by_id = allocate_proportional_with_soft_cap(
+            alloc_picks,
+            budget=limits.max_open_notional,
+            cap_fraction=0.35,
+        )
+        accepted = rejected = fills = events = 0
+        for decision in decisions:
+            stake_i = stakes_by_id.get(decision.market_key, 0.0)
+            if stake_i <= 0:
+                continue
+            r = loop.run_decisions([decision], exchange="kalshi", stake=stake_i)
+            accepted += r.accepted
+            rejected += r.rejected
+            fills += r.fills
+            events += r.events
         print(
-            f"live-loop accepted={result.accepted} rejected={result.rejected} "
-            f"fills={result.fills} events={result.events} "
+            f"live-loop accepted={accepted} rejected={rejected} "
+            f"fills={fills} events={events} "
             f"open_positions={len(ledger.open_positions())}"
         )
-        if result.fills < 1:
+        if fills < 1:
             print("ABORT: live cycle completed without a persisted fill.", file=sys.stderr)
             return 4
         return 0
