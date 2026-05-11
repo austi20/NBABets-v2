@@ -250,3 +250,128 @@ class TradingIntentResponseModel(BaseModel):
     intent_id: str | None
     message: str
 
+
+# ---- Live snapshot models (Phase 2) ----
+
+class KpiPnlModel(BaseModel):
+    daily_pnl: float
+    realized: float
+    unrealized: float
+    loss_cap: float
+    loss_progress: float  # 0..1
+
+
+class KpiBudgetModel(BaseModel):
+    max_open_notional: float
+    allocated: float
+    free: float
+    usage_progress: float  # 0..1
+
+
+class KpiPicksModel(BaseModel):
+    available: int
+    selected: int
+    excluded: int
+    blocked: int
+    est_total_profit: float
+
+
+class KpiSystemModel(BaseModel):
+    status: Literal["ready", "blocked", "checking"]
+    mode: Literal["observe", "supervised-live"]
+    gates_passed: int
+    gates_total: int
+    ws_connected: bool
+    summary: str
+
+
+class KpiTilesModel(BaseModel):
+    pnl: KpiPnlModel
+    budget: KpiBudgetModel
+    picks: KpiPicksModel
+    system: KpiSystemModel
+
+
+class ControlBarStateModel(BaseModel):
+    mode: Literal["observe", "supervised-live"]
+    loop_state: Literal["idle", "starting", "running", "killed", "exited", "failed", "blocked"]
+    can_start: bool
+    start_label: str
+    kill_switch_active: bool
+
+
+class PickKalshiModel(BaseModel):
+    ticker: str | None
+    yes_bid: float | None
+    yes_ask: float | None
+    spread: float | None
+    last_quote_at: datetime | None
+
+
+class PickRowModel(BaseModel):
+    candidate_id: str
+    rank: int
+    prop_label: str
+    game_label: str | None
+    hit_pct: float
+    edge_bps: int
+    model_prob: float
+    market_prob: float | None
+    alloc: float
+    est_profit: float
+    state: Literal["queued", "excluded", "blocked", "filled", "partial"]
+    selected: bool
+    blocker_reason: str | None
+    kalshi: PickKalshiModel
+
+
+class BetSlipPickModel(BaseModel):
+    candidate_id: str
+    prop_label: str
+    hit_pct: float
+    edge_bps: int
+    alloc: float
+    est_profit: float
+
+
+class BetSlipModel(BaseModel):
+    selected: list[BetSlipPickModel]
+    total_stake: float
+    cap_total: float
+    est_total_profit: float
+    unused_budget: float
+
+
+class SystemDiagnosticsModel(BaseModel):
+    readiness: TradingReadinessModel | None
+    brain: TradingBrainSyncModel | None
+
+
+class EventLogLineModel(BaseModel):
+    cursor: int
+    timestamp: datetime
+    level: Literal["info", "warn", "error"]
+    message: str
+
+
+class PnlPointModel(BaseModel):
+    index: int
+    pnl: float
+
+
+class TradingLiveSnapshotModel(BaseModel):
+    observed_at: datetime
+    kpis: KpiTilesModel
+    control: ControlBarStateModel
+    picks: list[PickRowModel]
+    bet_slip: BetSlipModel
+    positions: list[LivePositionModel]
+    fills: list[FillModel]
+    quotes: list[TradingQuoteModel]
+    resting_orders: list[RestingOrderModel]
+    diagnostics: SystemDiagnosticsModel
+    event_log: list[EventLogLineModel]
+    pnl_trend: list[PnlPointModel]
+    errors: list[str]
+    stream_cursor: int
+
