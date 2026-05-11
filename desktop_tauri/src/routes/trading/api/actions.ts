@@ -2,6 +2,15 @@
 import { getAppToken, tradingSnapshotUrl } from "../../../api/client";
 import type { TradingLiveSnapshot } from "./types";
 
+type LimitsResponse = {
+  max_open_notional: number;
+  per_market_cap: number;
+  daily_loss_cap: number;
+  reject_cooldown_seconds: number;
+  per_order_cap_override: number | null;
+  wallet_init_done_at: string | null;
+};
+
 function resolveBase(): string {
   const url = new URL(tradingSnapshotUrl());
   return url.origin;
@@ -53,12 +62,12 @@ export const tradingActions = {
     reject_cooldown_seconds: number;
     per_order_cap_override: number;
   }>) =>
-    tradingFetch("/api/trading/limits", {
+    tradingFetch<LimitsResponse>("/api/trading/limits", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
-  readLimits: () => tradingFetch("/api/trading/limits"),
+  readLimits: () => tradingFetch<LimitsResponse>("/api/trading/limits"),
 
   fetchWallet: () =>
     tradingFetch<{ balance: number; fetched_at: string }>("/api/trading/wallet"),

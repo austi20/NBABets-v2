@@ -11,6 +11,7 @@ export function useTradingStream(): void {
   const setStreamConnected = useTradingStore((s) => s.setStreamConnected);
   const backoffIndex = useRef(0);
   const pollTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const epochRef = useRef(0);
 
@@ -74,7 +75,7 @@ export function useTradingStream(): void {
         }
         const delay = BACKOFF_STEPS_MS[Math.min(backoffIndex.current, BACKOFF_STEPS_MS.length - 1)];
         backoffIndex.current = Math.min(backoffIndex.current + 1, BACKOFF_STEPS_MS.length - 1);
-        window.setTimeout(connect, delay);
+        reconnectTimerRef.current = window.setTimeout(connect, delay);
       };
     };
 
@@ -85,6 +86,10 @@ export function useTradingStream(): void {
       sourceRef.current?.close();
       sourceRef.current = null;
       stopPolling();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
     };
   }, [applySnapshot, setStreamConnected]);
 }

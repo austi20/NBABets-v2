@@ -2,15 +2,15 @@
 import { create } from "zustand";
 import type { TradingLiveSnapshot, PickRow, EventLogLine } from "./api/types";
 
-type SortKey = "rank" | "hit_pct" | "edge_bps" | "alloc" | "est_profit";
+type SortKey = "candidate_id" | "model_prob" | "edge_bps" | "alloc";
 type SortDir = "asc" | "desc";
-type FilterMode = "all" | "hittable" | "excluded" | "blocked";
+type FilterMode = "all" | "queued" | "excluded" | "blocked";
 
 type TradingState = {
   // Live data
   snapshot: TradingLiveSnapshot | null;
   streamConnected: boolean;
-  lastSnapshotAt: string | null;
+  lastSnapshotAt: number | null;
   // UI-only state
   sortKey: SortKey;
   sortDir: SortDir;
@@ -32,22 +32,22 @@ export const useTradingStore = create<TradingState>((set) => ({
   snapshot: null,
   streamConnected: false,
   lastSnapshotAt: null,
-  sortKey: "rank",
-  sortDir: "asc",
+  sortKey: "model_prob",
+  sortDir: "desc",
   filter: "all",
   expandedCandidateId: null,
   thresholdsOpen: false,
   limitsModalOpen: false,
 
   applySnapshot: (snapshot) =>
-    set({ snapshot, lastSnapshotAt: snapshot.observed_at }),
+    set({ snapshot, lastSnapshotAt: Date.now() }),
 
   setStreamConnected: (connected) => set({ streamConnected: connected }),
 
   setSort: (key) =>
     set((state) => ({
       sortKey: key,
-      sortDir: state.sortKey === key && state.sortDir === "desc" ? "asc" : "desc",
+      sortDir: state.sortKey === key && state.sortDir === "asc" ? "desc" : "asc",
     })),
 
   setFilter: (filter) => set({ filter }),
@@ -68,8 +68,8 @@ export function selectVisiblePicks(state: TradingState): PickRow[] {
   const all = state.snapshot.picks;
   const filtered = all.filter((row) => {
     switch (state.filter) {
-      case "hittable":
-        return row.state !== "blocked";
+      case "queued":
+        return row.state === "queued";
       case "excluded":
         return row.state === "excluded";
       case "blocked":
@@ -80,8 +80,11 @@ export function selectVisiblePicks(state: TradingState): PickRow[] {
   });
   const sorted = [...filtered].sort((a, b) => {
     const dir = state.sortDir === "asc" ? 1 : -1;
-    if (state.sortKey === "rank") return (a.rank - b.rank) * dir;
-    return (Number(a[state.sortKey]) - Number(b[state.sortKey])) * dir;
+    const key = state.sortKey;
+    if (key === "candidate_id") {
+      return a.candidate_id.localeCompare(b.candidate_id) * dir;
+    }
+    return (Number(a[key]) - Number(b[key])) * dir;
   });
   return sorted;
 }
