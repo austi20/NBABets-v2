@@ -375,3 +375,40 @@ class TradingLiveSnapshotModel(BaseModel):
     errors: list[str]
     stream_cursor: int
 
+
+# ---- Limits + wallet request models (Phase 3) ----
+
+class LimitsUpdateRequestModel(BaseModel):
+    max_open_notional: float | None = Field(default=None, gt=0.0, le=1_000_000.0)
+    daily_loss_cap: float | None = Field(default=None, ge=0.0, le=1_000_000.0)
+    reject_cooldown_seconds: int | None = Field(default=None, ge=0, le=86_400)
+    per_order_cap_override: float | None = Field(default=None, ge=0.0)
+
+
+class LimitsResponseModel(BaseModel):
+    max_open_notional: float
+    per_market_cap: float
+    daily_loss_cap: float
+    reject_cooldown_seconds: int
+    per_order_cap_override: float | None
+    wallet_init_done_at: datetime | None
+
+
+class WalletBalanceResponseModel(BaseModel):
+    balance: float
+    fetched_at: datetime
+
+
+class PickToggleRequestModel(BaseModel):
+    included: bool
+
+
+class PickBulkRequestModel(BaseModel):
+    action: Literal["select_all_hittable", "deselect_all", "top_n"]
+    n: int | None = Field(default=None, ge=1, le=50)
+
+
+class ThresholdsUpdateRequestModel(BaseModel):
+    min_hit_pct: float = Field(ge=0.0, le=1.0)
+    min_edge_bps: int = Field(ge=0, le=5_000)
+

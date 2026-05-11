@@ -188,6 +188,29 @@ def create_app(
         _app.state.market_service = market_service
         if settings.kalshi_ws_enabled:
             await market_service.start()
+        if (
+            settings.auto_init_budget_from_wallet
+            and settings.kalshi_api_key_id
+            and settings.kalshi_private_key_path
+        ):
+            try:
+                from app.providers.exchanges.kalshi_client import KalshiClient
+                from app.trading.wallet_init import init_budget_from_wallet
+
+                _wc = KalshiClient(
+                    api_key_id=settings.kalshi_api_key_id,
+                    private_key_path=Path(str(settings.kalshi_private_key_path)),
+                    base_url=settings.kalshi_base_url,
+                )
+                try:
+                    init_budget_from_wallet(
+                        client=_wc,
+                        path=Path(settings.trading_limits_path),
+                    )
+                finally:
+                    _wc.close()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger("nba.sidecar").warning("wallet-init failed: %s", exc)
         try:
             yield
         finally:

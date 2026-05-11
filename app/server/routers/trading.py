@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from datetime import date as _date
 from pathlib import Path
@@ -16,9 +17,14 @@ from app.server.schemas.trading import (
     ActiveLimitsModel,
     ExchangePositionModel,
     FillModel,
+    LimitsResponseModel,
+    LimitsUpdateRequestModel,
     LivePositionModel,
+    PickBulkRequestModel,
+    PickToggleRequestModel,
     PositionModel,
     RestingOrderModel,
+    ThresholdsUpdateRequestModel,
     TradingBrainCheckModel,
     TradingBrainSyncModel,
     TradingBrainSyncRequestModel,
@@ -32,6 +38,7 @@ from app.server.schemas.trading import (
     TradingReadinessCheckModel,
     TradingReadinessModel,
     TradingSnapshotModel,
+    WalletBalanceResponseModel,
 )
 from app.server.services.board_cache import BoardCache
 from app.trading.decision_brain import default_brain_status, load_last_brain_status, sync_decision_brain
@@ -419,6 +426,163 @@ def trading_loop_start(request: Request, payload: TradingLoopStartRequestModel |
         session_factory=factory,
     )
     return _loop_status_model(status)
+
+
+def _selections_path(request: Request) -> Path:
+    return Path(get_settings().app_data_dir) / "trading_selections.json"
+
+
+def _limits_path() -> Path:
+    return Path(get_settings().trading_limits_path)
+
+
+@router.post("/picks/{candidate_id}/toggle", response_model=TradingLiveSnapshotModel)
+def trading_picks_toggle(
+    request: Request, candidate_id: str, body: PickToggleRequestModel
+) -> TradingLiveSnapshotModel:
+    from app.trading.selections import SelectionStore
+    from app.trading.stream_publisher import TradingStreamPublisher
+
+    store = SelectionStore.load(_selections_path(request))
+    store.set_selection(_board_date_today(), candidate_id, body.included)
+    store.save(today=_board_date_today())
+    publisher: TradingStreamPublisher = request.app.state.trading_stream_publisher
+    publisher.log_event(
+        level="info",
+        message=f"pick {candidate_id} {'included' if body.included else 'excluded'}",
+    )
+    publisher.notify()
+    return _build_live_snapshot(request)
+
+
+@router.post("/picks/bulk", response_model=TradingLiveSnapshotModel)
+def trading_picks_bulk(
+    request: Request, body: PickBulkRequestModel
+) -> TradingLiveSnapshotModel:
+    from app.trading.selections import SelectionStore
+    from app.trading.stream_publisher import TradingStreamPublisher
+
+    snapshot = _build_live_snapshot(request)
+    store = SelectionStore.load(_selections_path(request))
+    today = _board_date_today()
+    if body.action == "deselect_all":
+        store.bulk_set(today, {row.candidate_id: False for row in snapshot.picks})
+    elif body.action == "select_all_hittable":
+        store.bulk_set(
+            today,
+            {row.candidate_id: True for row in snapshot.picks if row.state != "blocked"},
+        )
+    elif body.action == "top_n":
+        n = body.n or 5
+        ranked = sorted(
+            (row for row in snapshot.picks if row.state != "blocked"),
+            key=lambda r: r.edge_bps,
+            reverse=True,
+        )
+        keep_ids = {row.candidate_id for row in ranked[:n]}
+        store.bulk_set(
+            today,
+            {
+                row.candidate_id: (row.candidate_id in keep_ids)
+                for row in snapshot.picks
+                if row.state != "blocked"
+            },
+        )
+    store.save(today=today)
+    publisher: TradingStreamPublisher = request.app.state.trading_stream_publisher
+    publisher.log_event(level="info", message=f"bulk pick action: {body.action}")
+    publisher.notify()
+    return _build_live_snapshot(request)
+
+
+@router.post("/thresholds", response_model=TradingLiveSnapshotModel)
+def trading_thresholds_update(
+    request: Request, body: ThresholdsUpdateRequestModel
+) -> TradingLiveSnapshotModel:
+    from app.trading.selections import SelectionStore
+    from app.trading.stream_publisher import TradingStreamPublisher
+
+    store = SelectionStore.load(_selections_path(request))
+    store.update_thresholds(min_hit_pct=body.min_hit_pct, min_edge_bps=body.min_edge_bps)
+    store.save(today=_board_date_today())
+    publisher: TradingStreamPublisher = request.app.state.trading_stream_publisher
+    publisher.log_event(
+        level="info",
+        message=f"thresholds set: min_hit={body.min_hit_pct:.2f} min_edge={body.min_edge_bps}bp",
+    )
+    publisher.notify()
+    return _build_live_snapshot(request)
+
+
+@router.post("/limits", response_model=LimitsResponseModel)
+def trading_limits_update(
+    request: Request, body: LimitsUpdateRequestModel
+) -> LimitsResponseModel:
+    from app.trading.stream_publisher import TradingStreamPublisher
+
+    path = _limits_path()
+    existing: dict[str, Any] = (
+        json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    )
+    if body.max_open_notional is not None:
+        existing["max_open_notional"] = body.max_open_notional
+        existing["per_market_cap"] = round(body.max_open_notional / 2, 2)
+    if body.daily_loss_cap is not None:
+        existing["daily_loss_cap"] = body.daily_loss_cap
+    if body.reject_cooldown_seconds is not None:
+        existing["reject_cooldown_seconds"] = body.reject_cooldown_seconds
+    if body.per_order_cap_override is not None:
+        existing["per_order_cap_override"] = body.per_order_cap_override
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(existing, indent=2, sort_keys=True), encoding="utf-8")
+    publisher: TradingStreamPublisher = request.app.state.trading_stream_publisher
+    publisher.log_event(level="info", message="limits updated via UI")
+    publisher.notify()
+    return LimitsResponseModel(
+        max_open_notional=float(existing.get("max_open_notional", 0)),
+        per_market_cap=float(existing.get("per_market_cap", 0)),
+        daily_loss_cap=float(existing.get("daily_loss_cap", 0)),
+        reject_cooldown_seconds=int(existing.get("reject_cooldown_seconds", 300)),
+        per_order_cap_override=existing.get("per_order_cap_override"),
+        wallet_init_done_at=existing.get("wallet_init_done_at"),
+    )
+
+
+@router.get("/limits", response_model=LimitsResponseModel)
+def trading_limits_read(request: Request) -> LimitsResponseModel:
+    path = _limits_path()
+    existing: dict[str, Any] = (
+        json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    )
+    return LimitsResponseModel(
+        max_open_notional=float(existing.get("max_open_notional", 0)),
+        per_market_cap=float(existing.get("per_market_cap", 0)),
+        daily_loss_cap=float(existing.get("daily_loss_cap", 0)),
+        reject_cooldown_seconds=int(existing.get("reject_cooldown_seconds", 300)),
+        per_order_cap_override=existing.get("per_order_cap_override"),
+        wallet_init_done_at=existing.get("wallet_init_done_at"),
+    )
+
+
+@router.get("/wallet", response_model=WalletBalanceResponseModel)
+def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
+    from app.trading.wallet_init import _extract_balance
+
+    settings = get_settings()
+    if not (settings.kalshi_api_key_id and settings.kalshi_private_key_path):
+        raise HTTPException(status_code=400, detail="Kalshi credentials not configured")
+    private_key_path = Path(str(settings.kalshi_private_key_path))
+    client = KalshiClient(
+        api_key_id=settings.kalshi_api_key_id,
+        private_key_path=private_key_path,
+        base_url=settings.kalshi_base_url,
+    )
+    try:
+        raw = client.get_balance()
+        balance = _extract_balance(raw)
+    finally:
+        client.close()
+    return WalletBalanceResponseModel(balance=balance, fetched_at=datetime.now(UTC))
 
 
 @router.post("/intent", response_model=TradingIntentResponseModel)
