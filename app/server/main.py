@@ -6,9 +6,12 @@ import secrets
 import sys
 import threading
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date
 from importlib import metadata
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
@@ -42,9 +45,31 @@ from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.live_limits import LimitsConfigError, load_live_limits
 from app.trading.loop_controller import TradingLoopController
+from app.trading.market_book import MarketBook
 from app.trading.risk import ExposureRiskEngine
+from app.trading.ws_consumer import KalshiWsCredentials
+from app.trading.ws_service import KalshiMarketService
 
 _ALLOWED_ORIGINS = ("*",)
+
+
+def _build_market_service() -> KalshiMarketService:
+    settings = get_settings()
+    creds = KalshiWsCredentials(
+        api_key_id=settings.kalshi_api_key_id or "",
+        private_key_path=Path(settings.kalshi_private_key_path)
+        if settings.kalshi_private_key_path
+        else Path(""),
+    )
+    return KalshiMarketService(
+        symbols_path=Path(settings.kalshi_symbols_path),
+        credentials=creds,
+        book=MarketBook(),
+        base_url=settings.kalshi_ws_base_url,
+        ping_interval_seconds=settings.kalshi_ws_ping_interval_seconds,
+        max_backoff_seconds=settings.kalshi_ws_max_backoff_seconds,
+        max_consecutive_auth_failures=settings.kalshi_ws_max_consecutive_auth_failures,
+    )
 
 
 def _ensure_trading_tables() -> None:
@@ -153,7 +178,20 @@ def create_app(
     board_cache: BoardCache | None = None,
     app_token: str | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="NBA Prop Probability Engine API", version=_app_version())
+    market_service = _build_market_service()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        settings = get_settings()
+        _app.state.market_service = market_service
+        if settings.kalshi_ws_enabled:
+            await market_service.start()
+        try:
+            yield
+        finally:
+            await market_service.stop()
+
+    app = FastAPI(title="NBA Prop Probability Engine API", version=_app_version(), lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(_ALLOWED_ORIGINS),
