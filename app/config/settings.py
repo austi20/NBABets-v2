@@ -183,6 +183,18 @@ class Settings(BaseSettings):
     kalshi_ws_ping_interval_seconds: int = 10
     kalshi_ws_max_consecutive_auth_failures: int = 5
     kalshi_live_trading: bool = Field(default=False, alias="KALSHI_LIVE_TRADING")
+    auto_init_budget_from_wallet: bool = Field(
+        default=True, alias="AUTO_INIT_BUDGET_FROM_WALLET"
+    )
+    brain_auto_resync_seconds: int = Field(
+        default=300, alias="BRAIN_AUTO_RESYNC_SECONDS"
+    )
+    sportsbook_refresh_seconds: int = Field(
+        default=600, alias="SPORTSBOOK_REFRESH_SECONDS"
+    )
+    trading_stream_max_hz: float = Field(
+        default=1.0, alias="TRADING_STREAM_MAX_HZ"
+    )
     trading_limits_path: str = Field(
         default="config/trading_limits.json",
         alias="TRADING_LIMITS_PATH",
