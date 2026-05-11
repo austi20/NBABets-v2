@@ -194,6 +194,18 @@ class Settings(BaseSettings):
         default="data/decisions/decisions.json",
         alias="KALSHI_DECISIONS_PATH",
     )
+    kalshi_decision_brain_enabled: bool = Field(default=True, alias="KALSHI_DECISION_BRAIN_ENABLED")
+    kalshi_decision_brain_root: Path | None = Field(default=None, alias="KALSHI_DECISION_BRAIN_ROOT")
+    kalshi_decision_brain_candidate_limit: int = Field(
+        default=25,
+        ge=1,
+        le=250,
+        alias="KALSHI_DECISION_BRAIN_CANDIDATE_LIMIT",
+    )
+    kalshi_decision_brain_auto_sync_on_startup: bool = Field(
+        default=True,
+        alias="KALSHI_DECISION_BRAIN_AUTO_SYNC_ON_STARTUP",
+    )
     stats_provider: str = Field(default="balldontlie", alias="STATS_PROVIDER")
     odds_provider: str = Field(default="balldontlie", alias="ODDS_PROVIDER")
     injury_provider: str = Field(default="balldontlie", alias="INJURY_PROVIDER")
@@ -358,7 +370,13 @@ class Settings(BaseSettings):
     def _relative_runtime_paths(cls, value: object) -> object:
         return _resolve_runtime_path(value)
 
-    @field_validator("ai_local_server_binary", "ai_local_model_path", "kalshi_private_key_path", mode="before")
+    @field_validator(
+        "ai_local_server_binary",
+        "ai_local_model_path",
+        "kalshi_private_key_path",
+        "kalshi_decision_brain_root",
+        mode="before",
+    )
     @classmethod
     def _empty_local_ai_paths(cls, value: object) -> object:
         if value is None or value == "":

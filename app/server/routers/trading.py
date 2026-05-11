@@ -16,14 +16,21 @@ from app.server.schemas.trading import (
     LivePositionModel,
     PositionModel,
     RestingOrderModel,
+    TradingBrainCheckModel,
+    TradingBrainSyncModel,
+    TradingBrainSyncRequestModel,
     TradingIntentRequestModel,
     TradingIntentResponseModel,
+    TradingLoopStartRequestModel,
+    TradingLoopStatusModel,
     TradingPnlModel,
     TradingQuoteModel,
     TradingReadinessCheckModel,
     TradingReadinessModel,
     TradingSnapshotModel,
 )
+from app.server.services.board_cache import BoardCache
+from app.trading.decision_brain import default_brain_status, load_last_brain_status, sync_decision_brain
 from app.trading.loop import set_kill_switch
 from app.trading.mapper import signal_to_market_ref
 from app.trading.monitoring import (
@@ -142,7 +149,52 @@ def _readiness_model(readiness) -> TradingReadinessModel:  # noqa: ANN001
         market_status=readiness.market_status,
         executable_symbol_count=readiness.executable_symbol_count,
         unresolved_symbol_count=readiness.unresolved_symbol_count,
+        brain_state=readiness.brain_state,
+        brain_policy_version=readiness.brain_policy_version,
+        brain_selected_candidate_id=readiness.brain_selected_candidate_id,
+        brain_last_sync_at=readiness.brain_last_sync_at,
+        brain_snapshot_dir=readiness.brain_snapshot_dir,
         checks=[TradingReadinessCheckModel(**check.__dict__) for check in readiness.checks],
+    )
+
+
+def _brain_sync_model(result) -> TradingBrainSyncModel:  # noqa: ANN001
+    return TradingBrainSyncModel(
+        state=result.state,
+        policy_version=result.policy_version,
+        policy_hash=result.policy_hash,
+        board_date=result.board_date,
+        mode=result.mode,
+        generated_candidate_count=result.generated_candidate_count,
+        manual_candidate_count=result.manual_candidate_count,
+        exported_target_count=result.exported_target_count,
+        resolved_symbol_count=result.resolved_symbol_count,
+        unresolved_symbol_count=result.unresolved_symbol_count,
+        selected_candidate_id=result.selected_candidate_id,
+        selected_ticker=result.selected_ticker,
+        targets_path=result.targets_path,
+        symbols_path=result.symbols_path,
+        decisions_path=result.decisions_path,
+        snapshot_dir=result.snapshot_dir,
+        checks=[TradingBrainCheckModel(**check.__dict__) for check in result.checks],
+        synced_at=result.synced_at,
+    )
+
+
+def _loop_status_model(status) -> TradingLoopStatusModel:  # noqa: ANN001
+    return TradingLoopStatusModel(
+        state=status.state,
+        message=status.message,
+        pid=status.pid,
+        started_at=status.started_at,
+        ended_at=status.ended_at,
+        return_code=status.return_code,
+        command=status.command,
+        log_path=status.log_path,
+        preflight_output=status.preflight_output,
+        brain_state=status.brain_state,
+        selected_candidate_id=status.selected_candidate_id,
+        selected_ticker=status.selected_ticker,
     )
 
 
@@ -222,6 +274,36 @@ def trading_readiness() -> TradingReadinessModel:
     return _readiness_model(readiness)
 
 
+@router.get("/brain/status", response_model=TradingBrainSyncModel)
+def trading_brain_status() -> TradingBrainSyncModel:
+    settings = get_settings()
+    try:
+        result = load_last_brain_status(settings) or default_brain_status(settings)
+    except Exception as exc:  # noqa: BLE001 - status should degrade into a visible API error
+        raise HTTPException(status_code=500, detail=f"Decision brain status unavailable: {exc}") from exc
+    return _brain_sync_model(result)
+
+
+@router.post("/brain/sync", response_model=TradingBrainSyncModel)
+def trading_brain_sync(request: Request, payload: TradingBrainSyncRequestModel) -> TradingBrainSyncModel:
+    settings = get_settings()
+    board_cache = getattr(request.app.state, "board_cache", None) or BoardCache()
+    try:
+        board_entry = board_cache.populate(payload.board_date)
+    except Exception as exc:  # noqa: BLE001 - caller needs a clear setup failure
+        raise HTTPException(status_code=500, detail=f"Could not build prop board for decision brain: {exc}") from exc
+    result = sync_decision_brain(
+        settings=settings,
+        board_entry=board_entry,
+        board_date=payload.board_date or board_entry.board_date,
+        mode=payload.mode,
+        candidate_limit=payload.candidate_limit,
+        resolve_markets=payload.resolve_markets,
+        build_pack=payload.build_pack,
+    )
+    return _brain_sync_model(result)
+
+
 @router.get("/fills/recent", response_model=list[FillModel])
 def trading_recent_fills(
     request: Request,
@@ -238,7 +320,38 @@ def trading_kill_switch(request: Request) -> TradingPnlModel:
     factory = getattr(request.app.state, "trading_session_factory", None)
     if factory is not None:
         set_kill_switch(factory, killed=True, set_by="api")
+    controller = getattr(request.app.state, "trading_loop_controller", None)
+    if controller is not None and factory is not None:
+        controller.kill(session_factory=factory)
     return _pnl_model(request)
+
+
+@router.get("/loop/status", response_model=TradingLoopStatusModel)
+def trading_loop_status(request: Request) -> TradingLoopStatusModel:
+    controller = request.app.state.trading_loop_controller
+    return _loop_status_model(controller.status())
+
+
+@router.post("/loop/start", response_model=TradingLoopStatusModel)
+def trading_loop_start(request: Request, payload: TradingLoopStartRequestModel | None = None) -> TradingLoopStatusModel:
+    settings = get_settings()
+    body = payload or TradingLoopStartRequestModel()
+    board_cache = getattr(request.app.state, "board_cache", None) or BoardCache()
+    factory = getattr(request.app.state, "trading_session_factory", None)
+    if factory is None:
+        raise HTTPException(status_code=500, detail="Trading session factory is not configured.")
+    try:
+        board_entry = board_cache.populate(body.board_date)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Could not build prop board for loop start: {exc}") from exc
+    controller = request.app.state.trading_loop_controller
+    status = controller.start(
+        settings=settings,
+        board_entry=board_entry,
+        board_date=body.board_date or board_entry.board_date,
+        session_factory=factory,
+    )
+    return _loop_status_model(status)
 
 
 @router.post("/intent", response_model=TradingIntentResponseModel)

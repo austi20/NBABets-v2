@@ -34,6 +34,12 @@ class DisabledExchangeAdapter(ExchangeAdapter):
 
 
 class KalshiAdapter(DisabledExchangeAdapter):
+    """Disabled-exchange fallback for the Kalshi exchange slot.
+
+    Always rejects orders with a human-readable reason (credentials missing,
+    live flag not set, etc.). The real HTTP client is ``app.trading.kalshi_adapter``.
+    """
+
     def __init__(self, *, reason: str) -> None:
         super().__init__(exchange="kalshi", reason=reason)
 

@@ -243,7 +243,60 @@ export type TradingReadiness = {
   market_status: string | null;
   executable_symbol_count: number;
   unresolved_symbol_count: number;
+  brain_state: string | null;
+  brain_policy_version: string | null;
+  brain_selected_candidate_id: string | null;
+  brain_last_sync_at: string | null;
+  brain_snapshot_dir: string | null;
   checks: TradingReadinessCheck[];
+};
+
+export type TradingBrainSyncRequest = {
+  board_date?: string | null;
+  mode?: "observe" | "supervised-live";
+  candidate_limit?: number | null;
+  resolve_markets?: boolean;
+  build_pack?: boolean;
+};
+
+export type TradingBrainSync = {
+  state: "synced" | "observe_only" | "blocked" | "failed" | string;
+  policy_version: string | null;
+  policy_hash: string | null;
+  board_date: string;
+  mode: string;
+  generated_candidate_count: number;
+  manual_candidate_count: number;
+  exported_target_count: number;
+  resolved_symbol_count: number;
+  unresolved_symbol_count: number;
+  selected_candidate_id: string | null;
+  selected_ticker: string | null;
+  targets_path: string;
+  symbols_path: string;
+  decisions_path: string;
+  snapshot_dir: string | null;
+  checks: TradingReadinessCheck[];
+  synced_at: string;
+};
+
+export type TradingLoopStatus = {
+  state: string;
+  message: string;
+  pid: number | null;
+  started_at: string | null;
+  ended_at: string | null;
+  return_code: number | null;
+  command: string[] | null;
+  log_path: string | null;
+  preflight_output: string | null;
+  brain_state: string | null;
+  selected_candidate_id: string | null;
+  selected_ticker: string | null;
+};
+
+export type TradingLoopStartRequest = {
+  board_date?: string | null;
 };
 
 export type SportsbookQuote = {
@@ -510,6 +563,26 @@ export const api = {
   tradingPnl: () => apiFetch<TradingPnl>("/api/trading/pnl"),
   tradingSnapshot: () => apiFetch<TradingSnapshot>("/api/trading/snapshot"),
   tradingReadiness: () => apiFetch<TradingReadiness>("/api/trading/readiness"),
+  tradingBrainStatus: () => apiFetch<TradingBrainSync>("/api/trading/brain/status"),
+  tradingBrainSync: (body: TradingBrainSyncRequest = {}) =>
+    apiFetch<TradingBrainSync>("/api/trading/brain/sync", {
+      method: "POST",
+      body: JSON.stringify({
+        mode: body.mode ?? "observe",
+        board_date: body.board_date ?? null,
+        candidate_limit: body.candidate_limit ?? null,
+        resolve_markets: body.resolve_markets ?? true,
+        build_pack: body.build_pack ?? true,
+      }),
+    }),
+  tradingLoopStatus: () => apiFetch<TradingLoopStatus>("/api/trading/loop/status"),
+  tradingLoopStart: (body: TradingLoopStartRequest = {}) =>
+    apiFetch<TradingLoopStatus>("/api/trading/loop/start", {
+      method: "POST",
+      body: JSON.stringify({
+        board_date: body.board_date ?? null,
+      }),
+    }),
   tradingRecentFills: (limit = 50) => apiFetch<TradingFill[]>(withQuery("/api/trading/fills/recent", { limit })),
   tradingKillSwitch: () => apiFetch<TradingPnl>("/api/trading/kill-switch", { method: "POST" }),
   tradingIntent: (body: TradingIntentRequest) =>

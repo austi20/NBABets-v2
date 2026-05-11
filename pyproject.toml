@@ -67,7 +67,7 @@ packages = ["app", "llm_train"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra --basetemp=.tmp_pytest"
+addopts = "-ra --basetemp=.tmp_test"
 markers = [
   "integration: tests that require external services or live/demo credentials",
 ]

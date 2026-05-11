@@ -109,6 +109,9 @@ def fetch_markets(
 
 def _combined_market_text(market: dict[str, Any]) -> str:
     parts = [
+        market.get("ticker"),
+        market.get("event_ticker"),
+        market.get("series_ticker"),
         market.get("title"),
         market.get("subtitle"),
         market.get("yes_sub_title"),
@@ -129,6 +132,7 @@ def _contains_any(haystack: str, needles: list[object]) -> bool:
 
 def _market_line_values(market: dict[str, Any]) -> set[float]:
     values = extract_numeric_labels(
+        market.get("ticker"),
         market.get("title"),
         market.get("subtitle"),
         market.get("yes_sub_title"),
@@ -162,17 +166,23 @@ def score_market(target: dict[str, Any], market: dict[str, Any]) -> tuple[int, s
     score = 0
 
     title_terms = rules.get("title_contains_all") or []
-    if title_terms and _contains_all(haystack, title_terms):
+    if title_terms and not _contains_all(haystack, title_terms):
+        return 0, "title"
+    if title_terms:
         score += 40
         reasons.append("title")
 
     player_terms = rules.get("player_name_contains_any") or []
-    if player_terms and _contains_any(haystack, player_terms):
+    if player_terms and not _contains_any(haystack, player_terms):
+        return 0, "player"
+    if player_terms:
         score += 35
         reasons.append("player")
 
     stat_terms = rules.get("stat_contains_any") or []
-    if stat_terms and _contains_any(haystack, stat_terms):
+    if stat_terms and not _contains_any(haystack, stat_terms):
+        return 0, "stat"
+    if stat_terms:
         score += 25
         reasons.append("stat")
 
@@ -186,9 +196,10 @@ def score_market(target: dict[str, Any], market: dict[str, Any]) -> tuple[int, s
         acceptable.add(target_line)
     if acceptable:
         market_lines = _market_line_values(market)
-        if any(any(abs(want - got) < 0.01 for got in market_lines) for want in acceptable):
-            score += 40
-            reasons.append("line")
+        if not any(any(abs(want - got) < 0.01 for got in market_lines) for want in acceptable):
+            return 0, "line"
+        score += 40
+        reasons.append("line")
 
     hint = norm(target.get("event_or_page_hint"))
     if hint and hint in norm(market.get("event_ticker")):
@@ -278,6 +289,42 @@ def _market_scan_needed(target: dict[str, Any]) -> bool:
     return not (_is_executable(target) and _numeric(target.get("line_value")) is None)
 
 
+def _coerce_series_list(value: object) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = str(value).split(",")
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in raw_values:
+        series = str(raw or "").strip()
+        if series and series not in seen:
+            seen.add(series)
+            out.append(series)
+    return out
+
+
+def _series_tickers_for_target(target: dict[str, Any], defaults: list[str]) -> list[str | None]:
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    specific = (
+        _coerce_series_list(target.get("series_tickers"))
+        + _coerce_series_list(target.get("series_ticker"))
+        + _coerce_series_list(rules.get("series_tickers"))
+        + _coerce_series_list(rules.get("series_ticker"))
+    )
+    values = specific or defaults
+    return list(values) if values else [None]
+
+
+def _add_markets_by_ticker(markets_by_ticker: dict[str, dict[str, Any]], markets: list[dict[str, Any]]) -> None:
+    for market in markets:
+        ticker = str(market.get("ticker") or "")
+        if ticker:
+            markets_by_ticker[ticker] = market
+
+
 def _load_candidate_markets(
     *,
     client: httpx.Client,
@@ -285,36 +332,52 @@ def _load_candidate_markets(
     targets: list[dict[str, Any]],
     status: str,
     mve_filter: str,
+    series_ticker: str | None = None,
+    series_tickers: object = None,
 ) -> list[dict[str, Any]]:
     markets_by_ticker: dict[str, dict[str, Any]] = {}
+    default_series = _coerce_series_list(series_tickers) or _coerce_series_list(series_ticker)
     hinted_targets = [target for target in targets if _market_scan_needed(target) and target.get("event_or_page_hint")]
     for target in hinted_targets:
         hint = str(target["event_or_page_hint"])
-        for market in fetch_markets(
-            client=client,
-            base_url=base_url,
-            status=status,
-            event_ticker=hint,
-            mve_filter=mve_filter,
-        ):
-            ticker = str(market.get("ticker") or "")
-            if ticker:
-                markets_by_ticker[ticker] = market
+        for target_series_ticker in _series_tickers_for_target(target, default_series):
+            _add_markets_by_ticker(
+                markets_by_ticker,
+                fetch_markets(
+                    client=client,
+                    base_url=base_url,
+                    status=status,
+                    event_ticker=hint,
+                    series_ticker=target_series_ticker,
+                    mve_filter=mve_filter,
+                ),
+            )
 
     needs_broad_scan = any(
         _market_scan_needed(target) and not target.get("event_or_page_hint")
         for target in targets
     )
     if needs_broad_scan:
-        for market in fetch_markets(
-            client=client,
-            base_url=base_url,
-            status=status,
-            mve_filter=mve_filter,
-        ):
-            ticker = str(market.get("ticker") or "")
-            if ticker:
-                markets_by_ticker[ticker] = market
+        broad_series: list[str | None] = []
+        seen_series: set[str | None] = set()
+        for target in targets:
+            if not _market_scan_needed(target) or target.get("event_or_page_hint"):
+                continue
+            for target_series_ticker in _series_tickers_for_target(target, default_series):
+                if target_series_ticker not in seen_series:
+                    seen_series.add(target_series_ticker)
+                    broad_series.append(target_series_ticker)
+        for target_series_ticker in broad_series or [None]:
+            _add_markets_by_ticker(
+                markets_by_ticker,
+                fetch_markets(
+                    client=client,
+                    base_url=base_url,
+                    status=status,
+                    series_ticker=target_series_ticker,
+                    mve_filter=mve_filter,
+                ),
+            )
 
     return list(markets_by_ticker.values())
 
@@ -333,6 +396,8 @@ def main() -> int:
             targets=targets,
             status=str(defaults.get("market_status") or "open"),
             mve_filter="exclude" if defaults.get("exclude_multivariate", True) else "only",
+            series_ticker=(str(defaults["series_ticker"]) if defaults.get("series_ticker") else None),
+            series_tickers=defaults.get("series_tickers"),
         )
     resolved = resolve_targets(targets, markets, args.min_score)
     args.symbols_out.parent.mkdir(parents=True, exist_ok=True)

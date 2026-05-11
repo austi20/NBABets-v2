@@ -23,3 +23,7 @@ Purpose: make ownership and routing of operations documentation explicit.
 
 - `agent_mode_release_checklist.md` - rollout safety checklist for agent mode.
 - `controlled_auto_rollout.md` - controlled auto-execution gates and rollback conditions.
+
+## Kalshi Trading
+
+- `kalshi_decision_brain.md` - vault-backed decision-brain adapter and authority split for Kalshi market decisions.

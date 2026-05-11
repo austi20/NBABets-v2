@@ -6,6 +6,7 @@ import secrets
 import sys
 import threading
 import traceback
+from datetime import date
 from importlib import metadata
 from logging.handlers import RotatingFileHandler
 from typing import Any, cast
@@ -36,9 +37,11 @@ from app.server.routers.startup import router as startup_router
 from app.server.routers.trading import router as trading_router
 from app.server.services.board_cache import BoardCache
 from app.services.startup import StartupCoordinator
+from app.trading.decision_brain import sync_decision_brain, write_blocked_decision_pack
 from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.live_limits import LimitsConfigError, load_live_limits
+from app.trading.loop_controller import TradingLoopController
 from app.trading.risk import ExposureRiskEngine
 
 _ALLOWED_ORIGINS = ("*",)
@@ -162,10 +165,40 @@ def create_app(
 
     def _on_startup_start() -> None:
         resolved_board_cache.clear()
+        settings = get_settings()
+        if settings.kalshi_decision_brain_enabled:
+            try:
+                write_blocked_decision_pack(
+                    settings=settings,
+                    board_date=date.today(),
+                    mode="startup",
+                    reason="startup data refresh in progress",
+                )
+            except Exception as exc:  # noqa: BLE001 - startup should continue while surfacing stale-pack risk
+                logging.getLogger("nba.sidecar").warning("Could not clear decision pack at startup: %s", exc)
 
     def _on_startup_success(result) -> None:  # noqa: ANN001
         resolved_board_cache.clear()
-        resolved_board_cache.populate(result.board_date)
+        entry = resolved_board_cache.populate(result.board_date)
+        settings = get_settings()
+        if settings.kalshi_decision_brain_enabled and settings.kalshi_decision_brain_auto_sync_on_startup:
+            try:
+                brain_result = sync_decision_brain(
+                    settings=settings,
+                    board_entry=entry,
+                    board_date=result.board_date,
+                    mode="observe",
+                    resolve_markets=True,
+                    build_pack=True,
+                )
+                logging.getLogger("nba.sidecar").info(
+                    "Decision brain startup sync: state=%s selected=%s ticker=%s",
+                    brain_result.state,
+                    brain_result.selected_candidate_id,
+                    brain_result.selected_ticker,
+                )
+            except Exception as exc:  # noqa: BLE001 - startup must still finish if brain sync blocks
+                logging.getLogger("nba.sidecar").warning("Decision brain startup sync failed: %s", exc)
 
     resolved_startup_coordinator = startup_coordinator or StartupCoordinator(
         on_start=_on_startup_start,
@@ -178,6 +211,7 @@ def create_app(
     app.state.trading_session_factory = SessionLocal
     app.state.trading_ledger = InMemoryPortfolioLedger()
     app.state.trading_risk = _build_trading_risk()
+    app.state.trading_loop_controller = TradingLoopController()
     exchange_config = build_exchange_adapter()
     app.state.trading_exchange = exchange_config.exchange
     app.state.trading_adapter = exchange_config.adapter

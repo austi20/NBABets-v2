@@ -13,6 +13,7 @@ comes from ``kalshi_resolution_targets.json`` (edit or generate that list for ne
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from dataclasses import dataclass
@@ -24,6 +25,67 @@ from app.config.settings import Settings
 from app.trading.live_limits import load_live_limits
 from app.trading.monitoring import KalshiPublicMarketDataClient, MonitoredSymbol, fetch_quote_snapshot
 from app.trading.risk import RiskLimits
+
+_log = logging.getLogger(__name__)
+
+_VAULT_PROFILES_SUBPATH = "05 Knowledge and Skills/Data Analysis/NBA Prop Engine Learning/Market Profiles"
+
+def _read_market_profile(market_key: str, vault_root: Path) -> dict[str, Any] | None:
+    """Read brain market profile for *market_key* from the Obsidian vault.
+
+    Returns a dict with ``calibration_strategy``, ``recent_ece``, and ``failure_modes``
+    when the profile file exists and is parseable; ``None`` on any I/O or parse failure.
+    Callers must treat ``None`` as "brain context unavailable" and continue normally.
+    """
+    profile_path = vault_root / _VAULT_PROFILES_SUBPATH / f"{market_key.title()} Profile.md"
+    try:
+        text = profile_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    result: dict[str, Any] = {"market": market_key}
+    ece_history: list[float] = []
+    failure_modes: list[str] = []
+    in_ece = False
+    in_failures = False
+
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## ECE History"):
+            in_ece, in_failures = True, False
+            continue
+        if s.startswith("## Known Failure Modes"):
+            in_ece, in_failures = False, True
+            continue
+        if s.startswith("##"):
+            in_ece, in_failures = False, False
+            continue
+        if s.startswith("- **Calibration strategy**:"):
+            result["calibration_strategy"] = s.split(":", 1)[-1].strip()
+        elif s.startswith("- **Corrections applied**:"):
+            try:
+                result["corrections_applied"] = int(s.split(":", 1)[-1].strip())
+            except ValueError:
+                pass
+        elif s.startswith("- **Average ECE improvement**:"):
+            try:
+                result["avg_ece_improvement"] = float(s.split(":", 1)[-1].strip())
+            except ValueError:
+                pass
+        if in_ece and s.startswith("- ") and ":" in s:
+            try:
+                ece_history.append(float(s[2:].split(":", 1)[-1].strip()))
+            except ValueError:
+                pass
+        if in_failures and s.startswith("- ") and s != "- none observed":
+            failure_modes.append(s[2:].strip())
+
+    if ece_history:
+        result["recent_ece"] = ece_history[-1]
+    if failure_modes:
+        result["failure_modes"] = failure_modes
+    return result if len(result) > 1 else None
+
 
 _EXECUTABLE_REC = frozenset({"buy_yes", "buy_no", "over", "under", "yes", "no"})
 _OPEN_MARKET_STATUSES = frozenset({"open", "active"})
@@ -67,7 +129,13 @@ def pick_executable_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any
     out: list[dict[str, Any]] = []
     for row in entries:
         rec = _norm_rec(row.get("recommendation"))
-        if rec not in _EXECUTABLE_REC:
+        original_rec = _norm_rec(row.get("original_recommendation"))
+        selected_observe = (
+            rec == "observe_only"
+            and _norm_rec(row.get("candidate_status")) == "selected_observe_only"
+            and original_rec in _EXECUTABLE_REC
+        )
+        if rec not in _EXECUTABLE_REC and not selected_observe:
             continue
         if not row.get("kalshi_ticker"):
             continue
@@ -90,6 +158,8 @@ def row_to_monitored(row: dict[str, Any]) -> MonitoredSymbol | None:
     if not ticker:
         return None
     rec = _norm_rec(row.get("side", row.get("recommendation")))
+    if rec not in _EXECUTABLE_REC:
+        rec = _norm_rec(row.get("original_recommendation"))
     if rec in {"buy_yes", "over", "yes"}:
         side = "OVER"
     elif rec in {"buy_no", "under", "no"}:
@@ -202,20 +272,34 @@ def build_primary_decision_row(
     defaults: dict[str, Any],
     gate_result: GateResult,
     arm_live: bool,
+    brain_context: dict[str, Any] | None = None,
+    ece_threshold: float | None = None,
 ) -> dict[str, Any]:
     risk = _risk_block(defaults, primary)
     monitored = row_to_monitored(primary)
     if monitored is None:
         raise LivePackBuildError("primary symbol row could not be converted (check line_value, game_date, side)")
-    failed = [k for k, v in gate_result.gates.items() if not v]
-    live_ok = arm_live and not failed
+    # brain_health_ok fails only when a threshold is set AND brain data is present AND ECE exceeds it.
+    # Vault unreachable (brain_context=None) or no threshold configured -> fail-open (True).
+    brain_health_ok = (
+        ece_threshold is None
+        or brain_context is None
+        or brain_context.get("recent_ece", 0.0) <= ece_threshold
+    )
+    all_gates = {**gate_result.gates, "brain_health_ok": brain_health_ok}
+    failed = [k for k, v in all_gates.items() if not v]
     recommendation = _normalize_recommendation(primary)
+    live_ok = arm_live and recommendation in _EXECUTABLE_REC and not failed
     notes: list[str] = [
         f"pack_builder_at={datetime.now(UTC).isoformat()}",
         f"entry={gate_result.entry} spread={gate_result.spread}",
     ]
+    if arm_live and recommendation not in _EXECUTABLE_REC:
+        notes.append(f"not_live_executable={recommendation}")
     if gate_result.quote_error:
         notes.append(f"quote_error={gate_result.quote_error}")
+    if not brain_health_ok and brain_context is not None:
+        notes.append(f"brain_ece={brain_context.get('recent_ece')} exceeds threshold={ece_threshold}")
     if failed:
         notes.append(f"gates_failed={','.join(failed)}")
 
@@ -228,6 +312,7 @@ def build_primary_decision_row(
         "post_only": bool(risk.get("post_only", True)),
         "time_in_force": str(risk.get("time_in_force") or "good_till_canceled"),
     }
+    brain_block: dict[str, Any] = {k: v for k, v in (brain_context or {}).items() if k != "market"}
 
     if live_ok:
         return {
@@ -242,7 +327,8 @@ def build_primary_decision_row(
             "player_id": monitored.player_id,
             "game_date": monitored.game_date,
             "kalshi": kalshi_block,
-            "gates": dict(gate_result.gates),
+            "brain": brain_block,
+            "gates": all_gates,
             "execution": {"allow_live_submit": True, "client_order_id": None},
             "notes": notes,
         }
@@ -259,7 +345,8 @@ def build_primary_decision_row(
         "player_id": monitored.player_id,
         "game_date": monitored.game_date,
         "kalshi": kalshi_block,
-        "gates": dict(gate_result.gates),
+        "brain": brain_block,
+        "gates": all_gates,
         "execution": {"allow_live_submit": False, "client_order_id": None},
         "notes": notes,
     }
@@ -299,6 +386,9 @@ def write_live_decision_pack(
     spread_cap = max_spread
     if spread_cap is None:
         spread_cap = float(os.getenv("LIVE_PACK_MAX_SPREAD", "0.25"))
+    vault_root = Path(settings.brain_vault_root)
+    _ece_env = os.getenv("LIVE_PACK_MAX_ECE")
+    ece_threshold: float | None = float(_ece_env) if _ece_env else None
 
     primary = executable[0]
     monitored = row_to_monitored(primary)
@@ -316,6 +406,7 @@ def write_live_decision_pack(
         rows_to_quote.append((other, om, _risk_block(defaults, other)))
 
     quotes_and_gates: list[tuple[dict[str, Any], GateResult]] = []
+    brain_contexts: list[dict[str, Any] | None] = []
     with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as client:
         for nrow, nmon, nrisk in rows_to_quote:
             nquote = fetch_quote_snapshot(nmon, client)
@@ -327,6 +418,8 @@ def write_live_decision_pack(
                 max_spread=spread_cap,
             )
             quotes_and_gates.append((nrow, ng))
+            mk = str(nrow.get("market_key", ""))
+            brain_contexts.append(_read_market_profile(mk, vault_root) if mk else None)
 
     gate_result = quotes_and_gates[0][1]
     if arm_live:
@@ -343,11 +436,16 @@ def write_live_decision_pack(
         defaults=defaults,
         gate_result=gate_result,
         arm_live=arm_live,
+        brain_context=brain_contexts[0],
+        ece_threshold=ece_threshold,
     )
     extra: list[dict[str, Any]] = []
-    for nrow, ng in quotes_and_gates[1:]:
+    for (nrow, ng), bc in zip(quotes_and_gates[1:], brain_contexts[1:], strict=True):
         extra.append(
-            build_primary_decision_row(nrow, defaults=defaults, gate_result=ng, arm_live=False),
+            build_primary_decision_row(
+                nrow, defaults=defaults, gate_result=ng, arm_live=False,
+                brain_context=bc, ece_threshold=ece_threshold,
+            ),
         )
 
     doc = build_pack_document([row, *extra])

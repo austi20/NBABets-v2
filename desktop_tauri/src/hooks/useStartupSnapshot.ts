@@ -20,11 +20,8 @@ export function useStartupSnapshot(): StartupSnapshotState {
   const startupKickoffRef = useRef(false);
   const startupKickoffInFlightRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
-  const snapshotRef = useRef<StartupSnapshot | null>(null);
-
-  useEffect(() => {
-    snapshotRef.current = snapshot;
-  }, [snapshot]);
+  /** Updated synchronously on every snapshot so SSE `onerror` does not race React's async ref. */
+  const latestSnapshotRef = useRef<StartupSnapshot | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -59,6 +56,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
     pollTimerRef.current = window.setInterval(async () => {
       try {
         const next = await api.startupSnapshot();
+        latestSnapshotRef.current = next;
         setSnapshot(next);
         setErrorMessage(null);
         if (!next.completed && !next.failed && next.current_step === "Waiting to start") {
@@ -89,6 +87,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
         if (cancelled) {
           return;
         }
+        latestSnapshotRef.current = next;
         setSnapshot(next);
         setErrorMessage(null);
         if (!next.completed && !next.failed && next.current_step === "Waiting to start") {
@@ -123,6 +122,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
     source.addEventListener("snapshot", (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent<string>).data) as StartupSnapshot;
+        latestSnapshotRef.current = parsed;
         setSnapshot(parsed);
       } catch {
         setErrorMessage("Received malformed startup snapshot event");
@@ -131,7 +131,7 @@ export function useStartupSnapshot(): StartupSnapshotState {
 
     source.onerror = () => {
       setStreamConnected(false);
-      const current = snapshotRef.current;
+      const current = latestSnapshotRef.current;
       if (!current?.completed && !current?.failed) {
         startPolling();
       }

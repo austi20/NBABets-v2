@@ -1,13 +1,15 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { createRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   api,
+  type TradingBrainSync,
   type TradingExchangePosition,
   type TradingFill,
   type TradingLivePosition,
+  type TradingLoopStatus,
   type TradingQuote,
   type TradingReadiness,
   type TradingReadinessCheck,
@@ -26,6 +28,7 @@ const FALLBACK_LOSS_CAP = 10;
 function TradingPage() {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [brainMode, setBrainMode] = useState<"observe" | "supervised-live">("observe");
   const [newFillIds, setNewFillIds] = useState<Set<string>>(new Set());
   const previousFillIdsRef = useRef<Set<string>>(new Set());
 
@@ -48,6 +51,20 @@ function TradingPage() {
     queryFn: api.tradingReadiness,
     staleTime: 5_000,
     refetchInterval: 5_000,
+  });
+
+  const brainStatusQuery = useQuery({
+    queryKey: ["trading", "brain"],
+    queryFn: api.tradingBrainStatus,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+  });
+
+  const loopStatusQuery = useQuery({
+    queryKey: ["trading", "loop"],
+    queryFn: api.tradingLoopStatus,
+    staleTime: 2_000,
+    refetchInterval: 2_000,
   });
 
   const fillsQuery = useQuery({
@@ -95,12 +112,42 @@ function TradingPage() {
 
   const sparkData = useMemo(() => buildPnlSparkData(fillsQuery.data ?? []), [fillsQuery.data]);
 
+  const syncBrain = useMutation({
+    mutationFn: () =>
+      api.tradingBrainSync({
+        mode: brainMode,
+        resolve_markets: true,
+        build_pack: true,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trading", "brain"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "readiness"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "snapshot"] }),
+      ]);
+    },
+  });
+
+  const startLoop = useMutation({
+    mutationFn: () => api.tradingLoopStart(),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trading", "loop"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "pnl"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "readiness"] }),
+        queryClient.invalidateQueries({ queryKey: ["trading", "brain"] }),
+      ]);
+    },
+  });
+
   const triggerKillSwitch = async () => {
     await api.tradingKillSwitch();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["trading", "pnl"] }),
       queryClient.invalidateQueries({ queryKey: ["trading", "snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["trading", "fills"] }),
+      queryClient.invalidateQueries({ queryKey: ["trading", "loop"] }),
     ]);
     setConfirmOpen(false);
   };
@@ -136,6 +183,28 @@ function TradingPage() {
         readiness={readinessQuery.data}
         loading={readinessQuery.isLoading}
         error={readinessQuery.error}
+      />
+
+      <DecisionBrainPanel
+        brain={brainStatusQuery.data}
+        loading={brainStatusQuery.isLoading}
+        error={brainStatusQuery.error}
+        mode={brainMode}
+        onModeChange={setBrainMode}
+        syncing={syncBrain.isPending}
+        syncError={syncBrain.error}
+        onSync={() => syncBrain.mutate()}
+      />
+
+      <TradingLoopPanel
+        loop={loopStatusQuery.data}
+        loading={loopStatusQuery.isLoading}
+        error={loopStatusQuery.error}
+        starting={startLoop.isPending}
+        startError={startLoop.error}
+        onStart={() => startLoop.mutate()}
+        killSwitchActive={killSwitchActive}
+        onKill={() => setConfirmOpen(true)}
       />
 
       <div className="trading-grid">
@@ -458,6 +527,156 @@ function ReadinessPanel({
   );
 }
 
+function DecisionBrainPanel({
+  brain,
+  loading,
+  error,
+  mode,
+  onModeChange,
+  syncing,
+  syncError,
+  onSync,
+}: {
+  brain: TradingBrainSync | undefined;
+  loading: boolean;
+  error: unknown;
+  mode: "observe" | "supervised-live";
+  onModeChange: (mode: "observe" | "supervised-live") => void;
+  syncing: boolean;
+  syncError: unknown;
+  onSync: () => void;
+}) {
+  const state = brain?.state ?? "loading";
+  const checks = brain?.checks ?? [];
+  return (
+    <section className={`trading-card trading-readiness ${state === "synced" || state === "observe_only" ? "ready" : "blocked"}`}>
+      <div className="trading-card-head">
+        <h2>Decision Brain</h2>
+        <span className={`readiness-pill ${state === "synced" || state === "observe_only" ? "ready" : "blocked"}`}>
+          {formatBrainState(state)}
+        </span>
+      </div>
+      {loading ? (
+        <div className="slate-skeleton-card" />
+      ) : error ? (
+        <p className="decision-send-note error">
+          Unable to load decision brain: {error instanceof Error ? error.message : "unknown error"}
+        </p>
+      ) : brain ? (
+        <>
+          <div className="readiness-meta tabular">
+            <span>{brain.policy_version ?? "No policy"}</span>
+            <span>{brain.selected_candidate_id ?? "No candidate"}</span>
+            <span>{brain.selected_ticker ?? "No ticker"}</span>
+            <span>{brain.exported_target_count} target(s)</span>
+            <span>{brain.resolved_symbol_count} symbol(s)</span>
+            <span>{brain.unresolved_symbol_count} unresolved</span>
+          </div>
+          <div className="kill-confirm-actions">
+            <button
+              type="button"
+              className={`decision-sort-btn ${mode === "observe" ? "active" : ""}`}
+              onClick={() => onModeChange("observe")}
+            >
+              Observe
+            </button>
+            <button
+              type="button"
+              className={`decision-sort-btn ${mode === "supervised-live" ? "active" : ""}`}
+              onClick={() => onModeChange("supervised-live")}
+            >
+              Supervised Live
+            </button>
+            <button type="button" className="kill-switch-btn" disabled={syncing} onClick={onSync}>
+              {syncing ? "Syncing..." : "Sync Brain"}
+            </button>
+          </div>
+          <p className="readiness-summary">
+            Last sync {formatTime(brain.synced_at)}; snapshot {brain.snapshot_dir ?? "not written"}
+          </p>
+          {syncError ? (
+            <p className="decision-send-note error">
+              Sync failed: {syncError instanceof Error ? syncError.message : "unknown error"}
+            </p>
+          ) : null}
+          <div className="readiness-check-grid">
+            {checks.slice(0, 8).map((check) => (
+              <ReadinessCheckRow key={check.key} check={check} />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function TradingLoopPanel({
+  loop,
+  loading,
+  error,
+  starting,
+  startError,
+  onStart,
+  killSwitchActive,
+  onKill,
+}: {
+  loop: TradingLoopStatus | undefined;
+  loading: boolean;
+  error: unknown;
+  starting: boolean;
+  startError: unknown;
+  onStart: () => void;
+  killSwitchActive: boolean;
+  onKill: () => void;
+}) {
+  const state = loop?.state ?? "loading";
+  const running = state === "running" || state === "starting";
+  return (
+    <section className={`trading-card trading-readiness ${running || state === "exited" ? "ready" : state === "idle" ? "" : "blocked"}`}>
+      <div className="trading-card-head">
+        <h2>Auto Trading Loop</h2>
+        <span className={`readiness-pill ${running || state === "exited" ? "ready" : state === "idle" ? "" : "blocked"}`}>
+          {formatLoopState(state)}
+        </span>
+      </div>
+      {loading ? (
+        <div className="slate-skeleton-card" />
+      ) : error ? (
+        <p className="decision-send-note error">
+          Unable to load loop status: {error instanceof Error ? error.message : "unknown error"}
+        </p>
+      ) : loop ? (
+        <>
+          <p className="readiness-summary">{loop.message}</p>
+          <div className="readiness-meta tabular">
+            <span>{loop.pid ? `PID ${loop.pid}` : "No process"}</span>
+            <span>{loop.selected_ticker ?? "No ticker"}</span>
+            <span>{loop.brain_state ?? "No brain state"}</span>
+            <span>{loop.return_code === null ? "No exit code" : `Exit ${loop.return_code}`}</span>
+          </div>
+          <div className="kill-confirm-actions">
+            <button type="button" className="kill-switch-btn" disabled={running || starting} onClick={onStart}>
+              {starting ? "Starting..." : running ? "Loop Running" : "Start Auto Trading Loop"}
+            </button>
+            <button type="button" className="decision-sort-btn" disabled={killSwitchActive && !running} onClick={onKill}>
+              {killSwitchActive ? "Kill Switch Engaged" : "Kill Loop"}
+            </button>
+          </div>
+          {loop.log_path ? <p className="readiness-summary">Log: {loop.log_path}</p> : null}
+          {startError ? (
+            <p className="decision-send-note error">
+              Start failed: {startError instanceof Error ? startError.message : "unknown error"}
+            </p>
+          ) : null}
+          {loop.preflight_output && state !== "running" ? (
+            <p className="decision-send-note error">{shortPreflight(loop.preflight_output)}</p>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function ReadinessCheckRow({ check }: { check: TradingReadinessCheck }) {
   return (
     <div className={`readiness-check ${check.status}`}>
@@ -572,6 +791,49 @@ function formatReadinessState(state: string): string {
     return "Blocked";
   }
   return "Checking";
+}
+
+function formatBrainState(state: string): string {
+  if (state === "synced") {
+    return "Live Pack Ready";
+  }
+  if (state === "observe_only") {
+    return "Observe Only";
+  }
+  if (state === "blocked") {
+    return "Blocked";
+  }
+  if (state === "failed") {
+    return "Failed";
+  }
+  return "Checking";
+}
+
+function formatLoopState(state: string): string {
+  if (state === "running") {
+    return "Running";
+  }
+  if (state === "starting") {
+    return "Starting";
+  }
+  if (state === "blocked") {
+    return "Blocked";
+  }
+  if (state === "killed") {
+    return "Killed";
+  }
+  if (state === "exited") {
+    return "Exited";
+  }
+  if (state === "failed") {
+    return "Failed";
+  }
+  return "Idle";
+}
+
+function shortPreflight(value: string): string {
+  const lines = value.trim().split(/\r?\n/).filter(Boolean);
+  return lines.slice(-4).join(" | ");
 }
 
 function buildPnlSparkData(fills: TradingFill[]) {

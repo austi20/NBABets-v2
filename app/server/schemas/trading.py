@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.trading.types import Fill, Position
 
@@ -171,7 +172,67 @@ class TradingReadinessModel(BaseModel):
     market_status: str | None
     executable_symbol_count: int
     unresolved_symbol_count: int
+    brain_state: str | None = None
+    brain_policy_version: str | None = None
+    brain_selected_candidate_id: str | None = None
+    brain_last_sync_at: datetime | None = None
+    brain_snapshot_dir: str | None = None
     checks: list[TradingReadinessCheckModel]
+
+
+class TradingBrainCheckModel(BaseModel):
+    key: str
+    label: str
+    status: str
+    detail: str
+
+
+class TradingBrainSyncRequestModel(BaseModel):
+    board_date: date | None = None
+    mode: Literal["observe", "supervised-live"] = "observe"
+    candidate_limit: int | None = Field(default=None, ge=1, le=250)
+    resolve_markets: bool = True
+    build_pack: bool = True
+
+
+class TradingBrainSyncModel(BaseModel):
+    state: str
+    policy_version: str | None
+    policy_hash: str | None
+    board_date: str
+    mode: str
+    generated_candidate_count: int
+    manual_candidate_count: int
+    exported_target_count: int
+    resolved_symbol_count: int
+    unresolved_symbol_count: int
+    selected_candidate_id: str | None
+    selected_ticker: str | None
+    targets_path: str
+    symbols_path: str
+    decisions_path: str
+    snapshot_dir: str | None
+    checks: list[TradingBrainCheckModel]
+    synced_at: datetime
+
+
+class TradingLoopStatusModel(BaseModel):
+    state: str
+    message: str
+    pid: int | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    return_code: int | None = None
+    command: list[str] | None = None
+    log_path: str | None = None
+    preflight_output: str | None = None
+    brain_state: str | None = None
+    selected_candidate_id: str | None = None
+    selected_ticker: str | None = None
+
+
+class TradingLoopStartRequestModel(BaseModel):
+    board_date: date | None = None
 
 
 class TradingIntentRequestModel(BaseModel):

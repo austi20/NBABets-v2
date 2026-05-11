@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.settings import Settings
+from app.trading.decision_brain import load_last_brain_status
 from app.trading.live_pack_builder import load_symbols_entries, pick_executable_entries
 from app.trading.monitoring import MarketDataClient, MonitoredSymbol, fetch_quote_snapshot
 
@@ -46,6 +47,11 @@ class TradingReadiness:
     market_status: str | None
     executable_symbol_count: int
     unresolved_symbol_count: int
+    brain_state: str | None
+    brain_policy_version: str | None
+    brain_selected_candidate_id: str | None
+    brain_last_sync_at: datetime | None
+    brain_snapshot_dir: str | None
     checks: list[ReadinessCheck]
 
 
@@ -61,6 +67,37 @@ def build_trading_readiness(
     symbols_path = Path(settings.kalshi_symbols_path)
     key_path = Path(settings.kalshi_private_key_path) if settings.kalshi_private_key_path else None
     credentials_ok = bool(settings.kalshi_api_key_id and key_path is not None and key_path.exists())
+    brain_state: str | None = None
+    brain_policy_version: str | None = None
+    brain_selected_candidate_id: str | None = None
+    brain_last_sync_at: datetime | None = None
+    brain_snapshot_dir: str | None = None
+    try:
+        brain_status = load_last_brain_status(settings)
+    except Exception as exc:  # noqa: BLE001 - readiness should report partial status
+        brain_status = None
+        checks.append(
+            ReadinessCheck(
+                key="brain_status",
+                label="Decision brain",
+                status="warn",
+                detail=f"Could not read last sync status: {exc}",
+            )
+        )
+    if brain_status is not None:
+        brain_state = brain_status.state
+        brain_policy_version = brain_status.policy_version
+        brain_selected_candidate_id = brain_status.selected_candidate_id
+        brain_last_sync_at = brain_status.synced_at
+        brain_snapshot_dir = brain_status.snapshot_dir
+        checks.append(
+            ReadinessCheck(
+                key="brain_status",
+                label="Decision brain",
+                status="pass" if brain_status.state in {"synced", "observe_only"} else "warn",
+                detail=f"{brain_status.state}; selected={brain_status.selected_candidate_id or 'none'}",
+            )
+        )
 
     _add_check(
         checks,
@@ -257,6 +294,11 @@ def build_trading_readiness(
         market_status=market_status,
         executable_symbol_count=executable_symbol_count,
         unresolved_symbol_count=unresolved_symbol_count,
+        brain_state=brain_state,
+        brain_policy_version=brain_policy_version,
+        brain_selected_candidate_id=brain_selected_candidate_id,
+        brain_last_sync_at=brain_last_sync_at,
+        brain_snapshot_dir=brain_snapshot_dir,
         checks=checks,
     )
 

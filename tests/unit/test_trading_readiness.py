@@ -34,6 +34,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _settings(tmp_path: Path, *, decisions: Path, symbols: Path, key_path: Path) -> Settings:
     key_path.write_text("fake-key", encoding="utf-8")
     return Settings(
+        SNAPSHOT_DIR=str(tmp_path / "snapshots"),
         KALSHI_LIVE_TRADING=True,
         KALSHI_API_KEY_ID="key-id",
         KALSHI_PRIVATE_KEY_PATH=key_path,
@@ -121,6 +122,48 @@ def test_trading_readiness_blocks_stale_or_finalized_pack(tmp_path: Path) -> Non
     failed = {check.key for check in readiness.checks if check.status == "fail"}
     assert "game_date" in failed
     assert "market_open" in failed
+
+
+def test_trading_readiness_includes_last_brain_sync_status(tmp_path: Path) -> None:
+    decisions = tmp_path / "decisions.json"
+    symbols = tmp_path / "symbols.json"
+    settings = _settings(tmp_path, decisions=decisions, symbols=symbols, key_path=tmp_path / "key.pem")
+    _write_json(decisions, _ready_decision())
+    _write_json(symbols, _symbols())
+    status_path = Path(settings.snapshot_dir) / "kalshi_decision_brain_status.json"
+    _write_json(
+        status_path,
+        {
+            "state": "observe_only",
+            "policy_version": "2026-05-08-a",
+            "policy_hash": "abc123",
+            "board_date": "2026-05-08",
+            "mode": "observe",
+            "generated_candidate_count": 1,
+            "manual_candidate_count": 0,
+            "exported_target_count": 1,
+            "resolved_symbol_count": 1,
+            "unresolved_symbol_count": 0,
+            "selected_candidate_id": "candidate-1",
+            "selected_ticker": "KX-TEST",
+            "targets_path": "targets.json",
+            "symbols_path": "symbols.json",
+            "decisions_path": "decisions.json",
+            "snapshot_dir": "snapshots/brain",
+            "checks": [],
+            "synced_at": "2026-05-08T12:00:00+00:00",
+        },
+    )
+
+    readiness = build_trading_readiness(
+        settings=settings,
+        market_client=_FakeMarketClient(),
+        today=date(2026, 5, 8),
+    )
+
+    assert readiness.brain_state == "observe_only"
+    assert readiness.brain_policy_version == "2026-05-08-a"
+    assert readiness.brain_selected_candidate_id == "candidate-1"
 
 
 def test_settings_resolves_relative_kalshi_paths_from_explicit_env(monkeypatch, tmp_path: Path) -> None:

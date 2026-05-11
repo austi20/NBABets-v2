@@ -1,0 +1,448 @@
+from __future__ import annotations
+
+import json
+from datetime import date, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from app.config.settings import Settings
+from app.trading.decision_brain import (
+    DecisionBrainError,
+    FrontmatterError,
+    candidates_from_board,
+    export_resolution_targets,
+    load_manual_candidates,
+    load_policy,
+    merge_candidates,
+    parse_frontmatter_text,
+    rank_and_enrich_symbols,
+    sync_decision_brain,
+)
+
+
+class _FakeMarketClient:
+    def __init__(self, markets: dict[str, dict[str, Any]]) -> None:
+        self._markets = markets
+
+    def get_market(self, ticker: str) -> dict[str, Any]:
+        return {"market": self._markets[ticker]}
+
+
+def _settings(tmp_path: Path, brain_root: Path) -> Settings:
+    return Settings(
+        APP_DATA_DIR=str(tmp_path / "app"),
+        SNAPSHOT_DIR=str(tmp_path / "snapshots"),
+        BRAIN_VAULT_ROOT=str(tmp_path / "vault"),
+        KALSHI_DECISION_BRAIN_ROOT=str(brain_root),
+        KALSHI_RESOLUTION_TARGETS_PATH=str(tmp_path / "config" / "targets.json"),
+        KALSHI_SYMBOLS_PATH=str(tmp_path / "config" / "symbols.json"),
+        KALSHI_DECISIONS_PATH=str(tmp_path / "decisions" / "decisions.json"),
+        TRADING_LIMITS_PATH=str(tmp_path / "config" / "limits.json"),
+    )
+
+
+def _write_policy(root: Path, *, allow_live_submit: bool = False) -> None:
+    policy_path = root / "00 System" / "Policy Core.md"
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    policy_path.write_text(
+        f"""---
+brain_type: policy_core
+policy_version: 2026-05-08-a
+schema_version: 1
+allow_live_submit: {str(allow_live_submit).lower()}
+allowed_market_keys:
+  - points
+  - rebounds
+blocked_market_keys:
+  - turnovers
+min_edge_bps: 450
+min_model_prob: 0.57
+min_confidence: 0.60
+max_price_dollars_default: 0.57
+max_spread_dollars: 0.03
+max_contracts: 1.00
+post_only: true
+time_in_force: good_till_canceled
+same_day_only: true
+ranking_weight_edge_bps: 0.45
+ranking_weight_ev: 0.20
+ranking_weight_liquidity: 0.15
+ranking_weight_calibration: 0.10
+ranking_weight_freshness: 0.10
+---
+# Policy
+""",
+        encoding="utf-8",
+    )
+
+
+def _write_limits(settings: Settings) -> None:
+    path = Path(settings.trading_limits_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "per_order_cap": 0.75,
+                "per_market_cap": 1.0,
+                "max_open_notional": 2.0,
+                "daily_loss_cap": 2.0,
+                "reject_cooldown_seconds": 300,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _board_entry(*, edge: float = 0.074, ev: float = 0.034, confidence: int = 71) -> SimpleNamespace:
+    quote = SimpleNamespace(
+        recommended_side="OVER",
+        hit_probability=0.612,
+        no_vig_market_probability=0.538,
+        line_value=25.5,
+    )
+    opportunity = SimpleNamespace(
+        game_id=123,
+        player_id=237,
+        player_name="LeBron James",
+        market_key="points",
+        consensus_line=25.5,
+        recommended_side="OVER",
+        hit_probability=0.612,
+        data_confidence_score=0.71,
+        game_label="LAL @ GSW",
+        game_start_time="2026-05-09T01:00:00+00:00",
+        quotes=[quote],
+    )
+    insight = SimpleNamespace(
+        best_quote=quote,
+        implied_probability=0.546,
+        edge=edge,
+        expected_profit_per_unit=ev,
+        confidence_score=confidence,
+    )
+    return SimpleNamespace(
+        board_date=date(2026, 5, 8),
+        opportunities=[opportunity],
+        opportunity_insights={(123, 237, "points", 25.5): insight},
+    )
+
+
+def test_frontmatter_parser_accepts_policy_shape_and_rejects_nested_map() -> None:
+    fields, raw = parse_frontmatter_text(
+        """---
+brain_type: policy_core
+allow_live_submit: false
+allowed_market_keys: [points, rebounds]
+blocked_market_keys:
+  - turnovers
+max_contracts: 1.00
+---
+Body
+"""
+    )
+
+    assert fields["allow_live_submit"] is False
+    assert fields["allowed_market_keys"] == ["points", "rebounds"]
+    assert fields["blocked_market_keys"] == ["turnovers"]
+    assert "brain_type" in raw
+
+    with pytest.raises(FrontmatterError):
+        parse_frontmatter_text(
+            """---
+brain_type: policy_core
+ranking_weights:
+  edge_bps: 0.45
+---
+"""
+        )
+
+
+def test_missing_policy_fails_closed(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, tmp_path / "brain")
+
+    with pytest.raises(DecisionBrainError):
+        load_policy(settings)
+
+
+def test_board_opportunity_becomes_kalshi_candidate(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+
+    candidates = candidates_from_board(_board_entry(), policy=policy, limit=25)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.recommendation == "buy_yes"
+    assert candidate.outcome_side == "yes"
+    assert candidate.book_side == "bid"
+    assert candidate.game_date == date(2026, 5, 8)
+    assert candidate.edge_bps == 740
+    assert candidate.stable_id == "2026-05-08_123_237_points_25.5_buy_yes"
+    assert candidate.acceptable_line_values == [25.5, 26.0]
+
+
+def test_vault_candidate_overrides_board_candidate_by_stable_id(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+    board_candidate = candidates_from_board(_board_entry(), policy=policy, limit=25)[0]
+    manual_dir = brain_root / "40 Candidates" / "2026-05-08"
+    manual_dir.mkdir(parents=True, exist_ok=True)
+    (manual_dir / "override.md").write_text(
+        f"""---
+brain_type: candidate
+stable_id: {board_candidate.stable_id}
+board_date: 2026-05-08
+candidate_status: candidate
+market_key: points
+player_id: 237
+player_name: LeBron James
+game_id: 123
+game_date: 2026-05-08
+line_value: 25.5
+recommendation: buy_yes
+outcome_side: yes
+book_side: bid
+model_prob: 0.612
+market_prob: 0.546
+no_vig_market_prob: 0.538
+edge_bps: 740
+ev: 0.034
+confidence: 0.71
+contracts: 1.00
+max_price_dollars: 0.49
+title_contains_all: [LAL, GSW]
+player_name_contains_any: [LeBron James, LeBron]
+stat_contains_any: [points, pts]
+acceptable_line_values: [25.5]
+driver: manual_override
+---
+""",
+        encoding="utf-8",
+    )
+
+    manual = load_manual_candidates(settings, board_date=date(2026, 5, 8), policy=policy)
+    merged = merge_candidates([board_candidate], manual)
+
+    assert len(merged) == 1
+    assert merged[0].source == "board+vault"
+    assert merged[0].max_price_dollars == 0.49
+    assert merged[0].driver == "manual_override"
+
+
+def test_export_writes_resolver_compatible_targets(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+    candidate = candidates_from_board(_board_entry(), policy=policy, limit=25)[0]
+
+    payload, exportable, checks = export_resolution_targets(
+        settings=settings,
+        policy=policy,
+        board_date=date(2026, 5, 8),
+        candidates=[candidate],
+    )
+
+    assert exportable == [candidate]
+    assert payload["defaults"]["series_tickers"] == ["KXNBAPTS"]
+    assert "series_ticker" not in payload["defaults"]
+    assert payload["targets"][0]["series_ticker"] == "KXNBAPTS"
+    assert payload["targets"][0]["recommendation"] == "buy_yes"
+    assert payload["targets"][0]["outcome_side"] == "yes"
+    assert payload["targets"][0]["book_side"] == "bid"
+    assert payload["targets"][0]["match_rules"]["acceptable_line_values"] == [25.5, 26.0]
+    assert Path(settings.kalshi_resolution_targets_path).is_file()
+    assert {check.key for check in checks} >= {"target_export"}
+
+
+def test_ranked_symbol_row_zero_is_deterministic_and_blocks_bad_spread(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    high = candidates_from_board(_board_entry(), policy=policy, limit=25)[0]
+    low = candidates_from_board(_board_entry(edge=0.050, ev=0.020, confidence=65), policy=policy, limit=25)[0]
+    low = type(high)(**{**low.__dict__, "stable_id": low.stable_id.replace("123", "124"), "game_id": "124"})
+    symbols_path = Path(settings.kalshi_symbols_path)
+    symbols_path.parent.mkdir(parents=True, exist_ok=True)
+    symbols_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {
+                        "target_id": low.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 25.5,
+                        "recommendation": "buy_yes",
+                        "kalshi_ticker": "KX-LOW",
+                    },
+                    {
+                        "target_id": high.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 25.5,
+                        "recommendation": "buy_yes",
+                        "kalshi_ticker": "KX-HIGH",
+                    },
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = _FakeMarketClient(
+        {
+            "KX-HIGH": {
+                "status": "open",
+                "yes_bid_dollars": "0.48",
+                "yes_ask_dollars": "0.50",
+                "no_bid_dollars": "0.49",
+                "no_ask_dollars": "0.52",
+            },
+            "KX-LOW": {
+                "status": "open",
+                "yes_bid_dollars": "0.20",
+                "yes_ask_dollars": "0.30",
+                "no_bid_dollars": "0.69",
+                "no_ask_dollars": "0.80",
+            },
+        }
+    )
+
+    ranked, selected, _checks = rank_and_enrich_symbols(
+        settings=settings,
+        policy=policy,
+        candidates=[high, low],
+        market_client=client,
+        today=date(2026, 5, 8),
+    )
+
+    assert selected == high
+    assert ranked["symbols"][0]["stable_id"] == high.stable_id
+    assert ranked["symbols"][0]["recommendation"] == "buy_yes"
+    assert ranked["symbols"][1]["recommendation"] == "observe_only"
+    assert "failed_spread_gate" in ranked["symbols"][1]["brain_blockers"]
+
+
+def test_supervised_live_sync_stays_observe_when_policy_blocks_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=False)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    candidate = candidates_from_board(_board_entry(), policy=policy, limit=25)[0]
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {
+                        "target_id": candidate.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 25.5,
+                        "recommendation": "buy_yes",
+                        "kalshi_ticker": "KX-HIGH",
+                    }
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_write_pack(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        decisions_path = Path(kwargs["decisions_path"])
+        decisions_path.parent.mkdir(parents=True, exist_ok=True)
+        decisions_path.write_text(json.dumps({"version": 1, "decisions": []}), encoding="utf-8")
+        return {"version": 1, "decisions": []}
+
+    monkeypatch.setattr("app.trading.decision_brain.write_live_decision_pack", fake_write_pack)
+    client = _FakeMarketClient(
+        {
+            "KX-HIGH": {
+                "status": "open",
+                "yes_bid_dollars": "0.48",
+                "yes_ask_dollars": "0.50",
+                "no_bid_dollars": "0.49",
+                "no_ask_dollars": "0.52",
+            }
+        }
+    )
+
+    result = sync_decision_brain(
+        settings=settings,
+        board_entry=_board_entry(),
+        board_date=date(2026, 5, 8),
+        mode="supervised-live",
+        resolve_markets=False,
+        build_pack=True,
+        market_client=client,
+        today=date(2026, 5, 8),
+    )
+
+    assert result.state == "observe_only"
+    assert calls[0]["arm_live"] is False
+    assert any(check.key == "policy_live_submit" for check in result.checks)
+    assert datetime.fromisoformat(result.synced_at.isoformat())
+
+
+def test_blocked_sync_clears_stale_decision_pack(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    decisions_path = Path(settings.kalshi_decisions_path)
+    decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "decisions": [
+                    {
+                        "decision_id": "old-live-row",
+                        "mode": "live",
+                        "game_date": "2026-05-07",
+                        "kalshi": {"ticker": "OLD"},
+                        "execution": {"allow_live_submit": True},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    symbols_path = Path(settings.kalshi_symbols_path)
+    symbols_path.parent.mkdir(parents=True, exist_ok=True)
+    symbols_path.write_text(json.dumps({"version": 1, "symbols": [], "unresolved": []}), encoding="utf-8")
+
+    result = sync_decision_brain(
+        settings=settings,
+        board_entry=_board_entry(),
+        board_date=date(2026, 5, 8),
+        mode="supervised-live",
+        resolve_markets=False,
+        build_pack=True,
+        today=date(2026, 5, 8),
+    )
+
+    pack = json.loads(decisions_path.read_text(encoding="utf-8"))
+    assert result.state == "blocked"
+    assert pack["decisions"] == []
+    assert pack["board_date"] == "2026-05-08"
+    assert "no eligible row-zero candidate" in pack["blocked_reason"]

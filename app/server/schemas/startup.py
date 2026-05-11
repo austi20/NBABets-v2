@@ -3,10 +3,26 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.query import BoardAvailability
 from app.services.startup import StartupSnapshot, StartupStep
+
+
+def _json_safe_metrics(value: Any) -> Any:
+    """Recursively coerce snapshot metrics so Pydantic can serialize them (no NumPy scalars)."""
+    if isinstance(value, dict):
+        return {str(k): _json_safe_metrics(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_metrics(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe_metrics(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
 
 
 class StartupRunRequest(BaseModel):
@@ -70,7 +86,7 @@ class StartupSnapshotModel(BaseModel):
             failed=snapshot.failed,
             error_message=snapshot.error_message,
             steps=[StartupStepModel.from_dataclass(step) for step in snapshot.steps],
-            metrics=snapshot.metrics,
+            metrics=_json_safe_metrics(snapshot.metrics),
             log_lines=snapshot.log_lines,
         )
 

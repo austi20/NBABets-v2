@@ -345,17 +345,20 @@ class TrainingPipeline:
         frame = _apply_feature_defaults(frame, trained_feature_columns)
         if rotation_mode == "full":
             absence_profiles = self._load_rotation_shadow_absence_profiles(frame)
+            # Cap branch samples for inference: 10k branches × N teams × DataFrame copy OOMs.
+            # Exact enumeration (<=8 uncertain players) still runs uncapped via enumerate_or_sample_branches.
+            _branch_samples = min(self._settings.simulation_min_samples, 200)
             availability_context = _availability_branch_context(
                 frame,
                 absence_profiles,
                 max_exact_players=8,
-                sampled_branch_count=self._settings.simulation_min_samples,
+                sampled_branch_count=_branch_samples,
             )
             branch_frames_by_team = self._build_branch_simulation_frames(
                 frame=frame,
                 absence_profiles=absence_profiles,
                 max_exact_players=8,
-                sampled_branch_count=self._settings.simulation_min_samples,
+                sampled_branch_count=_branch_samples,
             )
         else:
             availability_context = {}
@@ -2627,15 +2630,15 @@ def _training_data_quality_checks(frame: pd.DataFrame, feature_columns: list[str
     for stat in ("points", "rebounds", "assists"):
         avg_col = f"{stat}_avg_5"
         if avg_col in frame.columns and stat in frame.columns:
-            contaminated = ((frame[avg_col] == 0.0) & (frame[stat] > 0)).sum()
-            contamination_ratio = contaminated / len(frame) if len(frame) > 0 else 0.0
+            contaminated = int(((frame[avg_col] == 0.0) & (frame[stat] > 0)).sum())
+            contamination_ratio = float(contaminated / len(frame)) if len(frame) > 0 else 0.0
             fillna_contamination.append((contamination_ratio, stat))
 
     # P2 CHANGE 6B: Check for insufficient-history rows
     low_history_rows = []
     if "history_games_played" in frame.columns:
-        low_history_count = (frame["history_games_played"] < 5).sum()
-        low_history_ratio = low_history_count / len(frame) if len(frame) > 0 else 0.0
+        low_history_count = int((frame["history_games_played"] < 5).sum())
+        low_history_ratio = float(low_history_count / len(frame)) if len(frame) > 0 else 0.0
         low_history_rows.append((low_history_ratio, "insufficient_history"))
 
     status = "healthy"

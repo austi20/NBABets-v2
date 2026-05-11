@@ -8,6 +8,8 @@ __pycache__/
 pytest-of-*/
 .pytest_tmp_*/
 .tmp_pytest/
+.tmp_pytest_*/
+.tmp_test/
 .tmp_pytest_review/
 .tmp_pyinstaller/
 .tmp_run/
