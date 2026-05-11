@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from datetime import date as _date
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from sse_starlette.sse import EventSourceResponse
 
 from app.config.settings import get_settings
 from app.db.models.trading import TradingKillSwitch
@@ -21,6 +24,7 @@ from app.server.schemas.trading import (
     TradingBrainSyncRequestModel,
     TradingIntentRequestModel,
     TradingIntentResponseModel,
+    TradingLiveSnapshotModel,
     TradingLoopStartRequestModel,
     TradingLoopStatusModel,
     TradingPnlModel,
@@ -45,10 +49,73 @@ from app.trading.monitoring import (
 from app.trading.protocols import PortfolioLedger
 from app.trading.readiness import build_trading_readiness
 from app.trading.risk import RiskLimits
+from app.trading.snapshot_service import TradingSnapshotService
 from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.types import ExecutionIntent, OrderEvent, Signal
 
 router = APIRouter(prefix="/api/trading", tags=["trading"])
+
+
+def _snapshot_service(request: Request) -> TradingSnapshotService:
+    return cast(TradingSnapshotService, request.app.state.trading_snapshot_service)
+
+
+def _board_date_today() -> _date:
+    return _date.today()
+
+
+def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
+    service = _snapshot_service(request)
+    controller = getattr(request.app.state, "trading_loop_controller", None)
+    loop_state = "idle"
+    if controller is not None:
+        try:
+            loop_state = controller.status().state
+        except Exception:  # noqa: BLE001
+            loop_state = "idle"
+    ledger = getattr(request.app.state, "trading_ledger", None)
+    ledger_snapshot = None
+    if ledger is not None and hasattr(ledger, "daily_snapshot"):
+        try:
+            ledger_snapshot = ledger.daily_snapshot()
+        except Exception:  # noqa: BLE001
+            pass
+    return service.build(
+        board_date=_board_date_today(),
+        ledger_state=ledger_snapshot,
+        positions=getattr(ledger_snapshot, "positions", []) if ledger_snapshot else [],
+        fills=getattr(ledger_snapshot, "fills", []) if ledger_snapshot else [],
+        resting_orders=[],
+        loop_state=loop_state,
+        mode="supervised-live",
+        kill_switch_active=getattr(ledger_snapshot, "kill_switch_active", False) if ledger_snapshot else False,
+        readiness=None,
+        brain_status=None,
+    )
+
+
+@router.get("/snapshot-live", response_model=TradingLiveSnapshotModel)
+def trading_snapshot_live(request: Request) -> TradingLiveSnapshotModel:
+    return _build_live_snapshot(request)
+
+
+@router.get("/stream")
+async def trading_stream(request: Request) -> EventSourceResponse:
+    service = _snapshot_service(request)
+
+    async def event_generator() -> Any:
+        last_yielded = ""
+        while True:
+            if await request.is_disconnected():
+                break
+            snapshot = _build_live_snapshot(request)
+            payload = snapshot.model_dump_json()
+            if payload != last_yielded:
+                last_yielded = payload
+                yield {"event": "snapshot", "data": payload}
+            await service.publisher.wait_for_update(timeout=2.0)
+
+    return EventSourceResponse(event_generator())
 
 
 def _ledger(request: Request) -> PortfolioLedger:

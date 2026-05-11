@@ -47,6 +47,8 @@ from app.trading.live_limits import LimitsConfigError, load_live_limits
 from app.trading.loop_controller import TradingLoopController
 from app.trading.market_book import MarketBook
 from app.trading.risk import ExposureRiskEngine
+from app.trading.snapshot_service import TradingSnapshotService
+from app.trading.stream_publisher import TradingStreamPublisher
 from app.trading.ws_consumer import KalshiWsCredentials
 from app.trading.ws_service import KalshiMarketService
 
@@ -253,6 +255,16 @@ def create_app(
     exchange_config = build_exchange_adapter()
     app.state.trading_exchange = exchange_config.exchange
     app.state.trading_adapter = exchange_config.adapter
+    stream_publisher = TradingStreamPublisher()
+    snapshot_service = TradingSnapshotService(
+        settings=get_settings(),
+        market_book=market_service.book,
+        selections_path=Path(get_settings().app_data_dir) / "trading_selections.json",
+        publisher=stream_publisher,
+    )
+    app.state.trading_stream_publisher = stream_publisher
+    app.state.trading_snapshot_service = snapshot_service
+    stream_publisher.log_event(level="info", message="trading stream publisher started")
     app.state.app_token = app_token or secrets.token_urlsafe(24)
     app.add_middleware(
         AppTokenMiddleware,
