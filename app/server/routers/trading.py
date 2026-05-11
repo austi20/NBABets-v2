@@ -129,7 +129,7 @@ def _ledger(request: Request) -> PortfolioLedger:
     factory = getattr(request.app.state, "trading_session_factory", None)
     if factory is not None:
         return SqlPortfolioLedger(factory)
-    return request.app.state.trading_ledger
+    return cast(PortfolioLedger, request.app.state.trading_ledger)
 
 
 def _active_limits(risk_engine) -> ActiveLimitsModel | None:  # noqa: ANN001
@@ -580,6 +580,8 @@ def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
     try:
         raw = client.get_balance()
         balance = _extract_balance(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Kalshi balance fetch failed: {exc}") from exc
     finally:
         client.close()
     return WalletBalanceResponseModel(balance=balance, fetched_at=datetime.now(UTC))
