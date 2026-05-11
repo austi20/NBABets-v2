@@ -33,7 +33,7 @@ class FakeKalshiServer:
     def __init__(self) -> None:
         self.received_subscribes: list[dict] = []
         self.received_headers: list[dict] = []
-        self._server = None
+        self._server: websockets.WebSocketServer | None = None
         self.port: int = 0
         self._connections: list = []
         self._frames_to_send: list[dict] = []
@@ -45,10 +45,14 @@ class FakeKalshiServer:
     def set_auth_reject(self, value: bool) -> None:
         self._auth_reject = value
 
-    async def _handler(self, ws) -> None:
+    async def _process_request(self, connection, request):
         if self._auth_reject:
-            await ws.close(code=4401, reason="unauthorized")
-            return
+            from websockets.datastructures import Headers
+            from websockets.http11 import Response
+            return Response(401, "Unauthorized", Headers(), b"unauthorized")
+        return None
+
+    async def _handler(self, ws) -> None:
         # websockets v16: ServerConnection.request.headers exposes handshake headers.
         request = getattr(ws, "request", None)
         if request is not None and getattr(request, "headers", None) is not None:
@@ -71,7 +75,12 @@ class FakeKalshiServer:
                 self._connections.remove(ws)
 
     async def start(self) -> None:
-        self._server = await websockets.serve(self._handler, "127.0.0.1", 0)
+        self._server = await websockets.serve(
+            self._handler,
+            "127.0.0.1",
+            0,
+            process_request=self._process_request,
+        )
         self.port = self._server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:
@@ -186,3 +195,22 @@ async def test_consumer_reconnects_after_server_close(fake_server, rsa_key_file)
 
     await consumer.stop()
     await asyncio.wait_for(task, timeout=2.0)
+
+
+async def test_consumer_stops_after_max_auth_failures(fake_server, rsa_key_file):
+    book = MarketBook()
+    creds = KalshiWsCredentials(api_key_id="bad-key", private_key_path=rsa_key_file)
+    fake_server.set_auth_reject(True)
+    consumer = KalshiWebSocketConsumer(
+        base_url=f"ws://127.0.0.1:{fake_server.port}",
+        credentials=creds,
+        book=book,
+        tickers=["KXNBA-LAL-W"],
+        ping_interval_seconds=60,
+        max_backoff_seconds=1,
+        max_consecutive_auth_failures=2,
+    )
+    task = asyncio.create_task(consumer.run())
+    await asyncio.wait_for(task, timeout=5.0)
+    assert consumer.consecutive_auth_failures >= 2
+    assert not consumer.is_connected
