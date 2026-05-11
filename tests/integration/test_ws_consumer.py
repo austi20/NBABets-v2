@@ -214,3 +214,35 @@ async def test_consumer_stops_after_max_auth_failures(fake_server, rsa_key_file)
     await asyncio.wait_for(task, timeout=5.0)
     assert consumer.consecutive_auth_failures >= 2
     assert not consumer.is_connected
+
+
+async def test_consumer_uses_ping_interval(fake_server, rsa_key_file, monkeypatch):
+    book = MarketBook()
+    creds = KalshiWsCredentials(api_key_id="key-abc", private_key_path=rsa_key_file)
+    captured: dict = {}
+
+    real_connect = websockets.asyncio.client.connect
+
+    def spy_connect(*args, **kwargs):
+        captured.update(kwargs)
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr("app.trading.ws_consumer.connect", spy_connect)
+
+    consumer = KalshiWebSocketConsumer(
+        base_url=f"ws://127.0.0.1:{fake_server.port}",
+        credentials=creds,
+        book=book,
+        tickers=["KXNBA-LAL-W"],
+        ping_interval_seconds=7,
+        max_backoff_seconds=1,
+        max_consecutive_auth_failures=5,
+    )
+    task = asyncio.create_task(consumer.run())
+    for _ in range(50):
+        if "ping_interval" in captured:
+            break
+        await asyncio.sleep(0.02)
+    await consumer.stop()
+    await asyncio.wait_for(task, timeout=2.0)
+    assert captured.get("ping_interval") == 7

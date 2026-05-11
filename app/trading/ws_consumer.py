@@ -77,6 +77,7 @@ class KalshiWebSocketConsumer:
         self._stop_event = asyncio.Event()
         self._next_subscribe_id = 1
         self._ws: ClientConnection | None = None
+        self._task: asyncio.Task | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -103,8 +104,12 @@ class KalshiWebSocketConsumer:
                 await ws.close()
             except Exception:
                 pass
+        task = self._task
+        if task is not None and not task.done():
+            task.cancel()
 
     async def run(self) -> None:
+        self._task = asyncio.current_task()
         if not self._tickers:
             _LOG.info("Kalshi WS consumer started with no tickers; idling")
             await self._stop_event.wait()
@@ -114,6 +119,10 @@ class KalshiWebSocketConsumer:
             try:
                 await self._run_once()
                 backoff = 1.0  # reset on clean exit
+            except asyncio.CancelledError:
+                if self._state.stopped:
+                    return
+                raise
             except InvalidStatus as exc:
                 if _is_auth_status(exc):
                     self._state.consecutive_auth_failures += 1
@@ -146,7 +155,11 @@ class KalshiWebSocketConsumer:
 
     async def _run_once(self) -> None:
         headers = self._signed_headers()
-        async with connect(self._base_url, additional_headers=headers) as ws:
+        async with connect(
+            self._base_url,
+            additional_headers=headers,
+            ping_interval=self._ping_interval,
+        ) as ws:
             self._ws = ws
             self._state.is_connected = True
             self._state.consecutive_auth_failures = 0
