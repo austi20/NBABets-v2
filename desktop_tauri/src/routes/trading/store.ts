@@ -1,6 +1,6 @@
 // desktop_tauri/src/routes/trading/store.ts
 import { create } from "zustand";
-import type { TradingLiveSnapshot, PickRow, EventLogLine } from "./api/types";
+import type { TradingLiveSnapshot, EventLogLine } from "./api/types";
 
 type SortKey = "candidate_id" | "model_prob" | "edge_bps" | "alloc";
 type SortDir = "asc" | "desc";
@@ -63,32 +63,8 @@ export const useTradingStore = create<TradingState>((set) => ({
 
 // Selector helpers
 
-export function selectVisiblePicks(state: TradingState): PickRow[] {
-  if (!state.snapshot) return [];
-  const all = state.snapshot.picks;
-  const filtered = all.filter((row) => {
-    switch (state.filter) {
-      case "queued":
-        return row.state === "queued";
-      case "excluded":
-        return row.state === "excluded";
-      case "blocked":
-        return row.state === "blocked";
-      default:
-        return true;
-    }
-  });
-  const sorted = [...filtered].sort((a, b) => {
-    const dir = state.sortDir === "asc" ? 1 : -1;
-    const key = state.sortKey;
-    if (key === "candidate_id") {
-      return a.candidate_id.localeCompare(b.candidate_id) * dir;
-    }
-    return (Number(a[key]) - Number(b[key])) * dir;
-  });
-  return sorted;
-}
+const EMPTY_LOG: EventLogLine[] = [];
 
 export function selectEventLog(state: TradingState): EventLogLine[] {
-  return state.snapshot?.event_log ?? [];
+  return state.snapshot?.event_log ?? EMPTY_LOG;
 }

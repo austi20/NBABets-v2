@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTradingStore } from "../store";
 
+const EMPTY: never[] = [];
+
 type FillLike = {
   fill_id?: string;
   market?: { symbol?: string };
@@ -13,7 +15,7 @@ type FillLike = {
 };
 
 export function FillsFeed() {
-  const fills = useTradingStore((s) => s.snapshot?.fills ?? []) as FillLike[];
+  const fills = (useTradingStore((s) => s.snapshot?.fills) ?? EMPTY) as FillLike[];
   const previousIds = useRef<Set<string>>(new Set());
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
 

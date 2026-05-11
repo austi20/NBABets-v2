@@ -104,15 +104,17 @@ class TradingLiveSnapshotBuilder:
         # First pass: build rows without allocation
         pre_rows: list[tuple[dict[str, Any], str, str, bool]] = []
         for _rank, raw in enumerate(raw_rows):
-            candidate_id = str(raw.get("candidate_id") or raw.get("market_key") or "")
+            candidate_id = str(
+                raw.get("candidate_id")
+                or raw.get("decision_id")
+                or raw.get("market_key")
+                or ""
+            )
             if not candidate_id:
                 continue
             gates = raw.get("gates") or {}
             blocker_reason = self._gate_blocker(gates, raw.get("mode"))
-            below_thresholds = (
-                float(raw.get("model_prob") or 0.0) < thresholds.min_hit_pct
-                or int(raw.get("edge_bps") or 0) < thresholds.min_edge_bps
-            )
+            below_thresholds = float(raw.get("model_prob") or 0.0) < thresholds.min_hit_pct
             user_selected = inputs.selections.is_selected(inputs.board_date, candidate_id)
             if blocker_reason is not None:
                 state: str = "blocked"
@@ -185,10 +187,14 @@ class TradingLiveSnapshotBuilder:
         return None
 
     def _prop_label(self, raw: dict[str, Any]) -> str:
+        title = raw.get("market_label") or raw.get("title")
+        if title and (raw.get("player_name") or "?") in str(title):
+            return str(title)
         player = raw.get("player_name") or raw.get("player_id") or "?"
-        market = raw.get("market_label") or raw.get("market_key") or "?"
+        market = title or raw.get("market_key") or "?"
         line = raw.get("line_value")
-        side = "o" if str(raw.get("recommendation", "")).lower().startswith("buy_yes") else "u"
+        side_raw = str(raw.get("side") or raw.get("recommendation") or "").lower()
+        side = "o" if ("over" in side_raw or side_raw.startswith("buy_yes")) else "u"
         if line is not None:
             return f"{player} {market} {side}{line}"
         return f"{player} {market}"

@@ -1,8 +1,10 @@
 // desktop_tauri/src/routes/trading/components/PositionsTable.tsx
 import { useTradingStore } from "../store";
 
+const EMPTY: never[] = [];
+
 export function PositionsTable() {
-  const positions = useTradingStore((s) => s.snapshot?.positions ?? []) as Array<Record<string, unknown>>;
+  const positions = (useTradingStore((s) => s.snapshot?.positions) ?? EMPTY) as Array<Record<string, unknown>>;
   if (positions.length === 0) {
     return (
       <section style={{ marginTop: 14 }}>

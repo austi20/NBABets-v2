@@ -3,10 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from app.trading.allocation import AllocationPick, allocate_proportional_with_soft_cap
-
 
 def test_run_trading_loop_uses_shared_allocation(tmp_path: Path) -> None:
     """Verifies the loop runner pulls from the shared allocation helper rather than

@@ -1,17 +1,18 @@
 {
   "version": 1,
-  "generated_at": "2026-05-10T01:52:42.678729+00:00",
+  "generated_at": "2026-05-11T22:09:05.445849+00:00",
   "source": "app.trading.decision_brain",
   "brain": {
     "policy_version": "2026-05-08-a",
-    "policy_hash": "5b21a62da16a6fc7",
-    "board_date": "2026-05-09"
+    "policy_hash": "e715223cea52b63c",
+    "board_date": "2026-05-11"
   },
   "defaults": {
     "market_status": "open",
     "series_tickers": [
+      "KXNBA3PT",
       "KXNBAAST",
-      "KXNBAPTS"
+      "KXNBAREB"
     ],
     "exclude_multivariate": true,
     "contracts": "1.00",
@@ -21,35 +22,35 @@
   },
   "targets": [
     {
-      "target_id": "2026-05-09_828_395_assists_1.5_buy_yes",
-      "stable_id": "2026-05-09_828_395_assists_1.5_buy_yes",
+      "target_id": "2026-05-11_145_355_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_145_355_assists_1.5_buy_yes",
       "sport": "nba",
       "market_type": "player_prop",
       "market_key": "assists",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "395",
-      "player_name": "Duncan Robinson",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "355",
+      "player_name": "Luke Kennard",
       "line_value": 1.5,
       "recommendation": "buy_yes",
       "outcome_side": "yes",
       "book_side": "bid",
-      "model_prob": 0.7043014277347839,
-      "market_prob": 0.6153846153846154,
-      "no_vig_market_prob": 0.5751633986928104,
-      "edge_bps": 889,
-      "ev": 0.1444898200690239,
+      "model_prob": 0.8687568511854923,
+      "market_prob": 0.6402877697841727,
+      "no_vig_market_prob": 0.5976612249623713,
+      "edge_bps": 2285,
+      "ev": 0.35682249791891496,
       "confidence": 0.86,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
         "title_contains_all": [
-          "DET",
-          "CLE"
+          "OKC",
+          "LAL"
         ],
         "player_name_contains_any": [
-          "Duncan Robinson",
-          "Robinson"
+          "Luke Kennard",
+          "Kennard"
         ],
         "stat_contains_any": [
           "assists",
@@ -75,241 +76,25 @@
       "series_ticker": "KXNBAAST"
     },
     {
-      "target_id": "2026-05-09_828_379_points_28.5_buy_no",
-      "stable_id": "2026-05-09_828_379_points_28.5_buy_no",
-      "sport": "nba",
-      "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "379",
-      "player_name": "Cade Cunningham",
-      "line_value": 28.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
-      "book_side": "bid",
-      "model_prob": 0.7037187948107059,
-      "market_prob": 0.6183206106870229,
-      "no_vig_market_prob": 0.5729699775075789,
-      "edge_bps": 854,
-      "ev": 0.1381131125950923,
-      "confidence": 0.82,
-      "driver": "board_prop_analysis",
-      "event_or_page_hint": null,
-      "match_rules": {
-        "title_contains_all": [
-          "DET",
-          "CLE"
-        ],
-        "player_name_contains_any": [
-          "Cade Cunningham",
-          "Cunningham"
-        ],
-        "stat_contains_any": [
-          "points",
-          "pts"
-        ],
-        "acceptable_line_values": [
-          28.5,
-          29.0
-        ],
-        "status": "open",
-        "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
-      },
-      "metadata": {
-        "source": "board",
-        "policy_version": "2026-05-08-a",
-        "contracts": 1.0,
-        "max_price_dollars": 0.57,
-        "post_only": true,
-        "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
-      },
-      "series_ticker": "KXNBAPTS"
-    },
-    {
-      "target_id": "2026-05-09_827_208_points_21.5_buy_no",
-      "stable_id": "2026-05-09_827_208_points_21.5_buy_no",
-      "sport": "nba",
-      "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "827",
-      "player_id": "208",
-      "player_name": "LeBron James",
-      "line_value": 21.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
-      "book_side": "bid",
-      "model_prob": 0.7036132325524382,
-      "market_prob": 0.5,
-      "no_vig_market_prob": 0.4677419354838709,
-      "edge_bps": 2036,
-      "ev": 0.4072264651048765,
-      "confidence": 0.7,
-      "driver": "board_prop_analysis",
-      "event_or_page_hint": null,
-      "match_rules": {
-        "title_contains_all": [
-          "OKC",
-          "LAL"
-        ],
-        "player_name_contains_any": [
-          "LeBron James",
-          "James"
-        ],
-        "stat_contains_any": [
-          "points",
-          "pts"
-        ],
-        "acceptable_line_values": [
-          21.5,
-          22.0
-        ],
-        "status": "open",
-        "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
-      },
-      "metadata": {
-        "source": "board",
-        "policy_version": "2026-05-08-a",
-        "contracts": 1.0,
-        "max_price_dollars": 0.57,
-        "post_only": true,
-        "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
-      },
-      "series_ticker": "KXNBAPTS"
-    },
-    {
-      "target_id": "2026-05-09_827_208_points_23.5_buy_no",
-      "stable_id": "2026-05-09_827_208_points_23.5_buy_no",
-      "sport": "nba",
-      "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "827",
-      "player_id": "208",
-      "player_name": "LeBron James",
-      "line_value": 23.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
-      "book_side": "bid",
-      "model_prob": 0.7036132325524382,
-      "market_prob": 0.6226415094339622,
-      "no_vig_market_prob": 0.5757963822634864,
-      "edge_bps": 810,
-      "ev": 0.13004549470543103,
-      "confidence": 0.66,
-      "driver": "board_prop_analysis",
-      "event_or_page_hint": null,
-      "match_rules": {
-        "title_contains_all": [
-          "OKC",
-          "LAL"
-        ],
-        "player_name_contains_any": [
-          "LeBron James",
-          "James"
-        ],
-        "stat_contains_any": [
-          "points",
-          "pts"
-        ],
-        "acceptable_line_values": [
-          23.5,
-          24.0
-        ],
-        "status": "open",
-        "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
-      },
-      "metadata": {
-        "source": "board",
-        "policy_version": "2026-05-08-a",
-        "contracts": 1.0,
-        "max_price_dollars": 0.57,
-        "post_only": true,
-        "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
-      },
-      "series_ticker": "KXNBAPTS"
-    },
-    {
-      "target_id": "2026-05-09_827_208_points_22.5_buy_no",
-      "stable_id": "2026-05-09_827_208_points_22.5_buy_no",
-      "sport": "nba",
-      "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "827",
-      "player_id": "208",
-      "player_name": "LeBron James",
-      "line_value": 22.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
-      "book_side": "bid",
-      "model_prob": 0.7036132325524382,
-      "market_prob": 0.5594713656387665,
-      "no_vig_market_prob": 0.5220573491076799,
-      "edge_bps": 1441,
-      "ev": 0.2576393999165627,
-      "confidence": 0.7,
-      "driver": "board_prop_analysis",
-      "event_or_page_hint": null,
-      "match_rules": {
-        "title_contains_all": [
-          "OKC",
-          "LAL"
-        ],
-        "player_name_contains_any": [
-          "LeBron James",
-          "James"
-        ],
-        "stat_contains_any": [
-          "points",
-          "pts"
-        ],
-        "acceptable_line_values": [
-          22.5,
-          23.0
-        ],
-        "status": "open",
-        "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
-      },
-      "metadata": {
-        "source": "board",
-        "policy_version": "2026-05-08-a",
-        "contracts": 1.0,
-        "max_price_dollars": 0.57,
-        "post_only": true,
-        "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
-      },
-      "series_ticker": "KXNBAPTS"
-    },
-    {
-      "target_id": "2026-05-09_828_88_assists_3.5_buy_yes",
-      "stable_id": "2026-05-09_828_88_assists_3.5_buy_yes",
+      "target_id": "2026-05-11_146_499_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_146_499_assists_1.5_buy_yes",
       "sport": "nba",
       "market_type": "player_prop",
       "market_key": "assists",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "88",
-      "player_name": "Donovan Mitchell",
-      "line_value": 3.5,
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "499",
+      "player_name": "Tobias Harris",
+      "line_value": 1.5,
       "recommendation": "buy_yes",
       "outcome_side": "yes",
       "book_side": "bid",
-      "model_prob": 0.6998560801443278,
+      "model_prob": 0.8160106268071166,
       "market_prob": 0.5833333333333334,
       "no_vig_market_prob": 0.5384615384615384,
-      "edge_bps": 1165,
-      "ev": 0.19975328024741912,
-      "confidence": 0.62,
+      "edge_bps": 2327,
+      "ev": 0.3988753602407713,
+      "confidence": 0.9,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
@@ -318,16 +103,16 @@
           "CLE"
         ],
         "player_name_contains_any": [
-          "Donovan Mitchell",
-          "Mitchell"
+          "Tobias Harris",
+          "Harris"
         ],
         "stat_contains_any": [
           "assists",
           "ast"
         ],
         "acceptable_line_values": [
-          3.5,
-          4.0
+          1.5,
+          2.0
         ],
         "status": "open",
         "mve_filter": "exclude",
@@ -345,25 +130,79 @@
       "series_ticker": "KXNBAAST"
     },
     {
-      "target_id": "2026-05-09_828_379_points_26.5_buy_no",
-      "stable_id": "2026-05-09_828_379_points_26.5_buy_no",
+      "target_id": "2026-05-11_146_214_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_146_214_assists_1.5_buy_yes",
       "sport": "nba",
       "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "379",
-      "player_name": "Cade Cunningham",
-      "line_value": 26.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "214",
+      "player_name": "Jalen Duren",
+      "line_value": 1.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
       "book_side": "bid",
-      "model_prob": 0.6879380639136959,
-      "market_prob": 0.5098039215686274,
-      "no_vig_market_prob": 0.47506582621878246,
-      "edge_bps": 1781,
-      "ev": 0.3494169715230191,
-      "confidence": 0.81,
+      "model_prob": 0.8562086531865059,
+      "market_prob": 0.6226415094339622,
+      "no_vig_market_prob": 0.5780254777070064,
+      "edge_bps": 2336,
+      "ev": 0.37512298845105474,
+      "confidence": 0.85,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Jalen Duren",
+          "Duren"
+        ],
+        "stat_contains_any": [
+          "assists",
+          "ast"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAAST"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAAST"
+      },
+      "series_ticker": "KXNBAAST"
+    },
+    {
+      "target_id": "2026-05-11_146_66_assists_9.5_buy_yes",
+      "stable_id": "2026-05-11_146_66_assists_9.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "66",
+      "player_name": "Cade Cunningham",
+      "line_value": 9.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.7457545185031142,
+      "market_prob": 0.4807692307692308,
+      "no_vig_market_prob": 0.45034985856781296,
+      "edge_bps": 2650,
+      "ev": 0.5511693984864776,
+      "confidence": 0.87,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
@@ -376,16 +215,16 @@
           "Cunningham"
         ],
         "stat_contains_any": [
-          "points",
-          "pts"
+          "assists",
+          "ast"
         ],
         "acceptable_line_values": [
-          26.5,
-          27.0
+          9.5,
+          10.0
         ],
         "status": "open",
         "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBAAST"
       },
       "metadata": {
         "source": "board",
@@ -394,30 +233,84 @@
         "max_price_dollars": 0.57,
         "post_only": true,
         "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBAAST"
       },
-      "series_ticker": "KXNBAPTS"
+      "series_ticker": "KXNBAAST"
     },
     {
-      "target_id": "2026-05-09_828_379_points_27.5_buy_no",
-      "stable_id": "2026-05-09_828_379_points_27.5_buy_no",
+      "target_id": "2026-05-11_145_79_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_145_79_assists_1.5_buy_yes",
       "sport": "nba",
       "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "379",
-      "player_name": "Cade Cunningham",
-      "line_value": 27.5,
-      "recommendation": "buy_no",
-      "outcome_side": "no",
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "79",
+      "player_name": "Cason Wallace",
+      "line_value": 1.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
       "book_side": "bid",
-      "model_prob": 0.6879380639136959,
-      "market_prob": 0.5594713656387665,
-      "no_vig_market_prob": 0.5220573491076799,
-      "edge_bps": 1285,
-      "ev": 0.2296215788063698,
-      "confidence": 0.81,
+      "model_prob": 0.8365974014933626,
+      "market_prob": 0.6047430830039525,
+      "no_vig_market_prob": 0.5663947350380476,
+      "edge_bps": 2319,
+      "ev": 0.3833930887439263,
+      "confidence": 0.88,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Cason Wallace",
+          "Wallace"
+        ],
+        "stat_contains_any": [
+          "assists",
+          "ast"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAAST"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAAST"
+      },
+      "series_ticker": "KXNBAAST"
+    },
+    {
+      "target_id": "2026-05-11_146_131_assists_2.5_buy_yes",
+      "stable_id": "2026-05-11_146_131_assists_2.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "131",
+      "player_name": "Dennis Schroder",
+      "line_value": 2.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.7645468529964687,
+      "market_prob": 0.5238095238095238,
+      "no_vig_market_prob": 0.48529411764705876,
+      "edge_bps": 2407,
+      "ev": 0.4595894466296222,
+      "confidence": 0.85,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
@@ -426,20 +319,20 @@
           "CLE"
         ],
         "player_name_contains_any": [
-          "Cade Cunningham",
-          "Cunningham"
+          "Dennis Schroder",
+          "Schroder"
         ],
         "stat_contains_any": [
-          "points",
-          "pts"
+          "assists",
+          "ast"
         ],
         "acceptable_line_values": [
-          27.5,
-          28.0
+          2.5,
+          3.0
         ],
         "status": "open",
         "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBAAST"
       },
       "metadata": {
         "source": "board",
@@ -448,30 +341,191 @@
         "max_price_dollars": 0.57,
         "post_only": true,
         "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBAAST"
       },
-      "series_ticker": "KXNBAPTS"
+      "series_ticker": "KXNBAAST"
     },
     {
-      "target_id": "2026-05-09_828_379_points_25.5_buy_no",
-      "stable_id": "2026-05-09_828_379_points_25.5_buy_no",
+      "target_id": "2026-05-11_145_84_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_145_84_assists_1.5_buy_yes",
       "sport": "nba",
       "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "828",
-      "player_id": "379",
-      "player_name": "Cade Cunningham",
-      "line_value": 25.5,
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "84",
+      "player_name": "Chet Holmgren",
+      "line_value": 1.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.7558460008526808,
+      "market_prob": 0.4878048780487805,
+      "no_vig_market_prob": 0.45182111572153066,
+      "edge_bps": 2680,
+      "ev": 0.5494843017479956,
+      "confidence": 0.87,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Chet Holmgren",
+          "Holmgren"
+        ],
+        "stat_contains_any": [
+          "assists",
+          "ast"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAAST"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAAST"
+      },
+      "series_ticker": "KXNBAAST"
+    },
+    {
+      "target_id": "2026-05-11_145_244_assists_1.5_buy_yes",
+      "stable_id": "2026-05-11_145_244_assists_1.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "assists",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "244",
+      "player_name": "Jaylin Williams",
+      "line_value": 1.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.7502130051859044,
+      "market_prob": 0.4807692307692308,
+      "no_vig_market_prob": 0.44892552251987045,
+      "edge_bps": 2694,
+      "ev": 0.5604430507866811,
+      "confidence": 0.83,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Jaylin Williams",
+          "Williams"
+        ],
+        "stat_contains_any": [
+          "assists",
+          "ast"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAAST"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAAST"
+      },
+      "series_ticker": "KXNBAAST"
+    },
+    {
+      "target_id": "2026-05-11_145_346_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_145_346_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "346",
+      "player_name": "LeBron James",
+      "line_value": 1.5,
       "recommendation": "buy_no",
       "outcome_side": "no",
       "book_side": "bid",
-      "model_prob": 0.6879380639136959,
-      "market_prob": 0.45871559633027525,
-      "no_vig_market_prob": 0.42420361773651355,
-      "edge_bps": 2292,
-      "ev": 0.49970497933185687,
-      "confidence": 0.81,
+      "model_prob": 0.696449732232365,
+      "market_prob": 0.5192307692307693,
+      "no_vig_market_prob": 0.48581617766250607,
+      "edge_bps": 1772,
+      "ev": 0.3413105954104807,
+      "confidence": 0.9,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "LeBron James",
+          "James"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_371_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_146_371_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "371",
+      "player_name": "Max Strus",
+      "line_value": 1.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6954082543752198,
+      "market_prob": 0.42735042735042733,
+      "no_vig_market_prob": 0.3993154592127781,
+      "edge_bps": 2681,
+      "ev": 0.6272553152380143,
+      "confidence": 0.9,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
@@ -480,20 +534,19 @@
           "CLE"
         ],
         "player_name_contains_any": [
-          "Cade Cunningham",
-          "Cunningham"
+          "Max Strus",
+          "Strus"
         ],
         "stat_contains_any": [
-          "points",
-          "pts"
+          "threes"
         ],
         "acceptable_line_values": [
-          25.5,
-          26.0
+          1.5,
+          2.0
         ],
         "status": "open",
         "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBA3PT"
       },
       "metadata": {
         "source": "board",
@@ -502,30 +555,83 @@
         "max_price_dollars": 0.57,
         "post_only": true,
         "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBA3PT"
       },
-      "series_ticker": "KXNBAPTS"
+      "series_ticker": "KXNBA3PT"
     },
     {
-      "target_id": "2026-05-09_827_211_points_11.5_buy_no",
-      "stable_id": "2026-05-09_827_211_points_11.5_buy_no",
+      "target_id": "2026-05-11_145_79_threes_0.5_buy_no",
+      "stable_id": "2026-05-11_145_79_threes_0.5_buy_no",
       "sport": "nba",
       "market_type": "player_prop",
-      "market_key": "points",
-      "game_date": "2026-05-09",
-      "game_id": "827",
-      "player_id": "211",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "79",
+      "player_name": "Cason Wallace",
+      "line_value": 0.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6476818341758223,
+      "market_prob": 0.3663003663003663,
+      "no_vig_market_prob": 0.3439131515703986,
+      "edge_bps": 2814,
+      "ev": 0.7681714072999948,
+      "confidence": 0.86,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Cason Wallace",
+          "Wallace"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          0.5,
+          1.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_145_362_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_145_362_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "362",
       "player_name": "Marcus Smart",
-      "line_value": 11.5,
+      "line_value": 1.5,
       "recommendation": "buy_no",
       "outcome_side": "no",
       "book_side": "bid",
-      "model_prob": 0.6877195612940947,
-      "market_prob": 0.5348837209302325,
-      "no_vig_market_prob": 0.5,
-      "edge_bps": 1528,
-      "ev": 0.2857365711150466,
-      "confidence": 0.69,
+      "model_prob": 0.6669189879168058,
+      "market_prob": 0.4,
+      "no_vig_market_prob": 0.37125748502994016,
+      "edge_bps": 2669,
+      "ev": 0.6672974697920147,
+      "confidence": 0.84,
       "driver": "board_prop_analysis",
       "event_or_page_hint": null,
       "match_rules": {
@@ -538,16 +644,15 @@
           "Smart"
         ],
         "stat_contains_any": [
-          "points",
-          "pts"
+          "threes"
         ],
         "acceptable_line_values": [
-          11.5,
-          12.0
+          1.5,
+          2.0
         ],
         "status": "open",
         "mve_filter": "exclude",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBA3PT"
       },
       "metadata": {
         "source": "board",
@@ -556,9 +661,648 @@
         "max_price_dollars": 0.57,
         "post_only": true,
         "time_in_force": "good_till_canceled",
-        "series_ticker": "KXNBAPTS"
+        "series_ticker": "KXNBA3PT"
       },
-      "series_ticker": "KXNBAPTS"
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_112_threes_0.5_buy_no",
+      "stable_id": "2026-05-11_146_112_threes_0.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "112",
+      "player_name": "Daniss Jenkins",
+      "line_value": 0.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.5990084868023081,
+      "market_prob": 0.36363636363636365,
+      "no_vig_market_prob": 0.3414012738853503,
+      "edge_bps": 2354,
+      "ev": 0.6472733387063474,
+      "confidence": 0.83,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Daniss Jenkins",
+          "Jenkins"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          0.5,
+          1.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_145_456_threes_2.5_buy_no",
+      "stable_id": "2026-05-11_145_456_threes_2.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "456",
+      "player_name": "Rui Hachimura",
+      "line_value": 2.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6530288027025899,
+      "market_prob": 0.5555555555555556,
+      "no_vig_market_prob": 0.5147058823529411,
+      "edge_bps": 975,
+      "ev": 0.1754518448646618,
+      "confidence": 0.78,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Rui Hachimura",
+          "Hachimura"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          2.5,
+          3.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_145_threes_2.5_buy_no",
+      "stable_id": "2026-05-11_146_145_threes_2.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "145",
+      "player_name": "Donovan Mitchell",
+      "line_value": 2.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6458077896516095,
+      "market_prob": 0.45454545454545453,
+      "no_vig_market_prob": 0.42197452229299365,
+      "edge_bps": 1913,
+      "ev": 0.42077713723354093,
+      "confidence": 0.78,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Donovan Mitchell",
+          "Mitchell"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          2.5,
+          3.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_145_15_threes_0.5_buy_no",
+      "stable_id": "2026-05-11_145_15_threes_0.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "15",
+      "player_name": "Alex Caruso",
+      "line_value": 0.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.5555490525793092,
+      "market_prob": 0.35842293906810035,
+      "no_vig_market_prob": 0.3367670364500792,
+      "edge_bps": 1971,
+      "ev": 0.5499818566962726,
+      "confidence": 0.81,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Alex Caruso",
+          "Caruso"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          0.5,
+          1.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_145_355_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_145_355_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "355",
+      "player_name": "Luke Kennard",
+      "line_value": 1.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6298168142530443,
+      "market_prob": 0.47619047619047616,
+      "no_vig_market_prob": 0.4424778761061947,
+      "edge_bps": 1536,
+      "ev": 0.3226153099313931,
+      "confidence": 0.77,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Luke Kennard",
+          "Kennard"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_499_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_146_499_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "499",
+      "player_name": "Tobias Harris",
+      "line_value": 1.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.6072677495942576,
+      "market_prob": 0.5652173913043478,
+      "no_vig_market_prob": 0.5246062992125985,
+      "edge_bps": 421,
+      "ev": 0.07439678774368641,
+      "confidence": 0.76,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Tobias Harris",
+          "Harris"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_131_threes_0.5_buy_no",
+      "stable_id": "2026-05-11_146_131_threes_0.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "131",
+      "player_name": "Dennis Schroder",
+      "line_value": 0.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.605936671104657,
+      "market_prob": 0.5555555555555556,
+      "no_vig_market_prob": 0.5147058823529411,
+      "edge_bps": 504,
+      "ev": 0.09068600798838267,
+      "confidence": 0.68,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Dennis Schroder",
+          "Schroder"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          0.5,
+          1.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_165_threes_0.5_buy_no",
+      "stable_id": "2026-05-11_146_165_threes_0.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "165",
+      "player_name": "Evan Mobley",
+      "line_value": 0.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.602379482233595,
+      "market_prob": 0.38461538461538464,
+      "no_vig_market_prob": 0.3571428571428572,
+      "edge_bps": 2178,
+      "ev": 0.5661866538073472,
+      "confidence": 0.73,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Evan Mobley",
+          "Mobley"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          0.5,
+          1.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_145_195_threes_1.5_buy_no",
+      "stable_id": "2026-05-11_145_195_threes_1.5_buy_no",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "threes",
+      "game_date": "2026-05-11",
+      "game_id": "145",
+      "player_id": "195",
+      "player_name": "Isaiah Joe",
+      "line_value": 1.5,
+      "recommendation": "buy_no",
+      "outcome_side": "no",
+      "book_side": "bid",
+      "model_prob": 0.5982069767810425,
+      "market_prob": 0.576271186440678,
+      "no_vig_market_prob": 0.5391345102327761,
+      "edge_bps": 219,
+      "ev": 0.03806504794357379,
+      "confidence": 0.64,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "OKC",
+          "LAL"
+        ],
+        "player_name_contains_any": [
+          "Isaiah Joe",
+          "Joe"
+        ],
+        "stat_contains_any": [
+          "threes"
+        ],
+        "acceptable_line_values": [
+          1.5,
+          2.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBA3PT"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBA3PT"
+      },
+      "series_ticker": "KXNBA3PT"
+    },
+    {
+      "target_id": "2026-05-11_146_234_rebounds_8.5_buy_yes",
+      "stable_id": "2026-05-11_146_234_rebounds_8.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "rebounds",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "234",
+      "player_name": "Jarrett Allen",
+      "line_value": 8.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.5961538461538461,
+      "market_prob": 0.4716981132075472,
+      "no_vig_market_prob": 0.44214520979521704,
+      "edge_bps": 1245,
+      "ev": 0.26384615384615384,
+      "confidence": 0.75,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Jarrett Allen",
+          "Allen"
+        ],
+        "stat_contains_any": [
+          "rebounds",
+          "reb"
+        ],
+        "acceptable_line_values": [
+          8.5,
+          9.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAREB"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAREB"
+      },
+      "series_ticker": "KXNBAREB"
+    },
+    {
+      "target_id": "2026-05-11_146_124_rebounds_3.5_buy_yes",
+      "stable_id": "2026-05-11_146_124_rebounds_3.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "rebounds",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "124",
+      "player_name": "Dean Wade",
+      "line_value": 3.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.5961538461538461,
+      "market_prob": 0.43478260869565216,
+      "no_vig_market_prob": 0.4069160828737517,
+      "edge_bps": 1614,
+      "ev": 0.37115384615384595,
+      "confidence": 0.75,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Dean Wade",
+          "Wade"
+        ],
+        "stat_contains_any": [
+          "rebounds",
+          "reb"
+        ],
+        "acceptable_line_values": [
+          3.5,
+          4.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAREB"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAREB"
+      },
+      "series_ticker": "KXNBAREB"
+    },
+    {
+      "target_id": "2026-05-11_146_66_rebounds_5.5_buy_yes",
+      "stable_id": "2026-05-11_146_66_rebounds_5.5_buy_yes",
+      "sport": "nba",
+      "market_type": "player_prop",
+      "market_key": "rebounds",
+      "game_date": "2026-05-11",
+      "game_id": "146",
+      "player_id": "66",
+      "player_name": "Cade Cunningham",
+      "line_value": 5.5,
+      "recommendation": "buy_yes",
+      "outcome_side": "yes",
+      "book_side": "bid",
+      "model_prob": 0.5961538461538461,
+      "market_prob": 0.46511627906976744,
+      "no_vig_market_prob": 0.43348916277093075,
+      "edge_bps": 1310,
+      "ev": 0.2817307692307691,
+      "confidence": 0.78,
+      "driver": "board_prop_analysis",
+      "event_or_page_hint": null,
+      "match_rules": {
+        "title_contains_all": [
+          "DET",
+          "CLE"
+        ],
+        "player_name_contains_any": [
+          "Cade Cunningham",
+          "Cunningham"
+        ],
+        "stat_contains_any": [
+          "rebounds",
+          "reb"
+        ],
+        "acceptable_line_values": [
+          5.5,
+          6.0
+        ],
+        "status": "open",
+        "mve_filter": "exclude",
+        "series_ticker": "KXNBAREB"
+      },
+      "metadata": {
+        "source": "board",
+        "policy_version": "2026-05-08-a",
+        "contracts": 1.0,
+        "max_price_dollars": 0.57,
+        "post_only": true,
+        "time_in_force": "good_till_canceled",
+        "series_ticker": "KXNBAREB"
+      },
+      "series_ticker": "KXNBAREB"
     }
   ]
 }

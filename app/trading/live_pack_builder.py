@@ -130,9 +130,10 @@ def pick_executable_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any
     for row in entries:
         rec = _norm_rec(row.get("recommendation"))
         original_rec = _norm_rec(row.get("original_recommendation"))
+        status = _norm_rec(row.get("candidate_status"))
         selected_observe = (
             rec == "observe_only"
-            and _norm_rec(row.get("candidate_status")) == "selected_observe_only"
+            and status in {"selected_observe_only", "watchlist"}
             and original_rec in _EXECUTABLE_REC
         )
         if rec not in _EXECUTABLE_REC and not selected_observe:
@@ -314,6 +315,14 @@ def build_primary_decision_row(
     }
     brain_block: dict[str, Any] = {k: v for k, v in (brain_context or {}).items() if k != "market"}
 
+    display_block: dict[str, Any] = {
+        "player_name": primary.get("player_name"),
+        "market_label": primary.get("title") or primary.get("market_key"),
+        "model_prob": primary.get("model_prob"),
+        "market_prob": primary.get("market_prob"),
+        "side": primary.get("side"),
+    }
+
     if live_ok:
         return {
             "decision_id": str(primary.get("target_id") or primary.get("kalshi_ticker")),
@@ -331,6 +340,7 @@ def build_primary_decision_row(
             "gates": all_gates,
             "execution": {"allow_live_submit": True, "client_order_id": None},
             "notes": notes,
+            **display_block,
         }
 
     return {
@@ -349,6 +359,7 @@ def build_primary_decision_row(
         "gates": all_gates,
         "execution": {"allow_live_submit": False, "client_order_id": None},
         "notes": notes,
+        **display_block,
     }
 
 

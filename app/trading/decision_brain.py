@@ -1098,8 +1098,6 @@ def _candidate_policy_blockers(
         blockers.append("not_same_day")
     if candidate.model_prob is None or candidate.model_prob < policy.min_model_prob:
         blockers.append("min_model_prob")
-    if candidate.edge_bps is None or candidate.edge_bps < policy.min_edge_bps:
-        blockers.append("min_edge_bps")
     if candidate.confidence is None or candidate.confidence < policy.min_confidence:
         blockers.append("min_confidence")
     if abs(candidate.contracts - 1.0) > 0.0001:

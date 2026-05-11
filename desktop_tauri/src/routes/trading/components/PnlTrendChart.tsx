@@ -3,8 +3,10 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { useTradingStore } from "../store";
 import type { PnlPoint } from "../api/types";
 
+const EMPTY: never[] = [];
+
 export function PnlTrendChart() {
-  const data = useTradingStore((s) => s.snapshot?.pnl_trend ?? []) as PnlPoint[];
+  const data = (useTradingStore((s) => s.snapshot?.pnl_trend) ?? EMPTY) as PnlPoint[];
 
   return (
     <section style={{ marginTop: 14 }}>
