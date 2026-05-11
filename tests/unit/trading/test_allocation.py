@@ -16,7 +16,7 @@ def test_single_pick_capped_at_soft_cap() -> None:
     assert result == {"a": 3.5}  # 35% of 10
 
 
-def test_two_equal_picks_below_cap_split_evenly() -> None:
+def test_two_equal_picks_both_capped() -> None:
     picks = [_pick("a", 0.5), _pick("b", 0.5)]
     result = allocate_proportional_with_soft_cap(picks, budget=4.0)
     # raw alloc 2.0 each, cap 1.4 — both capped
@@ -53,6 +53,34 @@ def test_custom_cap_fraction() -> None:
         [_pick("a", 1.0)], budget=10.0, cap_fraction=0.5
     )
     assert result == {"a": 5.0}
+
+
+def test_zero_budget_raises() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        allocate_proportional_with_soft_cap([_pick("a", 0.5)], budget=0.0)
+
+
+def test_negative_budget_raises() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        allocate_proportional_with_soft_cap([_pick("a", 0.5)], budget=-1.0)
+
+
+def test_zero_cap_fraction_raises() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        allocate_proportional_with_soft_cap([_pick("a", 0.5)], budget=10.0, cap_fraction=0.0)
+
+
+def test_cap_fraction_above_one_raises() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        allocate_proportional_with_soft_cap([_pick("a", 0.5)], budget=10.0, cap_fraction=1.5)
 
 
 def test_converges_within_max_iterations() -> None:

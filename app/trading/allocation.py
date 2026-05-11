@@ -31,6 +31,10 @@ def allocate_proportional_with_soft_cap(
     """
     if not selected_picks:
         return {}
+    if budget <= 0:
+        raise ValueError(f"budget must be positive, got {budget}")
+    if not (0.0 < cap_fraction <= 1.0):
+        raise ValueError(f"cap_fraction must be in (0, 1], got {cap_fraction}")
 
     cap = budget * cap_fraction
     stakes: dict[str, float] = {pick.candidate_id: 0.0 for pick in selected_picks}
@@ -50,7 +54,7 @@ def allocate_proportional_with_soft_cap(
         for pick in remaining:
             raw = snapshot_budget * pick.model_prob / total_weight
             allowed = cap - stakes[pick.candidate_id]
-            if raw >= allowed:
+            if raw > allowed:
                 stakes[pick.candidate_id] = cap
                 remaining_budget -= allowed
                 newly_capped.append(pick)
