@@ -177,6 +177,11 @@ class Settings(BaseSettings):
         default="https://external-api.kalshi.com/trade-api/v2",
         alias="KALSHI_MARKET_DATA_BASE_URL",
     )
+    kalshi_ws_enabled: bool = False
+    kalshi_ws_base_url: str = "wss://api.elections.kalshi.com/trade-api/ws/v2"
+    kalshi_ws_max_backoff_seconds: int = 30
+    kalshi_ws_ping_interval_seconds: int = 10
+    kalshi_ws_max_consecutive_auth_failures: int = 5
     kalshi_live_trading: bool = Field(default=False, alias="KALSHI_LIVE_TRADING")
     trading_limits_path: str = Field(
         default="config/trading_limits.json",
