@@ -1,0 +1,173 @@
+/* desktop_tauri/src/styles/trading.css */
+.trading-page-v2 {
+  background: var(--trading-bg);
+  color: var(--trading-fg);
+  font-family: inherit;
+  padding: var(--trading-pad-lg);
+  min-height: 100vh;
+}
+
+.trading-page-v2 .mono {
+  font-family: var(--trading-font-mono);
+}
+
+.trading-page-v2 .micro {
+  color: var(--trading-fg-subtle);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.trading-tile {
+  background: var(--trading-surface);
+  border-left: 2px solid var(--trading-border);
+  border-radius: 6px;
+  padding: var(--trading-pad-md) var(--trading-pad-lg);
+}
+
+.trading-tile.accent-pnl { border-left-color: var(--trading-accent-pnl); }
+.trading-tile.accent-budget { border-left-color: var(--trading-accent-budget); }
+.trading-tile.accent-picks { border-left-color: var(--trading-accent-picks); }
+.trading-tile.accent-system { border-left-color: var(--trading-accent-system); }
+
+.trading-tile-value {
+  font-family: var(--trading-font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.trading-tile-bar {
+  background: var(--trading-border);
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.trading-tile-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.trading-pulse-up {
+  animation: trading-pulse-up 250ms ease-out;
+}
+.trading-pulse-down {
+  animation: trading-pulse-down 250ms ease-out;
+}
+
+@keyframes trading-pulse-up {
+  0% { background-color: var(--trading-pulse-positive); }
+  100% { background-color: transparent; }
+}
+@keyframes trading-pulse-down {
+  0% { background-color: var(--trading-pulse-negative); }
+  100% { background-color: transparent; }
+}
+
+/* Picks table */
+.picks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--trading-font-mono);
+  font-size: 11px;
+}
+
+.picks-table th,
+.picks-table td {
+  padding: 9px var(--trading-pad-sm);
+  border-bottom: 1px solid var(--trading-border);
+  text-align: left;
+}
+
+.picks-table th {
+  color: var(--trading-fg-subtle);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.picks-table tr.excluded { opacity: 0.55; }
+.picks-table tr.blocked { background: rgba(239, 68, 68, 0.04); }
+.picks-table tr:hover { background: var(--trading-surface-alt); cursor: pointer; }
+
+.pick-bullet {
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.pick-bullet.included { color: var(--trading-accent-picks); }
+.pick-bullet.excluded { color: var(--trading-border-soft); }
+.pick-bullet.blocked { color: var(--trading-accent-danger); cursor: help; }
+
+/* Bet slip sidebar */
+.bet-slip {
+  background: var(--trading-surface);
+  border-left: 2px solid var(--trading-accent-picks);
+  border-radius: 6px;
+  padding: var(--trading-pad-lg);
+  position: sticky;
+  top: var(--trading-pad-md);
+}
+
+/* Event log */
+.event-log {
+  background: #000;
+  border: 1px solid var(--trading-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--trading-font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  height: 110px;
+  overflow-y: auto;
+}
+.event-log .log-info { color: var(--trading-fg-muted); }
+.event-log .log-warn { color: var(--trading-accent-system); }
+.event-log .log-error { color: var(--trading-accent-danger); }
+
+/* Filter pills */
+.filter-pill {
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: var(--trading-surface);
+  color: var(--trading-fg-muted);
+  border: 1px solid var(--trading-border-soft);
+  cursor: pointer;
+}
+.filter-pill.active {
+  background: rgba(0, 212, 170, 0.12);
+  color: var(--trading-accent-picks);
+  border-color: rgba(0, 212, 170, 0.4);
+}
+
+/* Buttons */
+.btn-trading {
+  background: var(--trading-surface);
+  border: 1px solid var(--trading-border-soft);
+  color: var(--trading-fg);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-trading.primary {
+  background: var(--trading-accent-picks);
+  color: var(--trading-bg);
+  border-color: var(--trading-accent-picks);
+  font-weight: 700;
+}
+.btn-trading.danger {
+  background: transparent;
+  color: var(--trading-accent-danger);
+  border-color: var(--trading-accent-danger);
+}
+.btn-trading.ghost { background: transparent; }
+.btn-trading:disabled { opacity: 0.5; cursor: not-allowed; }
