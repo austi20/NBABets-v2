@@ -528,6 +528,18 @@ export function localAgentTerminalStreamUrl(): string {
   return `${resolveApiBase()}/api/local-agent/terminal`;
 }
 
+export function tradingStreamUrl(): string {
+  return `${resolveApiBase()}/api/trading/stream`;
+}
+
+export function tradingSnapshotUrl(): string {
+  return `${resolveApiBase()}/api/trading/snapshot-live`;
+}
+
+export function getAppToken(): string | null {
+  return resolveAppToken();
+}
+
 export const api = {
   health: () => apiFetch<HealthResponse>("/api/health"),
   settings: () => apiFetch<Record<string, unknown>>("/api/settings"),
