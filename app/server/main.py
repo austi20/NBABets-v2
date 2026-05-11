@@ -40,6 +40,7 @@ from app.server.routers.startup import router as startup_router
 from app.server.routers.trading import router as trading_router
 from app.server.services.board_cache import BoardCache
 from app.services.startup import StartupCoordinator
+from app.trading.brain_auto_resync import BrainAutoResync
 from app.trading.decision_brain import sync_decision_brain, write_blocked_decision_pack
 from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
@@ -211,9 +212,11 @@ def create_app(
                     _wc.close()
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger("nba.sidecar").warning("wallet-init failed: %s", exc)
+        await brain_resync.start()
         try:
             yield
         finally:
+            await brain_resync.stop()
             await market_service.stop()
 
     app = FastAPI(title="NBA Prop Probability Engine API", version=_app_version(), lifespan=lifespan)
@@ -288,6 +291,35 @@ def create_app(
     app.state.trading_stream_publisher = stream_publisher
     app.state.trading_snapshot_service = snapshot_service
     stream_publisher.log_event(level="info", message="trading stream publisher started")
+
+    def _do_brain_sync() -> object:
+        # Stub - will be replaced when decision_brain is fully wired for auto-resync
+        return None
+
+    def _current_mode() -> str:
+        import json as _json
+
+        decisions_path_str = getattr(get_settings(), "kalshi_decisions_path", None)
+        if not decisions_path_str:
+            return "observe"
+        decisions_path = Path(str(decisions_path_str))
+        if not decisions_path.is_file():
+            return "observe"
+        try:
+            data = _json.loads(decisions_path.read_text(encoding="utf-8"))
+            rows = data if isinstance(data, list) else (data.get("decisions") or [{}])
+            first = rows[0] if rows else {}
+            return "supervised-live" if first.get("mode") == "live" else "observe"
+        except Exception:  # noqa: BLE001
+            return "observe"
+
+    brain_resync = BrainAutoResync(
+        interval_seconds=float(get_settings().brain_auto_resync_seconds),
+        sync_fn=_do_brain_sync,
+        mode_fn=_current_mode,
+        publisher=stream_publisher,
+    )
+    app.state.trading_brain_resync = brain_resync
     app.state.app_token = app_token or secrets.token_urlsafe(24)
     app.add_middleware(
         AppTokenMiddleware,
