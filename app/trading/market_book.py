@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -38,7 +37,8 @@ class MarketBook:
             before = self._entries.get(entry.ticker)
             self._entries[entry.ticker] = entry
             update = BookUpdate(ticker=entry.ticker, before=before, after=entry)
-            for queue in self._subscribers:
+            subs = list(self._subscribers)
+            for queue in subs:
                 _put_drop_oldest(queue, update)
             return update
 
@@ -48,7 +48,8 @@ class MarketBook:
     def snapshot(self) -> dict[str, MarketEntry]:
         return dict(self._entries)
 
-    def subscribe(self) -> AsyncIterator[BookUpdate]:
+    def subscribe(self) -> _SubscriptionIterator:
+        # Callers must either call aclose() or use `async with` to unsubscribe; iterating to exhaustion is also acceptable.
         queue: asyncio.Queue[BookUpdate] = asyncio.Queue(maxsize=self._queue_size)
         self._subscribers.append(queue)
         return _SubscriptionIterator(self, queue)
@@ -75,12 +76,11 @@ class _SubscriptionIterator:
         if self._queue in self._book._subscribers:
             self._book._subscribers.remove(self._queue)
 
-    def __del__(self) -> None:
-        if not self._closed and self._queue in self._book._subscribers:
-            try:
-                self._book._subscribers.remove(self._queue)
-            except ValueError:
-                pass
+    async def __aenter__(self) -> _SubscriptionIterator:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.aclose()
 
 
 def _put_drop_oldest(queue: asyncio.Queue[BookUpdate], item: BookUpdate) -> None:

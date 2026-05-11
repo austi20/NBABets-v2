@@ -182,6 +182,27 @@ async def test_multiple_subscribers_each_receive_updates():
 
 
 @pytest.mark.asyncio
+async def test_subscribe_works_as_async_context_manager():
+    book = MarketBook()
+    received: list[BookUpdate] = []
+
+    async def consume():
+        async with book.subscribe() as sub:
+            async for upd in sub:
+                received.append(upd)
+                if len(received) == 1:
+                    return
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.01)
+    await book.update(_entry("KXTEST-K", 0.50))
+    await asyncio.wait_for(task, timeout=1.0)
+    assert received[0].after.ticker == "KXTEST-K"
+    # subscriber should have been removed on __aexit__
+    assert len(book._subscribers) == 0
+
+
+@pytest.mark.asyncio
 async def test_slow_subscriber_drops_oldest_under_backpressure():
     book = MarketBook(subscriber_queue_size=2)
     drained: list[BookUpdate] = []
