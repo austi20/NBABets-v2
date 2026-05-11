@@ -1,8 +1,7 @@
 from datetime import UTC, datetime
 
-from app.trading.ws_frames import parse_frame
-
 from app.trading.market_book import MarketEntry
+from app.trading.ws_frames import parse_frame
 
 _FIXED_NOW = datetime(2026, 5, 10, 12, 0, 0, tzinfo=UTC)
 

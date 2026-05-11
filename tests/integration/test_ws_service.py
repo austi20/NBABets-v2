@@ -5,12 +5,12 @@ import json
 from pathlib import Path
 
 import pytest
-from app.trading.ws_service import KalshiMarketService
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.trading.market_book import MarketBook
 from app.trading.ws_consumer import KalshiWsCredentials
+from app.trading.ws_service import KalshiMarketService
 
 
 @pytest.fixture
