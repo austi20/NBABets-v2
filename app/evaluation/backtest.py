@@ -78,8 +78,15 @@ class RollingOriginBacktester:
         if quote_inventory.empty:
             raise ValueError("No historical quotes available for backtesting")
 
-        start_date = pd.Timestamp(frame["game_date"].min()).date() + timedelta(days=train_days)
+        requested_train_days = int(train_days)
+        history_start = pd.Timestamp(frame["game_date"].min()).date()
         end_date = pd.Timestamp(frame["game_date"].max()).date()
+        history_span_days = max((end_date - history_start).days + 1, 1)
+        if history_span_days <= train_days + max(validation_days, step_days):
+            train_days = max(30, min(train_days, int(history_span_days * 0.70)))
+            if train_days >= history_span_days:
+                train_days = max(1, history_span_days - 1)
+        start_date = history_start + timedelta(days=train_days)
         cursor = start_date
         fold_rows: list[dict[str, object]] = []
         detailed_bets: list[pd.DataFrame] = []
@@ -307,7 +314,17 @@ class RollingOriginBacktester:
             started_at=datetime.now(UTC),
             completed_at=datetime.now(UTC),
             notes=f"Rolling-origin backtest at T-{prediction_buffer_minutes} minutes",
-            metrics={"summary_rows": market_summary},
+            metrics={
+                "summary_rows": market_summary,
+                "backtest_window": {
+                    "requested_train_days": requested_train_days,
+                    "effective_train_days": int(train_days),
+                    "history_span_days": int(history_span_days),
+                    "validation_days": int(validation_days),
+                    "step_days": int(step_days),
+                    "fold_rows": int(len(fold_rows)),
+                },
+            },
         )
         self._session.add(model_run)
         self._session.flush()
@@ -315,7 +332,17 @@ class RollingOriginBacktester:
             BacktestResult(
                 model_run_id=model_run.model_run_id,
                 computed_at=datetime.now(UTC),
-                metrics={"summary_rows": market_summary},
+                metrics={
+                    "summary_rows": market_summary,
+                    "backtest_window": {
+                        "requested_train_days": requested_train_days,
+                        "effective_train_days": int(train_days),
+                        "history_span_days": int(history_span_days),
+                        "validation_days": int(validation_days),
+                        "step_days": int(step_days),
+                        "fold_rows": int(len(fold_rows)),
+                    },
+                },
                 artifact_path=str(artifacts.markdown_report),
             )
         )
@@ -324,6 +351,14 @@ class RollingOriginBacktester:
             progress_callback(total_windows * len(MARKET_TARGETS), total_windows * len(MARKET_TARGETS), "Backtest complete")
         return {
             "summary": market_summary,
+            "backtest_window": {
+                "requested_train_days": requested_train_days,
+                "effective_train_days": int(train_days),
+                "history_span_days": int(history_span_days),
+                "validation_days": int(validation_days),
+                "step_days": int(step_days),
+                "fold_rows": int(len(fold_rows)),
+            },
             "artifacts": {
                 "csv": str(artifacts.summary_csv),
                 "detail_csv": str(artifacts.detail_csv),
