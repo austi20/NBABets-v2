@@ -1,12 +1,13 @@
 # tests/unit/trading/test_live_snapshot.py
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 
+from app.server.schemas.trading import TradingReadinessModel
 from app.trading.live_snapshot import (
     LiveSnapshotInputs,
     TradingLiveSnapshotBuilder,
@@ -59,6 +60,26 @@ def _row(candidate_id: str, **overrides) -> dict:
     return base
 
 
+def _readiness(state: str) -> TradingReadinessModel:
+    return TradingReadinessModel(
+        observed_at=datetime.now(UTC),
+        state=state,
+        summary=state,
+        live_trading_enabled=True,
+        credentials_configured=True,
+        account_sync_enabled=True,
+        decisions_path="decisions.json",
+        symbols_path="symbols.json",
+        decision_id="a",
+        ticker="KX-CUNN-PTS",
+        game_date="2026-05-11",
+        market_status="open",
+        executable_symbol_count=1,
+        unresolved_symbol_count=0,
+        checks=[],
+    )
+
+
 def _inputs(
     builder,
     selections,
@@ -76,7 +97,7 @@ def _inputs(
         mode="observe",
         ws_connected=True,
         kill_switch_active=False,
-        ledger_state=MagicMock(realized=0.0, unrealized=0.0, daily_loss_cap=2.0),
+        ledger_state=SimpleNamespace(realized=0.0, unrealized=0.0, daily_loss_cap=2.0),
         positions=[],
         fills=[],
         resting_orders=[],
@@ -152,3 +173,77 @@ def test_threshold_force_excludes_picks_below_min_hit(builder, selections) -> No
     assert picks_by_id["a"].selected is False
     assert picks_by_id["a"].state == "excluded"
     assert picks_by_id["b"].selected is True
+
+
+def test_threshold_force_excludes_picks_below_min_edge(builder, selections) -> None:
+    selections.update_thresholds(min_hit_pct=0.0, min_edge_bps=450)
+    pack = _decision_pack(
+        candidates=[
+            _row("a", edge_bps=400),
+            _row("b", edge_bps=500),
+        ]
+    )
+    inputs = _inputs(builder, selections, decision_pack=pack, mode="supervised-live")
+    snapshot = builder.build(inputs)
+    picks_by_id = {p.candidate_id: p for p in snapshot.picks}
+    assert picks_by_id["a"].selected is False
+    assert picks_by_id["a"].state == "excluded"
+    assert picks_by_id["b"].selected is True
+
+
+def test_control_requires_ready_readiness_for_live_start(builder, selections) -> None:
+    pack = _decision_pack(candidates=[_row("a")])
+    blocked = _readiness("blocked")
+    ready = _readiness("ready")
+
+    blocked_snapshot = builder.build(
+        _inputs(
+            builder,
+            selections,
+            decision_pack=pack,
+            mode="supervised-live",
+            readiness=blocked,
+        )
+    )
+    ready_snapshot = builder.build(
+        _inputs(
+            builder,
+            selections,
+            decision_pack=pack,
+            mode="supervised-live",
+            readiness=ready,
+        )
+    )
+
+    assert blocked_snapshot.control.can_start is False
+    assert blocked_snapshot.kpis.system.status == "blocked"
+    assert ready_snapshot.control.can_start is True
+    assert ready_snapshot.kpis.system.status == "ready"
+
+
+def test_observe_rows_stay_visible_but_do_not_allocate_or_start(builder, selections) -> None:
+    live_row = _row("live")
+    observe_row = _row(
+        "observe",
+        mode="observe",
+        recommendation="observe_only",
+        execution={"allow_live_submit": False},
+    )
+    pack = _decision_pack(candidates=[live_row, observe_row])
+
+    snapshot = builder.build(
+        _inputs(
+            builder,
+            selections,
+            decision_pack=pack,
+            mode="supervised-live",
+            readiness=_readiness("ready"),
+        )
+    )
+
+    picks = {pick.candidate_id: pick for pick in snapshot.picks}
+    assert picks["live"].selected is True
+    assert picks["observe"].selected is False
+    assert picks["observe"].state == "excluded"
+    assert picks["observe"].blocker_reason == "observe-only decision"
+    assert snapshot.bet_slip.total_stake == pytest.approx(picks["live"].alloc)

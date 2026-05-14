@@ -52,13 +52,16 @@ def init_budget_from_wallet(
     if balance <= 0:
         _log.info("wallet-init: balance is %.2f, skipping init", balance)
         return
+    stamp = datetime.now(UTC)
+    if today is not None:
+        stamp = stamp.replace(year=today_date.year, month=today_date.month, day=today_date.day)
     payload: dict[str, Any] = {
         "max_open_notional": round(balance, 2),
         "per_market_cap": balance / 2,
         "per_order_cap": round(balance / 10, 2),
         "daily_loss_cap": round(balance / 5, 2),
         "reject_cooldown_seconds": int(existing.get("reject_cooldown_seconds", 300)),
-        "wallet_init_done_at": datetime.now(UTC).isoformat(),
+        "wallet_init_done_at": stamp.isoformat(),
     }
     for preserved in ("per_order_cap_override",):
         if preserved in existing:

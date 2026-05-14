@@ -33,6 +33,7 @@ _GATE_FIELDS = (
     "one_order_cap_ok",
     "price_within_limit",
 )
+_EXECUTABLE_RECOMMENDATIONS = frozenset({"buy_yes", "buy_no", "over", "under"})
 
 _GATE_REASONS = {
     "symbol_resolved": "Kalshi symbol could not be resolved",
@@ -102,7 +103,7 @@ class TradingLiveSnapshotBuilder:
         raw_rows = inputs.decision_pack.get("decisions") or []
         thresholds = inputs.selections.thresholds
         # First pass: build rows without allocation
-        pre_rows: list[tuple[dict[str, Any], str, str, bool]] = []
+        pre_rows: list[tuple[dict[str, Any], str, str, bool, str | None]] = []
         for _rank, raw in enumerate(raw_rows):
             candidate_id = str(
                 raw.get("candidate_id")
@@ -114,18 +115,24 @@ class TradingLiveSnapshotBuilder:
                 continue
             gates = raw.get("gates") or {}
             blocker_reason = self._gate_blocker(gates, raw.get("mode"))
+            live_blocker = self._live_eligibility_blocker(raw)
             below_thresholds = float(raw.get("model_prob") or 0.0) < thresholds.min_hit_pct
+            below_edge = int(raw.get("edge_bps") or 0) < thresholds.min_edge_bps
             user_selected = inputs.selections.is_selected(inputs.board_date, candidate_id)
             if blocker_reason is not None:
                 state: str = "blocked"
                 selected = False
-            elif not user_selected or below_thresholds:
+            elif live_blocker is not None:
+                state = "excluded"
+                selected = False
+                blocker_reason = live_blocker
+            elif not user_selected or below_thresholds or below_edge:
                 state = "excluded"
                 selected = False
             else:
                 state = "queued"
                 selected = True
-            pre_rows.append((raw, candidate_id, state, selected))
+            pre_rows.append((raw, candidate_id, state, selected, blocker_reason))
 
         # Compute allocations for selected rows
         selected_picks = [
@@ -133,7 +140,7 @@ class TradingLiveSnapshotBuilder:
                 candidate_id=candidate_id,
                 model_prob=float(raw.get("model_prob") or 0.0),
             )
-            for raw, candidate_id, state, selected in pre_rows
+            for raw, candidate_id, _state, selected, _blocker_reason in pre_rows
             if selected
         ]
         stakes = allocate_proportional_with_soft_cap(
@@ -142,8 +149,7 @@ class TradingLiveSnapshotBuilder:
 
         # Second pass: build PickRowModel with allocations
         rows: list[PickRowModel] = []
-        for rank, (raw, candidate_id, state, selected) in enumerate(pre_rows):
-            blocker_reason = self._gate_blocker(raw.get("gates") or {}, raw.get("mode"))
+        for rank, (raw, candidate_id, state, selected, blocker_reason) in enumerate(pre_rows):
             ticker = (raw.get("kalshi") or {}).get("ticker")
             book_entry = inputs.market_book_snapshot.get(ticker) if ticker else None
             kalshi = PickKalshiModel(
@@ -184,6 +190,17 @@ class TradingLiveSnapshotBuilder:
         for field in _GATE_FIELDS:
             if gates.get(field) is not True:
                 return _GATE_REASONS.get(field, f"gate {field} failed")
+        return None
+
+    def _live_eligibility_blocker(self, raw: dict[str, Any]) -> str | None:
+        if str(raw.get("mode") or "").strip().lower() != "live":
+            return "observe-only decision"
+        execution = raw.get("execution") if isinstance(raw.get("execution"), dict) else {}
+        if execution.get("allow_live_submit") is not True:
+            return "live submit not allowed"
+        recommendation = str(raw.get("recommendation") or "").strip().lower()
+        if recommendation not in _EXECUTABLE_RECOMMENDATIONS:
+            return f"not executable: {recommendation or 'missing'}"
         return None
 
     def _prop_label(self, raw: dict[str, Any]) -> str:
@@ -240,8 +257,8 @@ class TradingLiveSnapshotBuilder:
         inputs: LiveSnapshotInputs,
     ) -> KpiTilesModel:
         ledger = inputs.ledger_state
-        realized = float(getattr(ledger, "realized", 0.0))
-        unrealized = float(getattr(ledger, "unrealized", 0.0))
+        realized = float(getattr(ledger, "daily_realized_pnl", getattr(ledger, "realized", 0.0)))
+        unrealized = float(getattr(ledger, "daily_unrealized_pnl", getattr(ledger, "unrealized", 0.0)))
         loss_cap = float(getattr(ledger, "daily_loss_cap", 0.0))
         daily = realized + unrealized
         loss_progress = (
@@ -255,6 +272,16 @@ class TradingLiveSnapshotBuilder:
             checks = getattr(inputs.readiness, "checks", []) or []
             gates_total = len(checks)
             gates_passed = sum(1 for c in checks if getattr(c, "status", "") == "pass")
+        readiness_state = str(getattr(inputs.readiness, "state", "") or "")
+        system_status = (
+            "ready"
+            if readiness_state == "ready"
+            else "blocked"
+            if readiness_state
+            else "ready"
+            if gates_total == 0 or gates_passed == gates_total
+            else "blocked"
+        )
         return KpiTilesModel(
             pnl=KpiPnlModel(
                 daily_pnl=round(daily, 4),
@@ -277,7 +304,7 @@ class TradingLiveSnapshotBuilder:
                 est_total_profit=bet_slip.est_total_profit,
             ),
             system=KpiSystemModel(
-                status="ready" if gates_total == 0 or gates_passed == gates_total else "blocked",
+                status=system_status,  # type: ignore[arg-type]
                 mode=inputs.mode,  # type: ignore[arg-type]
                 gates_passed=gates_passed,
                 gates_total=gates_total,
@@ -289,8 +316,21 @@ class TradingLiveSnapshotBuilder:
     def _build_control(
         self, inputs: LiveSnapshotInputs, bet_slip: BetSlipModel
     ) -> ControlBarStateModel:
+        readiness_ready = str(getattr(inputs.readiness, "state", "") or "") == "ready"
+        first = (inputs.decision_pack.get("decisions") or [{}])[0]
+        first_live_ready = False
+        if isinstance(first, dict):
+            execution = first.get("execution") if isinstance(first.get("execution"), dict) else {}
+            recommendation = str(first.get("recommendation") or "").strip().lower()
+            first_live_ready = (
+                str(first.get("mode") or "").strip().lower() == "live"
+                and execution.get("allow_live_submit") is True
+                and recommendation in {"buy_yes", "buy_no", "over", "under"}
+            )
         can_start = (
             inputs.mode == "supervised-live"
+            and readiness_ready
+            and first_live_ready
             and inputs.loop_state in {"idle", "exited", "killed", "failed"}
             and len(bet_slip.selected) > 0
             and not inputs.kill_switch_active
