@@ -6,11 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from app.config.settings import Settings
 from app.trading.live_pack_builder import (
     _read_market_profile,
     build_primary_decision_row,
     evaluate_gates_for_row,
     pick_executable_entries,
+    pick_visible_pack_entries,
+    write_live_decision_pack,
 )
 from app.trading.monitoring import QuoteSnapshot
 from app.trading.risk import RiskLimits
@@ -99,11 +102,25 @@ def test_evaluate_gates_blocks_finalized_or_stale_market() -> None:
 def test_pick_executable_skips_observe() -> None:
     rows = [
         {"recommendation": "observe_only", "kalshi_ticker": "A", "line_value": 1.0},
-        {"recommendation": "buy_yes", "kalshi_ticker": "B", "line_value": 2.0},
+        {"recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "B", "line_value": 2.0},
+        {"recommendation": "buy_yes", "candidate_status": "candidate", "kalshi_ticker": "C", "line_value": 3.0},
     ]
     picked = pick_executable_entries(rows)
     assert len(picked) == 1
     assert picked[0]["kalshi_ticker"] == "B"
+
+
+def test_blocked_rows_are_visible_but_not_executable() -> None:
+    row = {
+        "recommendation": "observe_only",
+        "original_recommendation": "buy_yes",
+        "candidate_status": "blocked",
+        "kalshi_ticker": "KX-BLOCKED",
+        "line_value": 2.0,
+    }
+
+    assert pick_executable_entries([row]) == []
+    assert pick_visible_pack_entries([row]) == [row]
 
 
 def test_selected_observe_row_can_pack_but_never_live_arms() -> None:
@@ -189,6 +206,7 @@ def _base_row() -> dict:
         "target_id": "t1",
         "market_key": "points",
         "recommendation": "buy_yes",
+        "candidate_status": "selected_live",
         "kalshi_ticker": "KX-1",
         "line_value": 25.5,
         "player_id": "237",
@@ -261,3 +279,83 @@ def test_brain_health_fail_open_when_context_none() -> None:
     )
     assert d["gates"]["brain_health_ok"] is True
     assert d["mode"] == "live"
+
+
+class _FakeMarketClient:
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        self._markets = {
+            "KX-OK": {
+                "status": "open",
+                "yes_bid_dollars": "0.48",
+                "yes_ask_dollars": "0.50",
+                "no_bid_dollars": "0.49",
+                "no_ask_dollars": "0.52",
+            },
+            "KX-PRICE": {
+                "status": "open",
+                "yes_bid_dollars": "0.98",
+                "yes_ask_dollars": "0.99",
+                "no_bid_dollars": "0.01",
+                "no_ask_dollars": "0.02",
+            },
+        }
+
+    def __enter__(self) -> _FakeMarketClient:
+        return self
+
+    def __exit__(self, *args) -> None:  # noqa: ANN002
+        return None
+
+    def get_market(self, ticker: str) -> dict:
+        return {"market": self._markets[ticker]}
+
+
+def test_write_live_pack_arms_multiple_selected_rows_and_downgrades_failed_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        APP_DATA_DIR=str(tmp_path / "app"),
+        BRAIN_VAULT_ROOT=str(tmp_path / "vault"),
+        KALSHI_SYMBOLS_PATH=str(tmp_path / "symbols.json"),
+        KALSHI_RESOLUTION_TARGETS_PATH=str(tmp_path / "targets.json"),
+        KALSHI_DECISIONS_PATH=str(tmp_path / "decisions.json"),
+        TRADING_LIMITS_PATH=str(tmp_path / "limits.json"),
+    )
+    Path(settings.trading_limits_path).write_text(
+        (
+            '{"per_order_cap": 1.0, "per_market_cap": 2.0, "max_open_notional": 2.0, '
+            '"daily_loss_cap": 2.0, "reject_cooldown_seconds": 300}'
+        ),
+        encoding="utf-8",
+    )
+    Path(settings.kalshi_resolution_targets_path).write_text(
+        '{"defaults": {"contracts": "1.00", "max_price_dollars": "0.57"}}',
+        encoding="utf-8",
+    )
+    Path(settings.kalshi_symbols_path).write_text(
+        """
+{
+  "symbols": [
+    {"target_id": "ok", "market_key": "points", "recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "KX-OK", "line_value": 25.5, "player_id": "1", "game_date": "2099-05-10", "confidence": 0.7, "edge_bps": 700},
+    {"target_id": "price", "market_key": "points", "recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "KX-PRICE", "line_value": 20.5, "player_id": "2", "game_date": "2099-05-10", "confidence": 0.7, "edge_bps": 700, "max_price_dollars": "0.40"}
+  ],
+  "unresolved": []
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.trading.live_pack_builder.KalshiPublicMarketDataClient", _FakeMarketClient)
+
+    doc = write_live_decision_pack(
+        decisions_path=Path(settings.kalshi_decisions_path),
+        settings=settings,
+        arm_live=True,
+        max_spread=0.20,
+    )
+
+    assert [row["decision_id"] for row in doc["decisions"]] == ["ok", "price"]
+    assert doc["decisions"][0]["mode"] == "live"
+    assert doc["decisions"][1]["mode"] == "observe"
+    assert doc["decisions"][1]["recommendation"] == "observe_only"
+    assert doc["decisions"][1]["gates"]["price_within_limit"] is False

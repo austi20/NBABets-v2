@@ -131,12 +131,30 @@ def pick_executable_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any
         rec = _norm_rec(row.get("recommendation"))
         original_rec = _norm_rec(row.get("original_recommendation"))
         status = _norm_rec(row.get("candidate_status"))
+        selected_live = rec in _EXECUTABLE_REC and status == "selected_live"
         selected_observe = (
             rec == "observe_only"
             and status in {"selected_observe_only", "watchlist"}
             and original_rec in _EXECUTABLE_REC
         )
-        if rec not in _EXECUTABLE_REC and not selected_observe:
+        if not selected_live and not selected_observe:
+            continue
+        if not row.get("kalshi_ticker"):
+            continue
+        if row.get("line_value") in (None, ""):
+            continue
+        out.append(row)
+    return out
+
+
+def pick_visible_pack_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in entries:
+        original_rec = _norm_rec(row.get("original_recommendation"))
+        status = _norm_rec(row.get("candidate_status"))
+        if status not in {"selected_live", "selected_observe_only", "watchlist", "blocked"}:
+            continue
+        if status == "blocked" and original_rec not in _EXECUTABLE_REC:
             continue
         if not row.get("kalshi_ticker"):
             continue
@@ -290,13 +308,21 @@ def build_primary_decision_row(
     all_gates = {**gate_result.gates, "brain_health_ok": brain_health_ok}
     failed = [k for k, v in all_gates.items() if not v]
     recommendation = _normalize_recommendation(primary)
-    live_ok = arm_live and recommendation in _EXECUTABLE_REC and not failed
+    status = _norm_rec(primary.get("candidate_status"))
+    live_ok = (
+        arm_live
+        and status == "selected_live"
+        and recommendation in _EXECUTABLE_REC
+        and not failed
+    )
     notes: list[str] = [
         f"pack_builder_at={datetime.now(UTC).isoformat()}",
         f"entry={gate_result.entry} spread={gate_result.spread}",
     ]
     if arm_live and recommendation not in _EXECUTABLE_REC:
         notes.append(f"not_live_executable={recommendation}")
+    if arm_live and status != "selected_live":
+        notes.append(f"not_selected_live={status or 'missing'}")
     if gate_result.quote_error:
         notes.append(f"quote_error={gate_result.quote_error}")
     if not brain_health_ok and brain_context is not None:
@@ -401,20 +427,25 @@ def write_live_decision_pack(
     _ece_env = os.getenv("LIVE_PACK_MAX_ECE")
     ece_threshold: float | None = float(_ece_env) if _ece_env else None
 
-    primary = executable[0]
-    monitored = row_to_monitored(primary)
-    if monitored is None:
-        raise LivePackBuildError("primary symbol row invalid")
+    visible = pick_visible_pack_entries(entries)
+    rows_to_pack: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for source_rows in (executable, visible):
+        for source_row in source_rows:
+            row_key = str(source_row.get("target_id") or source_row.get("stable_id") or source_row.get("kalshi_ticker"))
+            if row_key in seen_keys:
+                continue
+            seen_keys.add(row_key)
+            rows_to_pack.append(source_row)
 
-    risk = _risk_block(defaults, primary)
-    rows_to_quote: list[tuple[dict[str, Any], MonitoredSymbol, dict[str, Any]]] = [
-        (primary, monitored, risk),
-    ]
-    for other in executable[1:]:
+    rows_to_quote: list[tuple[dict[str, Any], MonitoredSymbol, dict[str, Any]]] = []
+    for other in rows_to_pack:
         om = row_to_monitored(other)
         if om is None:
             continue
         rows_to_quote.append((other, om, _risk_block(defaults, other)))
+    if not rows_to_quote:
+        raise LivePackBuildError("no visible symbol rows could be converted into monitored Kalshi markets")
 
     quotes_and_gates: list[tuple[dict[str, Any], GateResult]] = []
     brain_contexts: list[dict[str, Any] | None] = []
@@ -432,34 +463,32 @@ def write_live_decision_pack(
             mk = str(nrow.get("market_key", ""))
             brain_contexts.append(_read_market_profile(mk, vault_root) if mk else None)
 
-    gate_result = quotes_and_gates[0][1]
-    if arm_live:
-        failed = [k for k, v in gate_result.gates.items() if not v]
-        if failed:
-            raise LivePackBuildError(
-                "refusing live arm: gates failed for primary symbol "
-                f"{primary.get('kalshi_ticker')}: {', '.join(failed)} "
-                f"(entry={gate_result.entry} spread={gate_result.spread})",
+    decisions: list[dict[str, Any]] = []
+    live_failures: list[str] = []
+    for (nrow, ng), bc in zip(quotes_and_gates, brain_contexts, strict=True):
+        row_arm_live = arm_live and _norm_rec(nrow.get("candidate_status")) == "selected_live"
+        decision = build_primary_decision_row(
+            nrow,
+            defaults=defaults,
+            gate_result=ng,
+            arm_live=row_arm_live,
+            brain_context=bc,
+            ece_threshold=ece_threshold,
+        )
+        if row_arm_live and decision.get("mode") != "live":
+            failed = [k for k, v in decision.get("gates", {}).items() if not v]
+            live_failures.append(
+                f"{nrow.get('kalshi_ticker')}: {','.join(failed) or 'not_live_executable'}"
             )
+        decisions.append(decision)
 
-    row = build_primary_decision_row(
-        quotes_and_gates[0][0],
-        defaults=defaults,
-        gate_result=gate_result,
-        arm_live=arm_live,
-        brain_context=brain_contexts[0],
-        ece_threshold=ece_threshold,
-    )
-    extra: list[dict[str, Any]] = []
-    for (nrow, ng), bc in zip(quotes_and_gates[1:], brain_contexts[1:], strict=True):
-        extra.append(
-            build_primary_decision_row(
-                nrow, defaults=defaults, gate_result=ng, arm_live=False,
-                brain_context=bc, ece_threshold=ece_threshold,
-            ),
+    if arm_live and not any(row.get("mode") == "live" for row in decisions):
+        raise LivePackBuildError(
+            "refusing live arm: no selected_live rows passed refreshed live gates"
+            + (f" ({'; '.join(live_failures)})" if live_failures else "")
         )
 
-    doc = build_pack_document([row, *extra])
+    doc = build_pack_document(decisions)
     decisions_path.parent.mkdir(parents=True, exist_ok=True)
     decisions_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     return doc
