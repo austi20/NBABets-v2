@@ -3,7 +3,21 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DesktopRoot = Join-Path $RepoRoot "desktop_tauri"
-$SidecarPath = Join-Path $DesktopRoot "src-tauri\binaries\nba-sidecar-x86_64-pc-windows-msvc.exe"
+
+function Get-HostTargetTriple {
+    if ($env:TAURI_TARGET_TRIPLE) {
+        return $env:TAURI_TARGET_TRIPLE
+    }
+    $rustcInfo = & rustc -vV
+    $hostLine = $rustcInfo | Where-Object { $_ -like "host:*" } | Select-Object -First 1
+    if (-not $hostLine) {
+        throw "Could not determine Rust host target triple from rustc -vV"
+    }
+    return ($hostLine -replace "^host:\s*", "").Trim()
+}
+
+$TargetTriple = Get-HostTargetTriple
+$SidecarPath = Join-Path $DesktopRoot "src-tauri\binaries\nba-sidecar-$TargetTriple.exe"
 
 if (-not (Test-Path $DesktopRoot)) {
     throw "Missing desktop_tauri project at $DesktopRoot"

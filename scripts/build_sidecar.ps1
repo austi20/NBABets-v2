@@ -3,7 +3,21 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputDir = Join-Path $root "desktop_tauri\src-tauri\binaries"
 $binaryBase = "nba-sidecar"
-$targetFile = Join-Path $outputDir "$binaryBase-x86_64-pc-windows-msvc.exe"
+
+function Get-HostTargetTriple {
+    if ($env:TAURI_TARGET_TRIPLE) {
+        return $env:TAURI_TARGET_TRIPLE
+    }
+    $rustcInfo = & rustc -vV
+    $hostLine = $rustcInfo | Where-Object { $_ -like "host:*" } | Select-Object -First 1
+    if (-not $hostLine) {
+        throw "Could not determine Rust host target triple from rustc -vV"
+    }
+    return ($hostLine -replace "^host:\s*", "").Trim()
+}
+
+$targetTriple = Get-HostTargetTriple
+$targetFile = Join-Path $outputDir "$binaryBase-$targetTriple.exe"
 
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
