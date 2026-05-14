@@ -35,6 +35,7 @@ htmlcov/
 .claude/skillpacks.local.json
 .claude/cache/skillpacks/
 .claude/generated/staging/
+.superpowers/
 
 # Generated project data and outputs
 *.db
@@ -45,13 +46,17 @@ data/processed/*
 !data/processed/.gitkeep
 data/snapshots/*
 !data/snapshots/.gitkeep
+data/decisions/*
+!data/decisions/.gitkeep
 data/parquet/*
 !data/parquet/.gitkeep
 !data/parquet/**/.gitkeep
 reports/*
 !reports/.gitkeep
+data/artifacts/
 temp/*
 !temp/.gitkeep
+desktop_tauri/src-tauri/data/
 build/
 dist/
 
@@ -66,3 +71,4 @@ _desktop_smoke_pid.txt
 # Kalshi trading config (use .example.json files as templates)
 config/trading_limits.json
 config/kalshi_symbols.json
+config/kalshi_resolution_targets.json
