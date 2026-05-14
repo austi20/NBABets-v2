@@ -18,6 +18,7 @@ class ArtifactPaths:
     calibrators: Path
     metadata: Path
     population_priors: Path
+    consistency_scores: Path
 
 
 def artifact_paths(model_version: str, namespace: str | None = None) -> ArtifactPaths:
@@ -31,6 +32,7 @@ def artifact_paths(model_version: str, namespace: str | None = None) -> Artifact
         calibrators=root / "calibrators.joblib",
         metadata=root / "metadata.joblib",
         population_priors=root / "population_priors.joblib",
+        consistency_scores=root / "consistency_scores.joblib",
     )
 
 

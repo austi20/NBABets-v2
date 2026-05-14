@@ -77,6 +77,45 @@ _SHADOW_BASELINE_MINUTES_THRESHOLD = 12.0
 _ROTATION_SHOCK_VERSION = "v1_phase9"
 
 
+def _extract_consistency_scores_payload(frame: pd.DataFrame) -> dict[tuple[str, str], dict[str, float]]:
+    """Latest training-row consistency features per player, keyed for each tradable ``market_key``.
+
+    Historical frames are player-game rows (no ``market_key``); the artifact duplicates the same
+    row-level diagnostics across ``MARKET_TARGETS`` so Kalshi routing can resolve
+    `(player_id, market_suffix)` lookups.
+    """
+
+    needed = {"player_id", "game_date", "consistency_score"}
+    if frame.empty or not needed.issubset(frame.columns):
+        return {}
+    cols = ["player_id", "game_date", "consistency_score"]
+    for optional in ("starter_consistency_10", "minutes_floor_reliability"):
+        if optional in frame.columns:
+            cols.append(optional)
+    work = frame.loc[:, cols].copy()
+    work["game_date"] = pd.to_datetime(work["game_date"], errors="coerce")
+    work = work.sort_values("game_date")
+    work["player_id"] = pd.to_numeric(work["player_id"], errors="coerce")
+    work = work.dropna(subset=["player_id"])
+    latest_idx = work.groupby("player_id", sort=False)["game_date"].idxmax()
+    latest = work.loc[latest_idx]
+
+    extras = [c for c in ("starter_consistency_10", "minutes_floor_reliability") if c in latest.columns]
+
+    payload: dict[tuple[str, str], dict[str, float]] = {}
+    for _, row in latest.iterrows():
+        pid = int(row["player_id"])
+        blob: dict[str, float] = {
+            "consistency_score": float(pd.to_numeric(row.get("consistency_score"), errors="coerce") or 0.0),
+        }
+        for col in extras:
+            blob[col] = float(pd.to_numeric(row.get(col), errors="coerce") or 0.0)
+        pid_s = str(pid)
+        for market_key in MARKET_TARGETS:
+            payload[(pid_s, market_key)] = blob.copy()
+    return payload
+
+
 def _ensure_player_team_id_column(frame: pd.DataFrame) -> pd.DataFrame:
     """Align with historical loaders: player's team must appear as ``player_team_id``.
 
@@ -154,6 +193,7 @@ class TrainingPipeline:
         if historical is None:
             emit("Loading historical training data")
             historical = self._loader.load_historical_player_games()
+        historical_row_count = int(len(historical))
         current_step += 1
         emit("Building leakage-safe training features")
         feature_set = self._features.build_training_frame(historical)
@@ -237,7 +277,14 @@ class TrainingPipeline:
             if progress_callback is not None:
                 progress_callback(current_step, total_steps, "Calibration pass complete")
         training_metrics["calibration_diagnostics"] = calibration_diagnostics
+        training_metrics["calibration_health"] = _calibration_health_summary(
+            diagnostics=calibration_diagnostics,
+            historical_row_count=historical_row_count,
+            feature_row_count=int(len(feature_set.frame)),
+            training_row_count=int(len(frame)),
+        )
         training_metrics["provider_context"] = self._provider_context_counts()
+        training_metrics["history_scope"] = _history_scope_diagnostics(frame)
         training_metrics["training_data_quality"] = training_data_quality
 
         model_run = ModelRun(
@@ -254,6 +301,8 @@ class TrainingPipeline:
         self._session.flush()
 
         paths = artifact_paths(self._settings.model_version, self._artifact_namespace)
+        consistency_payload = _extract_consistency_scores_payload(frame)
+        dump_artifact(paths.consistency_scores, consistency_payload)
         metadata = {
             "model_run_id": model_run.model_run_id,
             "trained_at": datetime.now(UTC).isoformat(),
@@ -956,11 +1005,12 @@ class TrainingPipeline:
         oof_priors: dict[str, list[np.ndarray]] = {market_key: [] for market_key in MARKET_TARGETS}
         priors_complete: dict[str, bool] = {market_key: True for market_key in MARKET_TARGETS}
         splits = self._calibration_splits(ordered)
+        fold_count = len(splits)
         if progress_callback is not None:
             progress_callback(
                 progress_state[0],
                 progress_state[1],
-                f"Calibration setup complete ({len(splits)} folds)",
+                f"Calibration setup complete ({fold_count} folds)",
             )
 
         for split_index, (train_idx, valid_idx) in enumerate(splits, start=1):
@@ -1100,6 +1150,8 @@ class TrainingPipeline:
             diagnostics[market_key] = {
                 "ece": round(float(ece), 6),
                 "sample_count": int(probs.size),
+                "fold_count": int(fold_count),
+                "training_row_count": int(len(ordered)),
                 "edge_bucket_diagnostics": _edge_bucket_diagnostics(probs, lbls),
                 "high_confidence_gap": _high_confidence_gap(probs, lbls),
             }
@@ -1120,6 +1172,31 @@ class TrainingPipeline:
                     market_threshold,
                 )
 
+        diagnostics["_summary"] = {
+            "training_row_count": int(len(ordered)),
+            "fold_count": int(fold_count),
+            "oof_sample_count_min": int(
+                min(
+                    (
+                        payload["sample_count"]
+                        for payload in diagnostics.values()
+                        if isinstance(payload, dict) and "sample_count" in payload
+                    ),
+                    default=0,
+                )
+            ),
+            "oof_sample_count_max": int(
+                max(
+                    (
+                        payload["sample_count"]
+                        for payload in diagnostics.values()
+                        if isinstance(payload, dict) and "sample_count" in payload
+                    ),
+                    default=0,
+                )
+            ),
+            "purge_days": int(self._settings.calibration_purge_days),
+        }
         return calibrators, diagnostics
 
     def _fit_direct_calibrator(
@@ -2609,6 +2686,67 @@ def _per_minute_average(frame: pd.DataFrame, *, total_column: str, rate_columns:
     if not valid.any():
         return 0.0
     return float((totals[valid] / minutes[valid]).mean())
+
+
+def _calibration_health_summary(
+    *,
+    diagnostics: dict[str, Any],
+    historical_row_count: int,
+    feature_row_count: int,
+    training_row_count: int,
+) -> dict[str, Any]:
+    market_payloads = [
+        payload
+        for key, payload in diagnostics.items()
+        if key in MARKET_TARGETS and isinstance(payload, dict)
+    ]
+    sample_counts = [
+        int(payload.get("sample_count") or 0)
+        for payload in market_payloads
+        if isinstance(payload.get("sample_count"), (int, float, str))
+    ]
+    ece_values = [
+        float(payload.get("ece"))
+        for payload in market_payloads
+        if isinstance(payload.get("ece"), (int, float, str))
+    ]
+    summary = diagnostics.get("_summary") if isinstance(diagnostics.get("_summary"), dict) else {}
+    return {
+        "historical_row_count": int(historical_row_count),
+        "feature_row_count": int(feature_row_count),
+        "training_row_count": int(training_row_count),
+        "calibration_fold_count": int(summary.get("fold_count") or 0),
+        "oof_sample_count_min": min(sample_counts, default=0),
+        "oof_sample_count_max": max(sample_counts, default=0),
+        "ece_mean": round(float(np.mean(ece_values)), 6) if ece_values else None,
+        "ece_max": round(float(np.max(ece_values)), 6) if ece_values else None,
+    }
+
+
+def _history_scope_diagnostics(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty:
+        return {
+            "row_count": 0,
+            "game_count": 0,
+            "team_count": 0,
+            "date_start": None,
+            "date_end": None,
+        }
+    team_columns = [column for column in ("player_team_id", "team_id", "home_team_id", "away_team_id") if column in frame.columns]
+    teams: set[int] = set()
+    for column in team_columns:
+        values = pd.to_numeric(frame[column], errors="coerce").dropna().astype(int)
+        teams.update(int(value) for value in values.unique())
+    dates = pd.to_datetime(frame["game_date"], errors="coerce") if "game_date" in frame.columns else pd.Series(dtype="datetime64[ns]")
+    valid_dates = dates.dropna()
+    return {
+        "row_count": int(len(frame)),
+        "game_count": int(frame["game_id"].nunique()) if "game_id" in frame.columns else 0,
+        "player_count": int(frame["player_id"].nunique()) if "player_id" in frame.columns else 0,
+        "team_count": int(len(teams)),
+        "date_start": valid_dates.min().date().isoformat() if not valid_dates.empty else None,
+        "date_end": valid_dates.max().date().isoformat() if not valid_dates.empty else None,
+    }
 
 
 def _training_data_quality_checks(frame: pd.DataFrame, feature_columns: list[str]) -> dict[str, object]:
