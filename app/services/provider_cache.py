@@ -380,6 +380,58 @@ class LocalProviderCache:
                 stored_any_days = True
         return stored_any_days
 
+    def repair_legacy_scoped_log_cache(self) -> dict[str, int | bool]:
+        """Clear pre-repair player-log cache entries once.
+
+        Older cache rows did not record whether the source provider was scoped
+        to the current slate. Those rows can look like complete historical log
+        days while actually containing only a handful of teams, so the safest
+        migration is to evict the legacy log-day tables and let them refill
+        from unscoped history fetches.
+        """
+        marker_key = "legacy_scoped_log_cache_repair_v1"
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT value FROM cache_metadata WHERE key = ?",
+                (marker_key,),
+            ).fetchone()
+            if existing is not None:
+                return {
+                    "ran": False,
+                    "deleted_provider_cached_log_days": 0,
+                    "deleted_provider_cached_logs": 0,
+                }
+            deleted_log_days = int(
+                connection.execute("DELETE FROM cached_log_days").rowcount or 0
+            )
+            deleted_logs = int(
+                connection.execute("DELETE FROM cached_player_game_logs").rowcount or 0
+            )
+            connection.execute(
+                """
+                INSERT INTO cache_metadata (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    marker_key,
+                    json.dumps(
+                        {
+                            "deleted_provider_cached_log_days": deleted_log_days,
+                            "deleted_provider_cached_logs": deleted_logs,
+                        }
+                    ),
+                    _isoformat(datetime.now(UTC)),
+                ),
+            )
+        return {
+            "ran": True,
+            "deleted_provider_cached_log_days": deleted_log_days,
+            "deleted_provider_cached_logs": deleted_logs,
+        }
+
     def prune_odds_cache(
         self,
         *,
@@ -489,6 +541,15 @@ class LocalProviderCache:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cache_metadata (
+                    key TEXT NOT NULL PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cached_fetches (

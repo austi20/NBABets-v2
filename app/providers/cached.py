@@ -189,6 +189,35 @@ class CachedStatsProvider(StatsProvider):
         start_date: date,
         end_date: date,
     ) -> tuple[ProviderFetchResult, list[PlayerGameLogPayload]]:
+        if self._team_scope_abbreviations:
+            result, logs = await self._provider.fetch_player_game_logs(start_date, end_date)
+            self.provider_name = getattr(self._provider, "provider_name", self.provider_name)
+            self._cache_provider_name = _active_provider_cache_name(self._provider)
+            sorted_logs = sorted(
+                dedupe_player_game_log_payloads(logs),
+                key=_player_log_sort_key,
+            )
+            return (
+                _cache_result(
+                    provider_name=self._cache_provider_name,
+                    method_name="fetch_player_game_logs",
+                    fetched_at=result.fetched_at,
+                    payload={
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
+                        "cached_days": [],
+                        "fetched_days": [
+                            item.isoformat() for item in _date_range(start_date, end_date)
+                        ],
+                        "item_count": len(sorted_logs),
+                        "sorted_by": "player",
+                        "cache_mode": "bypassed_team_scope",
+                        "team_scope": sorted(self._team_scope_abbreviations),
+                    },
+                ),
+                sorted_logs,
+            )
+
         requested_days = list(_date_range(start_date, end_date))
         provider_names = _cache_provider_names(self._provider)
         cached_days, missing_days = self._cache.describe_log_day_coverage(

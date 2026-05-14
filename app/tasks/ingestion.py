@@ -28,8 +28,10 @@ async def refresh_all(
     cache_anchor_day: date | None = None
     missing_log_days: list[date] = []
     odds_cache_pruned = 0
+    provider_cache_repair: dict[str, int | bool] | None = None
     if settings.enable_provider_cache:
         provider_cache = LocalProviderCache()
+        provider_cache_repair = provider_cache.repair_legacy_scoped_log_cache()
         cache_anchor_day = provider_cache.latest_cached_log_day(
             provider_names=_cache_provider_names(stats_provider),
         )
@@ -68,6 +70,12 @@ async def refresh_all(
         )
     elif odds_cache_pruned:
         emit(f"Pruned {odds_cache_pruned} stale odds cache entries before refresh")
+    if provider_cache_repair and provider_cache_repair.get("ran"):
+        emit(
+            "Repaired legacy provider log cache "
+            f"({provider_cache_repair.get('deleted_provider_cached_log_days', 0)} day markers, "
+            f"{provider_cache_repair.get('deleted_provider_cached_logs', 0)} log rows cleared)"
+        )
     emit("Preparing provider clients")
     if hasattr(stats_provider, "verify_required_access"):
         current_step += 1
@@ -75,6 +83,7 @@ async def refresh_all(
         await stats_provider.verify_required_access()
     prefetched_odds_result = None
     prefetched_odds_lines = None
+    team_scope: set[str] = set()
     if hasattr(stats_provider, "set_team_scope"):
         current_step += 1
         emit(f"Prefetching odds from {odds_provider.provider_name}")
@@ -106,19 +115,37 @@ async def refresh_all(
                 missing_log_days=missing_log_days,
             )
         )
-        metrics.update(await orchestrator.refresh_reference_history(stats_provider, history_start_date, effective_date))
-        current_step += 1
-        emit(
-            _history_progress_message(
-                prefix="Ingesting player game logs",
-                start_date=history_start_date,
-                end_date=effective_date,
-                cache_anchor_day=cache_anchor_day,
-                fallback_days=history_days,
-                missing_log_days=missing_log_days,
+        scoped_for_current_slate = bool(team_scope) and hasattr(stats_provider, "set_team_scope")
+        if scoped_for_current_slate:
+            emit("Clearing current-slate team scope for full-league historical refresh")
+            stats_provider.set_team_scope(set())
+        try:
+            metrics.update(await orchestrator.refresh_reference_history(stats_provider, history_start_date, effective_date))
+            current_step += 1
+            emit(
+                _history_progress_message(
+                    prefix="Ingesting player game logs",
+                    start_date=history_start_date,
+                    end_date=effective_date,
+                    cache_anchor_day=cache_anchor_day,
+                    fallback_days=history_days,
+                    missing_log_days=missing_log_days,
+                )
             )
-        )
-        metrics.update(await orchestrator.ingest_game_logs(stats_provider, history_start_date, effective_date))
+            metrics.update(await orchestrator.ingest_game_logs(stats_provider, history_start_date, effective_date))
+        finally:
+            if scoped_for_current_slate:
+                stats_provider.set_team_scope(team_scope)
+        if provider_cache_repair is not None:
+            metrics["provider_log_cache_repair_ran"] = int(bool(provider_cache_repair.get("ran")))
+            metrics["provider_log_cache_repair_deleted_days"] = int(
+                provider_cache_repair.get("deleted_provider_cached_log_days", 0)
+            )
+            metrics["provider_log_cache_repair_deleted_logs"] = int(
+                provider_cache_repair.get("deleted_provider_cached_logs", 0)
+            )
+        metrics["historical_refresh_team_scope_count"] = 0
+        metrics["current_slate_team_scope_count"] = len(team_scope)
         current_step += 1
         emit("Refreshing game-day player availability")
         changed_game_ids: set[int] = set()
