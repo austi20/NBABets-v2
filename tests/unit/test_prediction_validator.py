@@ -13,6 +13,7 @@ from app.services.agents.prediction_validator import PredictionValidatorAgent
 
 
 def _make_session(monkeypatch):
+    import app.services.agents.prediction_validator as validator_mod
     from app.config.settings import get_settings
 
     root = Path("temp") / f"pytest_pred_validator_{uuid.uuid4().hex}"
@@ -22,6 +23,7 @@ def _make_session(monkeypatch):
     # Point AI at an unreachable port so it always falls back deterministically.
     monkeypatch.setenv("AI_LOCAL_ENDPOINT", "http://127.0.0.1:19999/v1/chat/completions")
     get_settings.cache_clear()
+    validator_mod.get_settings.cache_clear()
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)

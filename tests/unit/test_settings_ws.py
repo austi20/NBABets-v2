@@ -1,15 +1,28 @@
 import importlib
+import tempfile
+from pathlib import Path
 
 import pytest
 
 
 @pytest.fixture
 def reload_settings(monkeypatch):
+    original_cwd = Path.cwd()
+    tmp = tempfile.TemporaryDirectory(prefix="nbabets-settings-")
+    isolated = Path(tmp.name)
+
     def _reload():
         import app.config.settings as settings_mod
+
+        monkeypatch.chdir(isolated)
         importlib.reload(settings_mod)
         return settings_mod.get_settings()
-    return _reload
+
+    try:
+        yield _reload
+    finally:
+        monkeypatch.chdir(original_cwd)
+        tmp.cleanup()
 
 
 def test_ws_settings_have_expected_defaults(monkeypatch, reload_settings):

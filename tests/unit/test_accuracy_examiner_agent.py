@@ -26,11 +26,17 @@ _CSV_HEADER = (
 
 @pytest.fixture
 def clear_settings_cache() -> Iterator[None]:
+    import app.services.agents.accuracy_examiner as examiner_mod
+    import app.services.ai_orchestrator as ai_mod
     from app.config.settings import get_settings
 
     get_settings.cache_clear()
+    examiner_mod.get_settings.cache_clear()
+    ai_mod.get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+    examiner_mod.get_settings.cache_clear()
+    ai_mod.get_settings.cache_clear()
 
 
 def _write_csv(tmp_path: Path) -> Path:

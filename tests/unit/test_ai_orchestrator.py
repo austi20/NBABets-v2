@@ -84,6 +84,7 @@ class _FailingHealthClient:
 
 
 def _make_session(monkeypatch):
+    import app.services.ai_orchestrator as ai_mod
     from app.config.settings import get_settings
 
     root = Path("temp") / f"pytest_ai_orchestrator_{uuid.uuid4().hex}"
@@ -91,6 +92,7 @@ def _make_session(monkeypatch):
     db_url = f"sqlite:///{(root / 'ai.sqlite').resolve().as_posix()}"
     monkeypatch.setenv("DATABASE_URL", db_url)
     get_settings.cache_clear()
+    ai_mod.get_settings.cache_clear()
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
