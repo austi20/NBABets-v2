@@ -199,27 +199,34 @@ def _brain_artifact_namespace(settings: Settings) -> str:
     return resolve_artifact_namespace(settings.database_url, settings.app_env)
 
 
-@lru_cache(maxsize=1)
 def _consistency_table(model_version: str, namespace: str) -> dict[tuple[str, str], float]:
     paths = artifact_paths(model_version, namespace)
     if not artifact_exists(paths.consistency_scores):
         return {}
-    raw_payload = load_artifact(paths.consistency_scores)
-    if not isinstance(raw_payload, dict):
+    try:
+        mtime_ns = paths.consistency_scores.stat().st_mtime_ns
+    except OSError:
+        return {}
+    return _consistency_table_cached(str(paths.consistency_scores), mtime_ns)
+
+
+@lru_cache(maxsize=4)
+def _consistency_table_cached(path_str: str, _mtime_ns: int) -> dict[tuple[str, str], float]:
+    raw = load_artifact(Path(path_str))
+    if not isinstance(raw, dict):
         return {}
     out: dict[tuple[str, str], float] = {}
-    for key, blob in raw_payload.items():
-        if not isinstance(key, tuple) or len(key) < 2:
+    for key, value in raw.items():
+        if not isinstance(key, tuple) or len(key) != 2:
             continue
-        kk = (str(key[0]), str(key[1]))
-        if isinstance(blob, dict):
-            raw_score = blob.get("consistency_score", 0.0)
+        if isinstance(value, dict):
+            score = float(value.get("consistency_score", 0.0))
+        else:
             try:
-                out[kk] = float(raw_score) if raw_score is not None else 0.0
+                score = float(value)
             except (TypeError, ValueError):
-                out[kk] = 0.0
-        elif isinstance(blob, (int, float)):
-            out[kk] = float(blob)
+                continue
+        out[(str(key[0]), str(key[1]))] = score
     return out
 
 

@@ -640,3 +640,87 @@ def test_blocked_sync_clears_stale_decision_pack(tmp_path: Path) -> None:
     assert pack["decisions"] == []
     assert pack["board_date"] == "2026-05-08"
     assert "no eligible row-zero candidate" in pack["blocked_reason"]
+
+
+def test_consistency_table_reloads_when_file_mtime_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import time
+
+    import joblib
+
+    from app.trading.decision_brain import _consistency_table, _consistency_table_cached
+    from app.training.artifacts import ArtifactPaths
+
+    _consistency_table_cached.cache_clear()
+
+    artifact_path = tmp_path / "consistency_scores.joblib"
+    joblib.dump({("p1", "points"): {"consistency_score": 0.5}}, artifact_path)
+
+    fake_paths = ArtifactPaths(
+        root=tmp_path,
+        minutes_model=tmp_path / "minutes_model.joblib",
+        stat_models=tmp_path / "stat_models.joblib",
+        calibrators=tmp_path / "calibrators.joblib",
+        metadata=tmp_path / "metadata.joblib",
+        population_priors=tmp_path / "population_priors.joblib",
+        consistency_scores=artifact_path,
+    )
+    monkeypatch.setattr("app.trading.decision_brain.artifact_paths", lambda *_args, **_kw: fake_paths)
+
+    first = _consistency_table("v1", "ns1")
+    assert first[("p1", "points")] == 0.5
+
+    # Rewrite with a different score and bump mtime so the cache key changes
+    time.sleep(0.05)
+    joblib.dump({("p1", "points"): {"consistency_score": 0.9}}, artifact_path)
+    new_mtime = artifact_path.stat().st_mtime + 1
+    os.utime(artifact_path, (new_mtime, new_mtime))
+
+    second = _consistency_table("v1", "ns1")
+    assert second[("p1", "points")] == 0.9
+
+
+def test_rank_sort_key_prefers_higher_consistency_score() -> None:
+    from app.trading.decision_brain import DecisionBrainCandidate, _rank_sort_key
+
+    base: dict[str, Any] = dict(
+        stable_id="x",
+        source="board",
+        board_date=date(2026, 1, 1),
+        candidate_status="candidate",
+        market_key="points",
+        player_id="p1",
+        player_name="Player",
+        game_id="g1",
+        game_date=date(2026, 1, 1),
+        line_value=20.5,
+        recommendation="buy_yes",
+        outcome_side="yes",
+        book_side="buy",
+        model_prob=0.55,
+        market_prob=0.50,
+        no_vig_market_prob=0.50,
+        edge_bps=100,
+        ev=0.05,
+        confidence=0.6,
+        contracts=10.0,
+        max_price_dollars=0.6,
+        post_only=True,
+        time_in_force="GTC",
+        title_contains_all=[],
+        player_name_contains_any=[],
+        stat_contains_any=[],
+        acceptable_line_values=[],
+        event_or_page_hint=None,
+        exclude_multivariate=False,
+        driver="board",
+    )
+    high = DecisionBrainCandidate(**base, consistency_score=0.85)
+    low = DecisionBrainCandidate(**{**base, "stable_id": "y"}, consistency_score=0.20)
+    row = {
+        "rank_score": 0.5,
+        "entry_price_dollars": 0.5,
+        "spread_dollars": 0.05,
+        "brain_blockers": [],
+    }
+    assert _rank_sort_key(row, high) < _rank_sort_key(row, low)
