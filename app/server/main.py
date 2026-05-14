@@ -41,7 +41,7 @@ from app.server.routers.trading import router as trading_router
 from app.server.services.board_cache import BoardCache
 from app.services.startup import StartupCoordinator
 from app.trading.brain_auto_resync import BrainAutoResync
-from app.trading.decision_brain import sync_decision_brain, write_blocked_decision_pack
+from app.trading.decision_brain import default_brain_status, sync_decision_brain, write_blocked_decision_pack
 from app.trading.factory import build_exchange_adapter
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.live_limits import LimitsConfigError, load_live_limits
@@ -249,11 +249,16 @@ def create_app(
         settings = get_settings()
         if settings.kalshi_decision_brain_enabled and settings.kalshi_decision_brain_auto_sync_on_startup:
             try:
+                startup_mode = (
+                    "supervised-live"
+                    if settings.trading_live_enabled and settings.kalshi_live_trading
+                    else "observe"
+                )
                 brain_result = sync_decision_brain(
                     settings=settings,
                     board_entry=entry,
                     board_date=result.board_date,
-                    mode="observe",
+                    mode=startup_mode,
                     resolve_markets=True,
                     build_pack=True,
                 )
@@ -293,8 +298,21 @@ def create_app(
     stream_publisher.log_event(level="info", message="trading stream publisher started")
 
     def _do_brain_sync() -> object:
-        # Stub - will be replaced when decision_brain is fully wired for auto-resync
-        return None
+        settings = get_settings()
+        today = date.today()
+        entry = resolved_board_cache.populate(today)
+        try:
+            return sync_decision_brain(
+                settings=settings,
+                board_entry=entry,
+                board_date=today,
+                mode="supervised-live",
+                resolve_markets=True,
+                build_pack=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger("nba.sidecar").warning("auto-resync failed: %s", exc)
+            return default_brain_status(settings)
 
     def _current_mode() -> str:
         import json as _json

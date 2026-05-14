@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config.settings import get_settings
 from app.db.base import Base
 from app.db.models.trading import (
     TradingDailyPnL,
@@ -45,6 +46,16 @@ class _AcceptedThenFailedAdapter:
 
 
 def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path / "app"))
+    monkeypatch.setenv("TRADING_EXCHANGE", "paper")
+    monkeypatch.setenv("TRADING_PAPER_ADAPTER", "fake")
+    monkeypatch.setenv("TRADING_LIVE_ENABLED", "false")
+    monkeypatch.setenv("KALSHI_LIVE_TRADING", "false")
+    monkeypatch.setenv("KALSHI_WS_ENABLED", "false")
+    monkeypatch.setenv("KALSHI_DECISION_BRAIN_ENABLED", "false")
+    monkeypatch.setenv("AUTO_INIT_BUDGET_FROM_WALLET", "false")
+    get_settings.cache_clear()
+
     async def _run() -> None:
         fake_status = LocalAgentStatus(
             enabled=True,
@@ -191,5 +202,8 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch, tmp_path:
             assert authorized_intent.json()["accepted"] is False
             assert "kill switch" in authorized_intent.json()["message"]
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        get_settings.cache_clear()
 

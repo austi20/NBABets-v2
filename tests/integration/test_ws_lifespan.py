@@ -28,13 +28,23 @@ def reset_settings():
     importlib.reload(settings_mod)
 
 
+def _reload_create_app():
+    import app.config.settings as settings_mod
+    import app.server.main as main_mod
+
+    importlib.reload(settings_mod)
+    importlib.reload(main_mod)
+    return main_mod.create_app
+
+
 def test_lifespan_does_not_start_service_when_ws_disabled(tmp_path, reset_settings, monkeypatch):
     monkeypatch.delenv("KALSHI_WS_ENABLED", raising=False)
     monkeypatch.setenv("KALSHI_API_KEY_ID", "key")
     monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", str(_write_key(tmp_path)))
-    import app.config.settings as settings_mod
-    importlib.reload(settings_mod)
-    from app.server.main import create_app
+    monkeypatch.setenv("KALSHI_SYMBOLS_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("KALSHI_DECISION_BRAIN_ENABLED", "false")
+    monkeypatch.setenv("AUTO_INIT_BUDGET_FROM_WALLET", "false")
+    create_app = _reload_create_app()
 
     app = create_app()
     with TestClient(app) as client:
@@ -51,9 +61,9 @@ def test_lifespan_starts_service_when_ws_enabled_with_no_tickers(tmp_path, reset
     monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", str(_write_key(tmp_path)))
     # symbols file does not exist; service should idle, not crash
     monkeypatch.setenv("KALSHI_SYMBOLS_PATH", str(tmp_path / "missing.json"))
-    import app.config.settings as settings_mod
-    importlib.reload(settings_mod)
-    from app.server.main import create_app
+    monkeypatch.setenv("KALSHI_DECISION_BRAIN_ENABLED", "false")
+    monkeypatch.setenv("AUTO_INIT_BUDGET_FROM_WALLET", "false")
+    create_app = _reload_create_app()
 
     app = create_app()
     with TestClient(app) as client:

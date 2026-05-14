@@ -71,7 +71,21 @@ def _board_date_today() -> _date:
     return _date.today()
 
 
+def _decision_pack_mode(settings) -> str:  # noqa: ANN001
+    path = Path(str(settings.kalshi_decisions_path))
+    if not path.is_file():
+        return "observe"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = payload if isinstance(payload, list) else payload.get("decisions", [])
+        first = rows[0] if isinstance(rows, list) and rows else {}
+        return "supervised-live" if isinstance(first, dict) and first.get("mode") == "live" else "observe"
+    except (OSError, json.JSONDecodeError):
+        return "observe"
+
+
 def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
+    settings = get_settings()
     service = _snapshot_service(request)
     controller = getattr(request.app.state, "trading_loop_controller", None)
     loop_state = "idle"
@@ -80,24 +94,58 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
             loop_state = controller.status().state
         except Exception:  # noqa: BLE001
             loop_state = "idle"
-    ledger = getattr(request.app.state, "trading_ledger", None)
-    ledger_snapshot = None
-    if ledger is not None and hasattr(ledger, "daily_snapshot"):
-        try:
-            ledger_snapshot = ledger.daily_snapshot()
-        except Exception:  # noqa: BLE001
-            pass
+    risk_engine = request.app.state.trading_risk
+    ledger = _ledger(request)
+    limits = getattr(risk_engine, "limits", RiskLimits())
+    monitored_symbols = load_monitored_symbols(settings.kalshi_symbols_path)
+    account_error: str | None = None
+    with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as market_client:
+        private_key_path = Path(settings.kalshi_private_key_path) if settings.kalshi_private_key_path else None
+        if settings.kalshi_api_key_id and private_key_path is not None and private_key_path.exists():
+            with KalshiClient(
+                api_key_id=settings.kalshi_api_key_id,
+                private_key_path=private_key_path,
+                base_url=settings.kalshi_base_url,
+            ) as account_client:
+                ledger_snapshot = build_monitor_snapshot(
+                    ledger=ledger,
+                    limits=limits,
+                    kill_switch_active=_kill_switch_active(request, bool(risk_engine.killed)),
+                    monitored_symbols=monitored_symbols,
+                    market_client=market_client,
+                    account_client=account_client,
+                )
+        else:
+            if settings.kalshi_api_key_id or private_key_path is not None:
+                account_error = "Kalshi account sync disabled: missing API key or private key file."
+            ledger_snapshot = build_monitor_snapshot(
+                ledger=ledger,
+                limits=limits,
+                kill_switch_active=_kill_switch_active(request, bool(risk_engine.killed)),
+                monitored_symbols=monitored_symbols,
+                market_client=market_client,
+            )
+        readiness = build_trading_readiness(settings=settings, market_client=market_client)
+    errors = [*ledger_snapshot.errors]
+    if account_error is not None:
+        errors.append(account_error)
+    brain_status: TradingBrainSyncModel | None = None
+    try:
+        brain_status = _brain_sync_model(load_last_brain_status(settings) or default_brain_status(settings))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Decision brain status unavailable: {exc}")
     return service.build(
         board_date=_board_date_today(),
         ledger_state=ledger_snapshot,
-        positions=getattr(ledger_snapshot, "positions", []) if ledger_snapshot else [],
-        fills=getattr(ledger_snapshot, "fills", []) if ledger_snapshot else [],
-        resting_orders=[],
+        positions=[_live_position_model(position) for position in ledger_snapshot.positions],
+        fills=[FillModel.from_dataclass(fill) for fill in ledger.recent_fills(limit=50)],
+        resting_orders=[_resting_order_model(order) for order in ledger_snapshot.resting_orders],
         loop_state=loop_state,
-        mode="supervised-live",
-        kill_switch_active=getattr(ledger_snapshot, "kill_switch_active", False) if ledger_snapshot else False,
-        readiness=None,
-        brain_status=None,
+        mode=_decision_pack_mode(settings),
+        kill_switch_active=ledger_snapshot.kill_switch_active,
+        readiness=_readiness_model(readiness),
+        brain_status=brain_status,
+        errors=errors,
     )
 
 
@@ -246,6 +294,9 @@ def _brain_sync_model(result) -> TradingBrainSyncModel:  # noqa: ANN001
         unresolved_symbol_count=result.unresolved_symbol_count,
         selected_candidate_id=result.selected_candidate_id,
         selected_ticker=result.selected_ticker,
+        selected_candidate_ids=getattr(result, "selected_candidate_ids", []),
+        selected_tickers=getattr(result, "selected_tickers", []),
+        live_candidate_count=getattr(result, "live_candidate_count", 0),
         targets_path=result.targets_path,
         symbols_path=result.symbols_path,
         decisions_path=result.decisions_path,
