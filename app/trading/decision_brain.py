@@ -6,6 +6,7 @@ import re
 import shutil
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ from app.trading.live_pack_builder import (
     write_live_decision_pack,
 )
 from app.trading.monitoring import KalshiPublicMarketDataClient, MarketDataClient, fetch_quote_snapshot
+from app.trading.selections import SelectionStore
+from app.training.artifacts import artifact_exists, artifact_paths, load_artifact, resolve_artifact_namespace
 
 BRAIN_SECTION_RELATIVE_PATH = Path("05 Knowledge and Skills") / "Data Analysis" / "Kalshi Market Decision Brain"
 POLICY_RELATIVE_PATH = Path("00 System") / "Policy Core.md"
@@ -126,6 +129,7 @@ class DecisionBrainCandidate:
     exclude_multivariate: bool
     driver: str
     policy_version: str | None = None
+    consistency_score: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -142,6 +146,9 @@ class TradingBrainSyncResult:
     unresolved_symbol_count: int
     selected_candidate_id: str | None
     selected_ticker: str | None
+    selected_candidate_ids: list[str]
+    selected_tickers: list[str]
+    live_candidate_count: int
     targets_path: str
     symbols_path: str
     decisions_path: str
@@ -163,6 +170,9 @@ class TradingBrainSyncResult:
             "unresolved_symbol_count": self.unresolved_symbol_count,
             "selected_candidate_id": self.selected_candidate_id,
             "selected_ticker": self.selected_ticker,
+            "selected_candidate_ids": self.selected_candidate_ids,
+            "selected_tickers": self.selected_tickers,
+            "live_candidate_count": self.live_candidate_count,
             "targets_path": self.targets_path,
             "symbols_path": self.symbols_path,
             "decisions_path": self.decisions_path,
@@ -181,6 +191,40 @@ def decision_brain_root(settings: Settings) -> Path:
 
 def brain_status_path(settings: Settings) -> Path:
     return Path(settings.snapshot_dir) / "kalshi_decision_brain_status.json"
+
+
+def _brain_artifact_namespace(settings: Settings) -> str:
+    """Namespace slug used by ``TrainingPipeline`` / ``artifact_paths`` for on-disk bundles."""
+
+    return resolve_artifact_namespace(settings.database_url, settings.app_env)
+
+
+@lru_cache(maxsize=1)
+def _consistency_table(model_version: str, namespace: str) -> dict[tuple[str, str], float]:
+    paths = artifact_paths(model_version, namespace)
+    if not artifact_exists(paths.consistency_scores):
+        return {}
+    raw_payload = load_artifact(paths.consistency_scores)
+    if not isinstance(raw_payload, dict):
+        return {}
+    out: dict[tuple[str, str], float] = {}
+    for key, blob in raw_payload.items():
+        if not isinstance(key, tuple) or len(key) < 2:
+            continue
+        kk = (str(key[0]), str(key[1]))
+        if isinstance(blob, dict):
+            raw_score = blob.get("consistency_score", 0.0)
+            try:
+                out[kk] = float(raw_score) if raw_score is not None else 0.0
+            except (TypeError, ValueError):
+                out[kk] = 0.0
+        elif isinstance(blob, (int, float)):
+            out[kk] = float(blob)
+    return out
+
+
+def trading_selections_path(settings: Settings) -> Path:
+    return Path(settings.app_data_dir) / "trading_selections.json"
 
 
 def load_last_brain_status(settings: Settings) -> TradingBrainSyncResult | None:
@@ -205,6 +249,9 @@ def default_brain_status(settings: Settings) -> TradingBrainSyncResult:
         unresolved_symbol_count=0,
         selected_candidate_id=None,
         selected_ticker=None,
+        selected_candidate_ids=[],
+        selected_tickers=[],
+        live_candidate_count=0,
         targets_path=str(Path(settings.kalshi_resolution_targets_path)),
         symbols_path=str(Path(settings.kalshi_symbols_path)),
         decisions_path=str(Path(settings.kalshi_decisions_path)),
@@ -240,6 +287,8 @@ def write_blocked_decision_pack(
         "policy_version": policy.policy_version if policy else None,
         "policy_hash": policy.policy_hash if policy else None,
         "selected_candidate_id": None,
+        "selected_candidate_ids": [],
+        "live_candidate_count": 0,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -470,6 +519,7 @@ def rank_and_enrich_symbols(
     policy: DecisionBrainPolicy,
     candidates: list[DecisionBrainCandidate],
     market_client: MarketDataClient | None = None,
+    selection_store: SelectionStore | None = None,
     today: date | None = None,
 ) -> tuple[dict[str, Any], DecisionBrainCandidate | None, list[BrainCheck]]:
     symbols_path = Path(settings.kalshi_symbols_path)
@@ -495,10 +545,11 @@ def rank_and_enrich_symbols(
         )
     ]
     selected_candidate: DecisionBrainCandidate | None = None
+    selected_candidates: list[DecisionBrainCandidate] = []
 
     def with_client(client: MarketDataClient) -> None:
         nonlocal selected_candidate
-        enriched: list[tuple[dict[str, Any], float, tuple[Any, ...], DecisionBrainCandidate | None]] = []
+        enriched: list[tuple[dict[str, Any], float, tuple[Any, ...], DecisionBrainCandidate | None, bool, bool]] = []
         for raw in symbols:
             if not isinstance(raw, dict):
                 continue
@@ -508,10 +559,19 @@ def rank_and_enrich_symbols(
                 row["brain_blockers"] = ["missing_candidate_metadata"]
                 row["recommendation"] = "observe_only"
                 row["rank_score"] = 0.0
-                enriched.append((row, 0.0, (1, 0.0, 0.0, 0.0, 999.0, 999.0, 0.0, str(row.get("target_id") or "")), None))
+                enriched.append((
+                    row,
+                    0.0,
+                    (1, -0.0, -0.0, -0.0, -0.0, 999.0, 999.0, -0.0, str(row.get("target_id") or "")),
+                    None,
+                    False,
+                    False,
+                ))
                 continue
             row.update(_candidate_symbol_fields(candidate, policy))
+            row["consistency_score"] = candidate.consistency_score
             blockers = _candidate_policy_blockers(candidate, policy=policy, board_date=candidate.board_date)
+            selection_blockers = _trading_selection_blockers(candidate, selection_store)
             quote = None
             monitored = row_to_monitored(row)
             if monitored is None:
@@ -538,7 +598,8 @@ def rank_and_enrich_symbols(
                     row["rank_market_status"] = quote.status
 
             score = 0.0
-            if not blockers:
+            eligible = not blockers and not selection_blockers
+            if eligible:
                 score = _rank_score(
                     policy=policy,
                     edge_bps=float(candidate.edge_bps or 0),
@@ -547,25 +608,30 @@ def rank_and_enrich_symbols(
                     confidence=float(candidate.confidence or 0.0),
                 )
             row["rank_score"] = round(score, 6)
-            row["brain_blockers"] = sorted(set(blockers))
+            row["brain_blockers"] = sorted(set(blockers + selection_blockers))
             row["original_recommendation"] = candidate.recommendation
-            if blockers:
+            if not eligible:
                 row["recommendation"] = "observe_only"
             sort_key = _rank_sort_key(row, candidate)
-            enriched.append((row, score, sort_key, candidate if not blockers else None))
+            enriched.append((row, score, sort_key, candidate, eligible, bool(blockers)))
 
         enriched.sort(key=lambda item: item[2])
-        for index, (row, _score, _sort_key, candidate) in enumerate(enriched, start=1):
+        for index, (row, _score, _sort_key, candidate, eligible, hard_blocked) in enumerate(enriched, start=1):
             row["selection_rank"] = index
-            if candidate is not None and selected_candidate is None:
-                selected_candidate = candidate
+            if candidate is not None and eligible:
+                if selected_candidate is None:
+                    selected_candidate = candidate
+                selected_candidates.append(candidate)
                 row["candidate_status"] = (
                     "selected_live" if policy.allow_live_submit else "selected_observe_only"
                 )
                 row["recommendation"] = candidate.recommendation if policy.allow_live_submit else "observe_only"
-            elif row.get("recommendation") != "observe_only":
+            elif candidate is not None:
                 row["recommendation"] = "observe_only"
-                row["candidate_status"] = "watchlist"
+                row["candidate_status"] = "blocked" if hard_blocked else "watchlist"
+            else:
+                row["recommendation"] = "observe_only"
+                row["candidate_status"] = "blocked"
             rows.append(row)
 
     if market_client is not None:
@@ -574,6 +640,8 @@ def rank_and_enrich_symbols(
         with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as client:
             with_client(client)
 
+    selected_ids = [candidate.stable_id for candidate in selected_candidates]
+    selected_ticker_values = _selected_tickers({"symbols": rows}, selected_ids)
     output = {
         "version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
@@ -582,6 +650,9 @@ def rank_and_enrich_symbols(
             "policy_version": policy.policy_version,
             "policy_hash": policy.policy_hash,
             "selected_candidate_id": selected_candidate.stable_id if selected_candidate else None,
+            "selected_candidate_ids": selected_ids,
+            "selected_tickers": selected_ticker_values,
+            "live_candidate_count": len(selected_candidates) if policy.allow_live_submit else 0,
         },
         "symbols": rows,
         "unresolved": unresolved,
@@ -593,7 +664,11 @@ def rank_and_enrich_symbols(
             key="ranked_winner",
             label="Ranked row zero",
             status="pass" if selected_candidate else "fail",
-            detail=selected_candidate.stable_id if selected_candidate else "No eligible ranked symbol row",
+            detail=(
+                f"{len(selected_candidates)} eligible row(s); first={selected_candidate.stable_id}"
+                if selected_candidate
+                else "No eligible ranked symbol row"
+            ),
         )
     )
     return output, selected_candidate, checks
@@ -623,6 +698,8 @@ def sync_decision_brain(
     exported_count = 0
     generated_count = 0
     manual_count = 0
+    selected_candidate_ids: list[str] = []
+    selected_tickers: list[str] = []
     state = "failed"
 
     try:
@@ -650,6 +727,16 @@ def sync_decision_brain(
         generated_count = len(board_candidates)
         manual_count = len(manual_candidates)
         candidates = merge_candidates(board_candidates, manual_candidates)
+        table = _consistency_table(settings.model_version, _brain_artifact_namespace(settings))
+        candidates = [
+            replace(
+                c,
+                consistency_score=float(
+                    table.get((str(c.player_id or ""), _norm_key(c.market_key).split(".")[-1]), 0.0)
+                ),
+            )
+            for c in candidates
+        ]
         checks.append(
             BrainCheck(
                 key="candidate_sources",
@@ -682,9 +769,47 @@ def sync_decision_brain(
             policy=policy,
             candidates=exportable,
             market_client=market_client,
+            selection_store=SelectionStore.load(trading_selections_path(settings)),
             today=today,
         )
+        selected_candidate_ids = _selected_candidate_ids(symbols_payload)
+        selected_tickers = _selected_tickers(symbols_payload, selected_candidate_ids)
         checks.extend(rank_checks)
+        top_by_cs = sorted(exportable, key=lambda cand: cand.consistency_score, reverse=True)[:3]
+        top_detail = "; ".join(
+            f"{cand.player_name or cand.player_id or '?'} "
+            f"market={_norm_key(cand.market_key).split('.')[-1]} cs={cand.consistency_score:.2f}"
+            for cand in top_by_cs
+        )
+        checks.append(
+            BrainCheck(
+                key="top_consistency",
+                label="Top by consistency",
+                status="pass" if top_detail else "warn",
+                detail=top_detail or "No exported candidates",
+            )
+        )
+        stk_pick = selected_tickers[0] if selected_tickers else None
+        if selected is not None:
+            suf_sel = _norm_key(selected.market_key).split(".")[-1]
+            sel_detail = (
+                f"{selected.player_name or selected.player_id or '?'} market={suf_sel} "
+                f"cs={selected.consistency_score:.2f}"
+            )
+            if stk_pick:
+                sel_detail += f" → ticker={stk_pick}"
+            sel_status = "pass"
+        else:
+            sel_detail = "none"
+            sel_status = "fail"
+        checks.append(
+            BrainCheck(
+                key="selected_summary",
+                label="Selected for execution",
+                status=sel_status,
+                detail=sel_detail,
+            )
+        )
         if selected is None:
             raise DecisionBrainError("no eligible row-zero candidate after ranking")
 
@@ -757,6 +882,9 @@ def sync_decision_brain(
         unresolved_symbol_count=len(symbols_payload.get("unresolved", [])) if isinstance(symbols_payload, dict) else 0,
         selected_candidate_id=selected.stable_id if selected else None,
         selected_ticker=_selected_ticker(symbols_payload, selected),
+        selected_candidate_ids=selected_candidate_ids,
+        selected_tickers=selected_tickers,
+        live_candidate_count=len(selected_tickers) if state == "synced" else 0,
         targets_path=str(Path(settings.kalshi_resolution_targets_path)),
         symbols_path=str(Path(settings.kalshi_symbols_path)),
         decisions_path=str(Path(settings.kalshi_decisions_path)),
@@ -1100,8 +1228,27 @@ def _candidate_policy_blockers(
         blockers.append("min_model_prob")
     if candidate.confidence is None or candidate.confidence < policy.min_confidence:
         blockers.append("min_confidence")
+    if candidate.edge_bps is None or candidate.edge_bps < policy.min_edge_bps:
+        blockers.append("min_edge_bps")
     if abs(candidate.contracts - 1.0) > 0.0001:
         blockers.append("one_contract_required")
+    return blockers
+
+
+def _trading_selection_blockers(
+    candidate: DecisionBrainCandidate,
+    selection_store: SelectionStore | None,
+) -> list[str]:
+    if selection_store is None:
+        return []
+    blockers: list[str] = []
+    if not selection_store.is_selected(candidate.board_date, candidate.stable_id):
+        blockers.append("trading_selection_excluded")
+    thresholds = selection_store.thresholds
+    if candidate.model_prob is None or candidate.model_prob < thresholds.min_hit_pct:
+        blockers.append("trading_min_hit")
+    if candidate.edge_bps is None or candidate.edge_bps < thresholds.min_edge_bps:
+        blockers.append("trading_min_edge")
     return blockers
 
 
@@ -1134,6 +1281,7 @@ def _rank_sort_key(row: dict[str, Any], candidate: DecisionBrainCandidate) -> tu
     blockers = row.get("brain_blockers") or []
     return (
         1 if blockers else 0,
+        -float(candidate.consistency_score),
         -float(row.get("rank_score") or 0.0),
         -float(candidate.edge_bps or 0),
         -float(candidate.ev or 0.0),
@@ -1206,6 +1354,9 @@ def _result_from_payload(payload: dict[str, Any]) -> TradingBrainSyncResult:
         unresolved_symbol_count=int(payload.get("unresolved_symbol_count") or 0),
         selected_candidate_id=_str_or_none(payload.get("selected_candidate_id")),
         selected_ticker=_str_or_none(payload.get("selected_ticker")),
+        selected_candidate_ids=_list_str(payload.get("selected_candidate_ids")),
+        selected_tickers=_list_str(payload.get("selected_tickers")),
+        live_candidate_count=int(payload.get("live_candidate_count") or 0),
         targets_path=str(payload.get("targets_path") or ""),
         symbols_path=str(payload.get("symbols_path") or ""),
         decisions_path=str(payload.get("decisions_path") or ""),
@@ -1222,6 +1373,36 @@ def _selected_ticker(payload: dict[str, Any], candidate: DecisionBrainCandidate 
         if isinstance(row, dict) and row.get("stable_id") == candidate.stable_id:
             return _str_or_none(row.get("kalshi_ticker"))
     return None
+
+
+def _selected_candidate_ids(payload: dict[str, Any]) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    out: list[str] = []
+    for row in payload.get("symbols", []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("candidate_status") not in {"selected_live", "selected_observe_only"}:
+            continue
+        stable_id = _str_or_none(row.get("stable_id") or row.get("target_id"))
+        if stable_id:
+            out.append(stable_id)
+    return out
+
+
+def _selected_tickers(payload: dict[str, Any], selected_candidate_ids: list[str]) -> list[str]:
+    selected = set(selected_candidate_ids)
+    if not selected or not isinstance(payload, dict):
+        return []
+    out: list[str] = []
+    for row in payload.get("symbols", []):
+        if not isinstance(row, dict):
+            continue
+        stable_id = _str_or_none(row.get("stable_id") or row.get("target_id"))
+        ticker = _str_or_none(row.get("kalshi_ticker"))
+        if stable_id in selected and ticker:
+            out.append(ticker)
+    return out
 
 
 def _matching_insight(opportunity: Any, insights: Any) -> Any | None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ from app.trading.decision_brain import (
     rank_and_enrich_symbols,
     sync_decision_brain,
 )
+from app.trading.selections import SelectionStore
 
 
 class _FakeMarketClient:
@@ -332,8 +334,200 @@ def test_ranked_symbol_row_zero_is_deterministic_and_blocks_bad_spread(tmp_path:
     assert selected == high
     assert ranked["symbols"][0]["stable_id"] == high.stable_id
     assert ranked["symbols"][0]["recommendation"] == "buy_yes"
+    assert ranked["symbols"][0]["candidate_status"] == "selected_live"
     assert ranked["symbols"][1]["recommendation"] == "observe_only"
+    assert ranked["symbols"][1]["candidate_status"] == "blocked"
     assert "failed_spread_gate" in ranked["symbols"][1]["brain_blockers"]
+
+
+def test_ranked_symbols_select_all_eligible_live_rows(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    first = candidates_from_board(_board_entry(edge=0.080, ev=0.035, confidence=75), policy=policy, limit=25)[0]
+    second = candidates_from_board(_board_entry(edge=0.055, ev=0.025, confidence=68), policy=policy, limit=25)[0]
+    second = type(first)(**{**second.__dict__, "stable_id": second.stable_id.replace("123", "124"), "game_id": "124"})
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {"target_id": first.stable_id, "market_key": "points", "game_date": "2026-05-08", "player_id": "237", "line_value": 25.5, "recommendation": "buy_yes", "kalshi_ticker": "KX-1"},
+                    {"target_id": second.stable_id, "market_key": "points", "game_date": "2026-05-08", "player_id": "237", "line_value": 25.5, "recommendation": "buy_yes", "kalshi_ticker": "KX-2"},
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = _FakeMarketClient(
+        {
+            "KX-1": {"status": "open", "yes_bid_dollars": "0.48", "yes_ask_dollars": "0.50", "no_bid_dollars": "0.49", "no_ask_dollars": "0.52"},
+            "KX-2": {"status": "open", "yes_bid_dollars": "0.45", "yes_ask_dollars": "0.47", "no_bid_dollars": "0.51", "no_ask_dollars": "0.53"},
+        }
+    )
+
+    ranked, selected, _checks = rank_and_enrich_symbols(
+        settings=settings,
+        policy=policy,
+        candidates=[first, second],
+        market_client=client,
+        today=date(2026, 5, 8),
+    )
+
+    assert selected == first
+    assert [row["candidate_status"] for row in ranked["symbols"]] == ["selected_live", "selected_live"]
+    assert ranked["brain"]["selected_candidate_ids"] == [first.stable_id, second.stable_id]
+    assert ranked["brain"]["live_candidate_count"] == 2
+
+
+def test_ranked_symbols_prefer_higher_consistency_score(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    base_board = _board_entry(edge=0.080, ev=0.035, confidence=75)
+    high_cs = candidates_from_board(base_board, policy=policy, limit=25)[0]
+    low_cs = candidates_from_board(base_board, policy=policy, limit=25)[0]
+    low_cs = type(high_cs)(
+        **{**low_cs.__dict__, "stable_id": low_cs.stable_id.replace("123", "124"), "game_id": "124"}
+    )
+    high_cs = replace(high_cs, consistency_score=0.95)
+    low_cs = replace(low_cs, consistency_score=0.02)
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {
+                        "target_id": low_cs.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 25.5,
+                        "recommendation": "buy_yes",
+                        "kalshi_ticker": "KX-LOW",
+                    },
+                    {
+                        "target_id": high_cs.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 25.5,
+                        "recommendation": "buy_yes",
+                        "kalshi_ticker": "KX-HIGH",
+                    },
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = _FakeMarketClient(
+        {
+            "KX-HIGH": {
+                "status": "open",
+                "yes_bid_dollars": "0.48",
+                "yes_ask_dollars": "0.50",
+                "no_bid_dollars": "0.49",
+                "no_ask_dollars": "0.52",
+            },
+            "KX-LOW": {
+                "status": "open",
+                "yes_bid_dollars": "0.48",
+                "yes_ask_dollars": "0.50",
+                "no_bid_dollars": "0.49",
+                "no_ask_dollars": "0.52",
+            },
+        }
+    )
+
+    ranked, selected, _checks = rank_and_enrich_symbols(
+        settings=settings,
+        policy=policy,
+        candidates=[high_cs, low_cs],
+        market_client=client,
+        today=date(2026, 5, 8),
+    )
+
+    assert selected.stable_id == high_cs.stable_id
+    assert ranked["symbols"][0]["stable_id"] == high_cs.stable_id
+    assert ranked["symbols"][0]["consistency_score"] == 0.95
+
+
+def test_ranked_symbols_honor_trading_thresholds(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    high = candidates_from_board(_board_entry(edge=0.080, ev=0.035, confidence=75), policy=policy, limit=25)[0]
+    high = type(high)(**{**high.__dict__, "model_prob": 0.70})
+    low = candidates_from_board(_board_entry(edge=0.055, ev=0.025, confidence=68), policy=policy, limit=25)[0]
+    low = type(high)(**{**low.__dict__, "stable_id": low.stable_id.replace("123", "124"), "game_id": "124", "model_prob": 0.58})
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {"target_id": high.stable_id, "market_key": "points", "game_date": "2026-05-08", "player_id": "237", "line_value": 25.5, "recommendation": "buy_yes", "kalshi_ticker": "KX-HIGH"},
+                    {"target_id": low.stable_id, "market_key": "points", "game_date": "2026-05-08", "player_id": "237", "line_value": 25.5, "recommendation": "buy_yes", "kalshi_ticker": "KX-LOW"},
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = SelectionStore(path=tmp_path / "selections.json")
+    store.update_thresholds(min_hit_pct=0.60, min_edge_bps=450)
+    client = _FakeMarketClient(
+        {
+            "KX-HIGH": {"status": "open", "yes_bid_dollars": "0.48", "yes_ask_dollars": "0.50", "no_bid_dollars": "0.49", "no_ask_dollars": "0.52"},
+            "KX-LOW": {"status": "open", "yes_bid_dollars": "0.45", "yes_ask_dollars": "0.47", "no_bid_dollars": "0.51", "no_ask_dollars": "0.53"},
+        }
+    )
+
+    ranked, selected, _checks = rank_and_enrich_symbols(
+        settings=settings,
+        policy=policy,
+        candidates=[high, low],
+        market_client=client,
+        selection_store=store,
+        today=date(2026, 5, 8),
+    )
+
+    assert selected == high
+    by_id = {row["stable_id"]: row for row in ranked["symbols"]}
+    assert by_id[high.stable_id]["candidate_status"] == "selected_live"
+    assert by_id[low.stable_id]["candidate_status"] == "watchlist"
+    assert by_id[low.stable_id]["recommendation"] == "observe_only"
+    assert "trading_min_hit" in by_id[low.stable_id]["brain_blockers"]
+
+
+def test_min_edge_policy_blocks_candidate_before_resolver(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+    candidate = candidates_from_board(_board_entry(edge=0.040), policy=policy, limit=25)[0]
+
+    payload, exportable, checks = export_resolution_targets(
+        settings=settings,
+        policy=policy,
+        board_date=date(2026, 5, 8),
+        candidates=[candidate],
+    )
+
+    assert exportable == []
+    assert payload["targets"] == []
+    assert any(check.key == "candidate_policy_blocks" for check in checks)
+    assert any(check.key == "target_export" and check.status == "fail" for check in checks)
 
 
 def test_supervised_live_sync_stays_observe_when_policy_blocks_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

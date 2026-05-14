@@ -82,6 +82,7 @@ def _symbols(*, game_date: str = "2026-05-08") -> dict[str, Any]:
                 "game_date": game_date,
                 "line_value": 222.5,
                 "recommendation": "buy_yes",
+                "candidate_status": "selected_live",
                 "kalshi_ticker": "KX-TEST",
             }
         ],

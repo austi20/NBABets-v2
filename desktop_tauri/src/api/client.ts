@@ -272,6 +272,9 @@ export type TradingBrainSync = {
   unresolved_symbol_count: number;
   selected_candidate_id: string | null;
   selected_ticker: string | null;
+  selected_candidate_ids: string[];
+  selected_tickers: string[];
+  live_candidate_count: number;
   targets_path: string;
   symbols_path: string;
   decisions_path: string;

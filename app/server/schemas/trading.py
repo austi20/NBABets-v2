@@ -208,6 +208,9 @@ class TradingBrainSyncModel(BaseModel):
     unresolved_symbol_count: int
     selected_candidate_id: str | None
     selected_ticker: str | None
+    selected_candidate_ids: list[str] = Field(default_factory=list)
+    selected_tickers: list[str] = Field(default_factory=list)
+    live_candidate_count: int = 0
     targets_path: str
     symbols_path: str
     decisions_path: str
@@ -411,4 +414,3 @@ class PickBulkRequestModel(BaseModel):
 class ThresholdsUpdateRequestModel(BaseModel):
     min_hit_pct: float = Field(ge=0.0, le=1.0)
     min_edge_bps: int = Field(ge=0, le=5_000)
-
