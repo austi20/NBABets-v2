@@ -260,7 +260,7 @@ class Settings(BaseSettings):
         alias="NBA_API_RETRY_MAX_BACKOFF_SECONDS",
     )
     default_lookback_games: int = Field(default=20, alias="DEFAULT_LOOKBACK_GAMES")
-    startup_history_days: int = Field(default=90, alias="STARTUP_HISTORY_DAYS")
+    startup_history_days: int = Field(default=150, alias="STARTUP_HISTORY_DAYS")
     runtime_memory_fraction_limit: float = Field(default=0.75, alias="RUNTIME_MEMORY_FRACTION_LIMIT")
     runtime_cpu_fraction_limit: float = Field(default=0.85, alias="RUNTIME_CPU_FRACTION_LIMIT")
     simulation_target_margin: float = Field(default=0.01, alias="SIMULATION_TARGET_MARGIN")
