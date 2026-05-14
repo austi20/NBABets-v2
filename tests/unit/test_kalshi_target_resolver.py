@@ -109,6 +109,7 @@ def test_resolve_targets_rejects_wrong_player_even_when_line_matches() -> None:
 
     assert resolved["symbols"] == []
     assert resolved["unresolved"][0]["target_id"] == "duncan-assists"
+    assert resolved["unresolved"][0]["reason"] == "player_not_listed_for_series"
 
 
 def test_resolve_targets_rejects_wrong_threshold_even_when_player_matches() -> None:
@@ -133,9 +134,42 @@ def test_resolve_targets_rejects_wrong_threshold_even_when_player_matches() -> N
         "event_ticker": "KXNBAPTS-26MAY09OKCLAL",
         "status": "open",
         "title": "LeBron James: 30+ points",
+        "floor_strike": 29.5,
     }
 
     resolved = resolve_targets([target], [market], min_score=70)
 
     assert resolved["symbols"] == []
     assert resolved["unresolved"][0]["target_id"] == "lebron-points"
+    assert resolved["unresolved"][0]["reason"] == "exact_threshold_not_listed"
+    assert resolved["unresolved"][0]["adjacent_line_values"][0] == 29.5
+
+
+def test_resolve_targets_classifies_closed_matching_market() -> None:
+    target = {
+        "target_id": "lebron-points",
+        "market_key": "points",
+        "game_date": "2026-05-09",
+        "player_id": "208",
+        "line_value": 23.5,
+        "recommendation": "buy_yes",
+        "match_rules": {
+            "title_contains_all": ["OKC", "LAL"],
+            "player_name_contains_any": ["LeBron James", "James"],
+            "stat_contains_any": ["points", "pts"],
+            "acceptable_line_values": [23.5, 24.0],
+            "status": "open",
+            "mve_filter": "exclude",
+        },
+    }
+    market = {
+        "ticker": "KXNBAPTS-26MAY09OKCLAL-LALLJAMES23-24",
+        "event_ticker": "KXNBAPTS-26MAY09OKCLAL",
+        "status": "closed",
+        "title": "LeBron James: 24+ points",
+    }
+
+    resolved = resolve_targets([target], [market], min_score=70)
+
+    assert resolved["symbols"] == []
+    assert resolved["unresolved"][0]["reason"] == "market_closed"

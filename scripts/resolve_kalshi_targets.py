@@ -248,8 +248,8 @@ def _market_snapshot(target: dict[str, Any], market: dict[str, Any], reasons: st
     return entry
 
 
-def _unresolved(target: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {
+def _unresolved(target: dict[str, Any], reason: str, **extra: Any) -> dict[str, Any]:
+    row = {
         "target_id": target.get("target_id"),
         "market_key": target.get("market_key"),
         "player_id": target.get("player_id"),
@@ -257,6 +257,8 @@ def _unresolved(target: dict[str, Any], reason: str) -> dict[str, Any]:
         "line_value": target.get("line_value"),
         "reason": reason,
     }
+    row.update({key: value for key, value in extra.items() if value not in (None, "", [])})
+    return row
 
 
 def resolve_targets(targets: list[dict[str, Any]], markets: list[dict[str, Any]], min_score: int) -> dict[str, Any]:
@@ -278,11 +280,80 @@ def resolve_targets(targets: list[dict[str, Any]], markets: list[dict[str, Any]]
                 ranked.append((score, reasons, market))
         ranked.sort(key=lambda row: row[0], reverse=True)
         if not ranked or ranked[0][0] < min_score:
-            out["unresolved"].append(_unresolved(target, "no exact live market match"))
+            reason, extra = classify_unresolved_target(target, markets)
+            out["unresolved"].append(_unresolved(target, reason, **extra))
             continue
         _score, reasons, market = ranked[0]
         out["symbols"].append(_market_snapshot(target, market, reasons))
     return out
+
+
+def classify_unresolved_target(target: dict[str, Any], markets: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+    if not markets:
+        return "event_not_found", {}
+    event_matches = [market for market in markets if _event_matches(target, market)]
+    if not event_matches:
+        return "event_not_found", {}
+    open_event_matches = [market for market in event_matches if _status_ok(target, market)]
+    if not open_event_matches:
+        return "market_closed", {}
+    player_matches = [market for market in open_event_matches if _player_matches(target, market)]
+    if not player_matches:
+        return "player_not_listed_for_series", {}
+    stat_matches = [market for market in player_matches if _stat_matches(target, market)]
+    if not stat_matches:
+        return "text_match_failed", {}
+    line_matches = [market for market in stat_matches if _line_matches(target, market)]
+    if not line_matches:
+        adjacent = _adjacent_thresholds(target, stat_matches)
+        return "exact_threshold_not_listed", {"adjacent_line_values": adjacent}
+    return "text_match_failed", {}
+
+
+def _event_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    haystack = _combined_market_text(market)
+    hint = norm(target.get("event_or_page_hint"))
+    if hint:
+        return hint in norm(market.get("event_ticker")) or hint in haystack
+    title_terms = rules.get("title_contains_all") or []
+    return not title_terms or _contains_all(haystack, title_terms)
+
+
+def _player_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    return _contains_any(_combined_market_text(market), rules.get("player_name_contains_any") or [])
+
+
+def _stat_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    return _contains_any(_combined_market_text(market), rules.get("stat_contains_any") or [])
+
+
+def _line_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
+    target_line = _numeric(target.get("line_value"))
+    acceptable: set[float] = set()
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    for value in rules.get("acceptable_line_values", []):
+        numeric_value = _numeric(value)
+        if numeric_value is not None:
+            acceptable.add(numeric_value)
+    if target_line is not None:
+        acceptable.add(target_line)
+    if not acceptable:
+        return True
+    market_lines = _market_line_values(market)
+    return any(any(abs(want - got) < 0.01 for got in market_lines) for want in acceptable)
+
+
+def _adjacent_thresholds(target: dict[str, Any], markets: list[dict[str, Any]]) -> list[float]:
+    target_line = _numeric(target.get("line_value"))
+    if target_line is None:
+        return []
+    values: set[float] = set()
+    for market in markets:
+        values.update(_market_line_values(market))
+    return sorted(values, key=lambda value: (abs(value - target_line), value))[:4]
 
 
 def _market_scan_needed(target: dict[str, Any]) -> bool:
