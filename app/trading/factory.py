@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config.settings import Settings, get_settings
+from app.providers.exchanges.kalshi_client import KalshiClient
+from app.trading.kalshi_adapter import KalshiAdapter as SignedKalshiAdapter
 from app.trading.paper_adapter import FakePaperAdapter, RealisticPaperAdapter
 from app.trading.protocols import ExchangeAdapter
+from app.trading.symbol_resolver import SymbolResolverConfigError, load_symbol_resolver
 from app.trading.types import ExecutionIntent, Fill, OrderEvent
 
 
@@ -58,7 +62,25 @@ def build_exchange_adapter(settings: Settings | None = None) -> ExchangeAdapterC
 
     if exchange == "kalshi":
         reason = _kalshi_disabled_reason(settings)
-        return ExchangeAdapterConfig(exchange="kalshi", adapter=KalshiAdapter(reason=reason))
+        if reason is not None:
+            return ExchangeAdapterConfig(exchange="kalshi", adapter=KalshiAdapter(reason=reason))
+        try:
+            resolver = load_symbol_resolver(settings.kalshi_symbols_path)
+        except SymbolResolverConfigError as exc:
+            return ExchangeAdapterConfig(
+                exchange="kalshi",
+                adapter=KalshiAdapter(reason=f"Kalshi symbol resolver is not live-ready: {exc}"),
+            )
+        client = KalshiClient(
+            api_key_id=str(settings.kalshi_api_key_id),
+            private_key_path=Path(str(settings.kalshi_private_key_path)),
+            base_url=settings.kalshi_base_url,
+            timeout_seconds=float(settings.request_timeout_seconds),
+        )
+        return ExchangeAdapterConfig(
+            exchange="kalshi",
+            adapter=SignedKalshiAdapter(client=client, resolver=resolver),
+        )
 
     return ExchangeAdapterConfig(
         exchange=exchange,
@@ -69,9 +91,11 @@ def build_exchange_adapter(settings: Settings | None = None) -> ExchangeAdapterC
     )
 
 
-def _kalshi_disabled_reason(settings: Settings) -> str:
+def _kalshi_disabled_reason(settings: Settings) -> str | None:
     if not settings.trading_live_enabled:
-        return "Kalshi live trading is disabled. Set TRADING_LIVE_ENABLED=true only after signing and market mapping are implemented."
+        return "Kalshi live trading is disabled. Set TRADING_LIVE_ENABLED=true when the operator intends to use production Kalshi."
     if not settings.kalshi_api_key_id or settings.kalshi_private_key_path is None:
         return "Kalshi credentials are incomplete. Configure KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH."
-    return "Kalshi adapter boundary is configured, but signed order placement is not implemented yet."
+    if not Path(str(settings.kalshi_private_key_path)).exists():
+        return f"Kalshi private key file does not exist: {settings.kalshi_private_key_path}"
+    return None
