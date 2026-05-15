@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -13,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.providers.canonical_schema import (
     ADVANCED_CANONICAL_FIELDS,
     SCORING_CANONICAL_FIELDS,
@@ -21,6 +23,8 @@ from app.providers.canonical_schema import (
     log_missing_canonical_fields,
 )
 from app.services.board_date import matches_board_date
+
+_log = logging.getLogger(__name__)
 
 PLAYER_META_FIELDS = [
     *ADVANCED_CANONICAL_FIELDS,
@@ -202,7 +206,24 @@ class DatasetLoader:
             is_upcoming=False,
         )
         frame["pra"] = frame["points"] + frame["rebounds"] + frame["assists"]
-        return frame.drop(columns=["availability_cutoff"], errors="ignore")
+        frame = frame.drop(columns=["availability_cutoff"], errors="ignore")
+
+        parquet_root = get_settings().historical_parquet_root
+        if parquet_root is not None and parquet_root.exists():
+            parquet_frame = self.load_historical_player_games_from_parquet(
+                parquet_root, as_of_date=as_of_date
+            )
+            if not parquet_frame.empty:
+                sqlite_row_count = len(frame)
+                frame = pd.concat([frame, parquet_frame], ignore_index=True)
+                frame = frame.sort_values("game_date").reset_index(drop=True)
+                _log.info(
+                    "Merged parquet historical seasons: %d parquet + %d SQLite = %d total",
+                    len(parquet_frame),
+                    sqlite_row_count,
+                    len(frame),
+                )
+        return frame
 
     @property
     def use_parquet(self) -> bool:
