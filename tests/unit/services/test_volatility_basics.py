@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
+
 from app.services.volatility import (
     DEFAULT_CONFIG,
     VolatilityConfig,
@@ -97,3 +98,8 @@ def test_score_dataclass_is_frozen() -> None:
     )
     with pytest.raises(AttributeError):
         score.coefficient = 0.7  # type: ignore[misc]
+
+
+def test_default_config_weights_are_immutable() -> None:
+    with pytest.raises(TypeError):
+        DEFAULT_CONFIG.weights["stat_cv"] = 0.99  # type: ignore[index]

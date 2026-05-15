@@ -9,7 +9,9 @@ row, and the module returns a VolatilityScore.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal
 
 Tier = Literal["low", "medium", "high"]
@@ -35,7 +37,7 @@ class VolatilityScore:
 
 @dataclass(frozen=True)
 class VolatilityConfig:
-    weights: dict[str, float]
+    weights: Mapping[str, float]
     prob_alpha: float
     conf_alpha: float
     tier_low_cap: float
@@ -47,6 +49,7 @@ class VolatilityConfig:
     recent_form_z_max: float = 2.0
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "weights", MappingProxyType(dict(self.weights)))
         total = sum(self.weights.values())
         if not math.isclose(total, 1.0, abs_tol=1e-6):
             raise ValueError(
