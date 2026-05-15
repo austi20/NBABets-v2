@@ -1295,7 +1295,9 @@ def _candidate_policy_blockers(
         blockers.append(f"candidate_status={status or 'missing'}")
     if _market_blocked(candidate.market_key, policy):
         blockers.append("blocked_market_key")
-    if policy.same_day_only and candidate.game_date != board_date:
+    if candidate.game_date < board_date:
+        blockers.append("game_already_played")
+    elif policy.same_day_only and candidate.game_date != board_date:
         blockers.append("not_same_day")
     if candidate.model_prob is None or candidate.model_prob < policy.min_model_prob:
         blockers.append("min_model_prob")
