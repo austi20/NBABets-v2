@@ -15,6 +15,16 @@ from app.services.parlays import ParlayRecommendation
 from app.services.prop_analysis import PropOpportunity, SportsbookQuote
 
 
+# Markets with high per-game variance that should be suppressed relative to
+# stable production markets (points, rebounds, assists, combos).
+_VOLATILE_MARKET_PENALTY: dict[str, int] = {
+    "threes": 10,
+    "turnovers": 12,
+    "steals": 8,
+    "blocks": 8,
+}
+
+
 @dataclass(frozen=True)
 class ProviderStatus:
     provider_type: str
@@ -553,6 +563,7 @@ def _prop_confidence_score(
         score -= injury.severity
     if best_quote.is_alternate_line:
         score -= 2
+    score -= _VOLATILE_MARKET_PENALTY.get(opportunity.market_key, 0)
     return max(1, min(score, 99))
 
 

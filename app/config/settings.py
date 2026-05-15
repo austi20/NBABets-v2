@@ -135,6 +135,12 @@ class Settings(BaseSettings):
         default_factory=lambda: _default_app_data_dir() / "reports",
         alias="REPORTS_DIR",
     )
+    historical_parquet_root: Path | None = Field(
+        default=None,
+        alias="HISTORICAL_PARQUET_ROOT",
+        description="Optional path to parquet box score partitions for multi-season training history. "
+        "If set and the directory exists, data is merged with the live SQLite training set.",
+    )
     provider_rotation_state_path: Path = Field(
         default_factory=lambda: _default_app_data_dir() / "data" / "snapshots" / "provider_rotation.json",
         alias="PROVIDER_ROTATION_STATE_PATH",
