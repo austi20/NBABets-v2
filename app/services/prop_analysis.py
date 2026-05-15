@@ -81,11 +81,11 @@ class PropAnalysisService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def top_opportunities(self, limit: int = 25, target_date: date | None = None) -> list[PropOpportunity]:
+    def top_opportunities(self, limit: int | None = None, target_date: date | None = None) -> list[PropOpportunity]:
         target_date = target_date or date.today()
         opportunities = self.all_opportunities(target_date)
         ranked = []
-        for index, row in enumerate(opportunities[:limit], start=1):
+        for index, row in enumerate(opportunities if limit is None else opportunities[:limit], start=1):
             ranked.append(
                 PropOpportunity(
                     rank=index,

@@ -409,7 +409,7 @@ class StartupRunner:
 
     def _step_analyze_props(self, *, board_date: Any, **_: Any) -> None:
         with session_scope() as session:
-            opportunities = PropAnalysisService(session).top_opportunities(limit=50, target_date=board_date)
+            opportunities = PropAnalysisService(session).top_opportunities(target_date=board_date)
         self._set_opportunities(opportunities)
         self._set_metric("opportunity_count", len(opportunities))
         return None

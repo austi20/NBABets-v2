@@ -220,9 +220,8 @@ class Settings(BaseSettings):
     kalshi_decision_brain_enabled: bool = Field(default=True, alias="KALSHI_DECISION_BRAIN_ENABLED")
     kalshi_decision_brain_root: Path | None = Field(default=None, alias="KALSHI_DECISION_BRAIN_ROOT")
     kalshi_decision_brain_candidate_limit: int = Field(
-        default=25,
+        default=200,
         ge=1,
-        le=250,
         alias="KALSHI_DECISION_BRAIN_CANDIDATE_LIMIT",
     )
     kalshi_decision_brain_auto_sync_on_startup: bool = Field(
