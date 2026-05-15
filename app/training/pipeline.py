@@ -193,6 +193,20 @@ class TrainingPipeline:
         if historical is None:
             emit("Loading historical training data")
             historical = self._loader.load_historical_player_games()
+            parquet_root = self._settings.historical_parquet_root
+            if parquet_root is not None and parquet_root.exists():
+                emit("Merging parquet historical seasons")
+                parquet_frame = self._loader.load_historical_player_games_from_parquet(parquet_root)
+                if not parquet_frame.empty:
+                    sqlite_row_count = len(historical)
+                    historical = pd.concat([historical, parquet_frame], ignore_index=True)
+                    historical = historical.sort_values("game_date").reset_index(drop=True)
+                    _log.info(
+                        "Merged parquet data: %d parquet rows + %d SQLite rows = %d total",
+                        len(parquet_frame),
+                        sqlite_row_count,
+                        len(historical),
+                    )
         historical_row_count = int(len(historical))
         current_step += 1
         emit("Building leakage-safe training features")

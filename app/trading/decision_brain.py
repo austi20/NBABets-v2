@@ -94,6 +94,8 @@ class DecisionBrainPolicy:
     ranking_weight_liquidity: float
     ranking_weight_calibration: float
     ranking_weight_freshness: float
+    require_injury_refresh_minutes: int = 30
+    require_projection_refresh_minutes: int = 60
 
 
 @dataclass(frozen=True)
@@ -353,6 +355,8 @@ def load_policy(settings: Settings) -> DecisionBrainPolicy:
         ranking_weight_liquidity=_float_or(fields.get("ranking_weight_liquidity"), 0.15),
         ranking_weight_calibration=_float_or(fields.get("ranking_weight_calibration"), 0.10),
         ranking_weight_freshness=_float_or(fields.get("ranking_weight_freshness"), 0.10),
+        require_injury_refresh_minutes=int(fields.get("require_injury_refresh_minutes") or 30),
+        require_projection_refresh_minutes=int(fields.get("require_projection_refresh_minutes") or 60),
     )
 
 
@@ -520,6 +524,54 @@ def resolve_brain_targets(
     return resolved
 
 
+
+def _stale_context_blockers(settings: Settings, policy: DecisionBrainPolicy) -> list[str]:
+    """Return veto keys for stale injury or projection context."""
+    import sqlite3
+    from datetime import timedelta
+
+    blockers: list[str] = []
+    db_url: str = settings.database_url
+    if not db_url.startswith("sqlite:///"):
+        return blockers
+    db_path = db_url[len("sqlite:///"):]
+    now = datetime.now(UTC)
+    try:
+        con = sqlite3.connect(db_path)
+        try:
+            cur = con.cursor()
+            cur.execute("SELECT MAX(report_timestamp) FROM injury_reports")
+            row = cur.fetchone()
+            latest_injury = row[0] if row and row[0] else None
+            if latest_injury is None:
+                blockers.append("stale_injury_context")
+            else:
+                ts = datetime.fromisoformat(latest_injury)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                cutoff = now - timedelta(minutes=policy.require_injury_refresh_minutes)
+                if ts < cutoff:
+                    blockers.append("stale_injury_context")
+
+            cur.execute("SELECT MAX(predicted_at) FROM predictions")
+            row = cur.fetchone()
+            latest_pred = row[0] if row and row[0] else None
+            if latest_pred is None:
+                blockers.append("stale_projection_context")
+            else:
+                ts = datetime.fromisoformat(latest_pred)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                cutoff = now - timedelta(minutes=policy.require_projection_refresh_minutes)
+                if ts < cutoff:
+                    blockers.append("stale_projection_context")
+        finally:
+            con.close()
+    except Exception:  # pragma: no cover - best-effort check
+        pass
+    return blockers
+
+
 def rank_and_enrich_symbols(
     *,
     settings: Settings,
@@ -528,6 +580,7 @@ def rank_and_enrich_symbols(
     market_client: MarketDataClient | None = None,
     selection_store: SelectionStore | None = None,
     today: date | None = None,
+    session_blockers: list[str] | None = None,
 ) -> tuple[dict[str, Any], DecisionBrainCandidate | None, list[BrainCheck]]:
     symbols_path = Path(settings.kalshi_symbols_path)
     if not symbols_path.is_file():
@@ -578,6 +631,8 @@ def rank_and_enrich_symbols(
             row.update(_candidate_symbol_fields(candidate, policy))
             row["consistency_score"] = candidate.consistency_score
             blockers = _candidate_policy_blockers(candidate, policy=policy, board_date=candidate.board_date)
+            if session_blockers:
+                blockers = list(session_blockers) + blockers
             selection_blockers = _trading_selection_blockers(candidate, selection_store)
             quote = None
             monitored = row_to_monitored(row)
@@ -720,6 +775,16 @@ def sync_decision_brain(
         if not settings.kalshi_decision_brain_enabled:
             raise DecisionBrainError("KALSHI_DECISION_BRAIN_ENABLED is false")
         policy = load_policy(settings)
+        stale_blockers = _stale_context_blockers(settings, policy)
+        for stale_key in stale_blockers:
+            checks.append(
+                BrainCheck(
+                    key=stale_key,
+                    label=stale_key.replace("_", " ").title(),
+                    status="fail",
+                    detail="Context data is stale; refresh before submitting live orders",
+                )
+            )
         checks.append(
             BrainCheck(
                 key="policy_loaded",
@@ -778,6 +843,7 @@ def sync_decision_brain(
             market_client=market_client,
             selection_store=SelectionStore.load(trading_selections_path(settings)),
             today=today,
+            session_blockers=stale_blockers,
         )
         selected_candidate_ids = _selected_candidate_ids(symbols_payload)
         selected_tickers = _selected_tickers(symbols_payload, selected_candidate_ids)
