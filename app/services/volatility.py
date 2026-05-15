@@ -89,3 +89,59 @@ def adjust_probability(raw_p: float, coefficient: float, config: VolatilityConfi
 def confidence_multiplier(coefficient: float, config: VolatilityConfig = DEFAULT_CONFIG) -> float:
     """Sharper discount intended for the 1-99 confidence score."""
     return 1.0 - coefficient * config.conf_alpha
+
+
+_STAT_CV_EPS = 0.5
+_USAGE_CV_EPS = 0.05
+_MIN_MINUTES_DENOM = 1.0
+
+
+def _clip01(value: float) -> float:
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
+def normalize_stat_cv(
+    std: float, mean: float, config: VolatilityConfig = DEFAULT_CONFIG
+) -> float:
+    if mean < _STAT_CV_EPS:
+        return 1.0
+    cv = std / mean
+    return _clip01(cv / config.stat_cv_max)
+
+
+def normalize_minutes_instability(
+    *,
+    predicted_std: float,
+    minutes_std_10: float,
+    minutes_mean_10: float,
+    config: VolatilityConfig = DEFAULT_CONFIG,
+) -> float:
+    pred_component = _clip01(predicted_std / config.minutes_std_max)
+    denom = max(minutes_mean_10, _MIN_MINUTES_DENOM)
+    cv_component = _clip01((minutes_std_10 / denom) / config.minutes_cv_max)
+    return _clip01((pred_component + cv_component) / 2.0)
+
+
+def normalize_usage_instability(
+    std: float, mean: float, config: VolatilityConfig = DEFAULT_CONFIG
+) -> float:
+    if mean < _USAGE_CV_EPS:
+        return 1.0
+    cv = std / mean
+    return _clip01(cv / config.usage_cv_max)
+
+
+def normalize_recent_form_divergence(
+    *,
+    mean_5: float,
+    mean_season: float,
+    std_season: float,
+    config: VolatilityConfig = DEFAULT_CONFIG,
+) -> float:
+    denom = max(std_season, 1.0)
+    z = abs(mean_5 - mean_season) / denom
+    return _clip01(z / config.recent_form_z_max)
