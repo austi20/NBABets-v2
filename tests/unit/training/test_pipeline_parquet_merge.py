@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -60,21 +59,20 @@ def _build_pipeline(parquet_root: Path | None) -> object:
 
 
 class TestParquetMerge:
-    def test_merges_sqlite_and_parquet_rows(self, tmp_path: Path) -> None:
-        """train() should concat parquet frame with SQLite frame when root is set."""
-        from app.training.pipeline import TrainingPipeline
+    def test_pipeline_uses_loader_historical_frame(self, tmp_path: Path) -> None:
+        """train() should feed `load_historical_player_games` result directly to features.
 
-        sqlite_frame = _make_frame(5)
-        parquet_frame = _make_frame(3)
+        Parquet merging now happens inside DatasetLoader, so the pipeline only
+        sees the merged result via `load_historical_player_games`.
+        """
+        merged_frame = _make_frame(8)
 
         pipeline = _build_pipeline(parquet_root=tmp_path)
 
         loader_mock = MagicMock()
-        loader_mock.load_historical_player_games.return_value = sqlite_frame
-        loader_mock.load_historical_player_games_from_parquet.return_value = parquet_frame
+        loader_mock.load_historical_player_games.return_value = merged_frame
         pipeline._loader = loader_mock  # type: ignore[attr-defined]
 
-        # Abort right after the load step via build_training_frame
         features_mock = MagicMock()
         features_mock.build_training_frame.side_effect = _EarlyExit
         pipeline._features = features_mock  # type: ignore[attr-defined]
@@ -82,14 +80,14 @@ class TestParquetMerge:
         with pytest.raises(_EarlyExit):
             pipeline.train()
 
-        # build_training_frame must have been called with the merged 8-row frame
+        loader_mock.load_historical_player_games_from_parquet.assert_not_called()
         call_args = features_mock.build_training_frame.call_args
         assert call_args is not None
-        merged: pd.DataFrame = call_args.args[0]
-        assert len(merged) == 8, f"Expected 8 rows, got {len(merged)}"
+        passed: pd.DataFrame = call_args.args[0]
+        assert len(passed) == 8
 
-    def test_skips_merge_when_parquet_root_is_none(self, tmp_path: Path) -> None:
-        """train() must not call load_historical_player_games_from_parquet when root is None."""
+    def test_pipeline_passes_through_sqlite_only_frame(self, tmp_path: Path) -> None:
+        """train() does not call the parquet method itself any more."""
         sqlite_frame = _make_frame(5)
 
         pipeline = _build_pipeline(parquet_root=None)
@@ -107,28 +105,8 @@ class TestParquetMerge:
 
         loader_mock.load_historical_player_games_from_parquet.assert_not_called()
         call_args = features_mock.build_training_frame.call_args
-        merged: pd.DataFrame = call_args.args[0]
-        assert len(merged) == 5
-
-    def test_skips_merge_when_parquet_root_missing(self, tmp_path: Path) -> None:
-        """train() must skip gracefully if parquet_root path does not exist."""
-        nonexistent = tmp_path / "no_such_dir"
-        sqlite_frame = _make_frame(5)
-
-        pipeline = _build_pipeline(parquet_root=nonexistent)
-
-        loader_mock = MagicMock()
-        loader_mock.load_historical_player_games.return_value = sqlite_frame
-        pipeline._loader = loader_mock  # type: ignore[attr-defined]
-
-        features_mock = MagicMock()
-        features_mock.build_training_frame.side_effect = _EarlyExit
-        pipeline._features = features_mock  # type: ignore[attr-defined]
-
-        with pytest.raises(_EarlyExit):
-            pipeline.train()
-
-        loader_mock.load_historical_player_games_from_parquet.assert_not_called()
+        passed: pd.DataFrame = call_args.args[0]
+        assert len(passed) == 5
 
     def test_skips_merge_when_caller_passes_historical(self, tmp_path: Path) -> None:
         """If historical is pre-built by caller, parquet merge must be skipped."""
