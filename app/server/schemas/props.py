@@ -67,6 +67,9 @@ class PropOpportunityModel(BaseModel):
     boom_probability: float
     bust_probability: float
     availability_branches: int
+    volatility_coefficient: float = 0.0
+    volatility_tier: str = "low"
+    adjusted_over_probability: float | None = None
 
     @classmethod
     def from_dataclass(cls, value: PropOpportunity) -> PropOpportunityModel:
@@ -102,6 +105,9 @@ class PropOpportunityModel(BaseModel):
             boom_probability=value.boom_probability,
             bust_probability=value.bust_probability,
             availability_branches=value.availability_branches,
+            volatility_coefficient=value.volatility_coefficient,
+            volatility_tier=value.volatility_tier,
+            adjusted_over_probability=value.adjusted_over_probability,
         )
 
 

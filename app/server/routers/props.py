@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import date as _date_t
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.db.session import session_scope
 from app.server.board_access import board_cache_entry_or_503
 from app.server.schemas.props import (
     PropInsightModel,
@@ -14,6 +16,7 @@ from app.server.schemas.props import (
 from app.server.services.board_cache import BoardCacheEntry
 from app.services import rotation_audit
 from app.services.prop_analysis import PropOpportunity
+from app.services.volatility import build_feature_snapshot, compute_volatility
 
 router = APIRouter(prefix="/api/props", tags=["props"])
 
@@ -133,6 +136,55 @@ def list_props(
     return PropListResponseModel(items=items, total=total, page=page, page_size=page_size)
 
 
+@router.get("/predictions/{prediction_id}/volatility", response_model=dict[str, Any])
+def prediction_volatility(prediction_id: int) -> dict[str, Any]:
+    """Return the per-prediction volatility breakdown for diagnostics."""
+    from app.models.all import Prediction
+
+    with session_scope() as session:
+        prediction = session.get(Prediction, prediction_id)
+        if prediction is None:
+            raise HTTPException(status_code=404, detail="prediction not found")
+
+        market_key = "points"
+        if prediction.market_id is not None:
+            from app.models.all import PropMarket
+
+            market = session.get(PropMarket, prediction.market_id)
+            if market is not None:
+                market_key = market.key
+
+        as_of_date: _date_t = prediction.predicted_at.date()
+        score = compute_volatility(
+            raw_probability=prediction.over_probability,
+            features=build_feature_snapshot(
+                session=session,
+                player_id=prediction.player_id,
+                market_key=market_key,
+                as_of_date=as_of_date,
+                predicted_minutes_std=None,
+            ),
+        )
+
+        return {
+            "prediction_id": prediction_id,
+            "coefficient": score.coefficient,
+            "tier": score.tier,
+            "adjusted_probability": score.adjusted_probability,
+            "confidence_multiplier": score.confidence_multiplier,
+            "reason": score.reason,
+            "contributors": [
+                {
+                    "name": c.name,
+                    "raw_value": c.raw_value,
+                    "weight": c.weight,
+                    "contribution": c.contribution,
+                }
+                for c in score.contributors
+            ],
+        }
+
+
 @router.get("/{player_id}/{market}/{line}", response_model=PropWithInsightModel)
 def prop_detail(
     request: Request,
@@ -159,4 +211,3 @@ def prop_detail(
 @router.get("/rotation-audit/{game_id}", response_model=dict[str, Any])
 def rotation_audit_detail(game_id: int) -> dict[str, Any]:
     return rotation_audit.get_redistribution(game_id)
-
