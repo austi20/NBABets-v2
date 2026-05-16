@@ -34,6 +34,10 @@ class _FakeMarketClient:
 
 
 def _settings(tmp_path: Path, brain_root: Path) -> Settings:
+    # Point DATABASE_URL at a per-test SQLite path so freshness checks
+    # (require_injury_refresh_minutes / require_projection_refresh_minutes)
+    # do not silently consult the developer's real production DB.
+    db_path = (tmp_path / "test.sqlite").as_posix()
     return Settings(
         APP_DATA_DIR=str(tmp_path / "app"),
         SNAPSHOT_DIR=str(tmp_path / "snapshots"),
@@ -43,6 +47,7 @@ def _settings(tmp_path: Path, brain_root: Path) -> Settings:
         KALSHI_SYMBOLS_PATH=str(tmp_path / "config" / "symbols.json"),
         KALSHI_DECISIONS_PATH=str(tmp_path / "decisions" / "decisions.json"),
         TRADING_LIMITS_PATH=str(tmp_path / "config" / "limits.json"),
+        DATABASE_URL=f"sqlite:///{db_path}",
     )
 
 
