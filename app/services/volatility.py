@@ -11,8 +11,12 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date as _date_t
 from types import MappingProxyType
 from typing import Literal
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 Tier = Literal["low", "medium", "high"]
 
@@ -292,4 +296,107 @@ def compute_volatility(
         adjusted_probability=adjust_probability(raw_probability, coefficient, config=config),
         confidence_multiplier=confidence_multiplier(coefficient, config=config),
         reason="",
+    )
+
+
+# Allowed market keys map to the `player_game_logs` column we aggregate.
+_MARKET_TO_COLUMN: dict[str, str] = {
+    "points": "points",
+    "rebounds": "rebounds",
+    "assists": "assists",
+    "threes": "threes",
+    "turnovers": "turnovers",
+    "steals": "steals",
+    "blocks": "blocks",
+    "pra": "_pra_synthetic",  # computed below
+}
+
+
+def _safe_mean(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _safe_std(values: list[float]) -> float | None:
+    if len(values) < 2:
+        return None
+    m = sum(values) / len(values)
+    variance = sum((v - m) ** 2 for v in values) / (len(values) - 1)
+    return math.sqrt(variance)
+
+
+def _usage_proxy(row: object) -> float:
+    minutes = max(getattr(row, "minutes", 0.0) or 0.0, 1.0)
+    return (
+        (getattr(row, "field_goal_attempts", 0) or 0)
+        + 0.44 * (getattr(row, "free_throw_attempts", 0) or 0)
+        + (getattr(row, "turnovers", 0) or 0)
+    ) / minutes
+
+
+def build_feature_snapshot(
+    *,
+    session: Session,
+    player_id: int,
+    market_key: str,
+    as_of_date: _date_t,
+    predicted_minutes_std: float | None,
+) -> FeatureSnapshot:
+    """Aggregate recent player_game_logs into a FeatureSnapshot.
+
+    Filters games to those before `as_of_date` and orders most-recent first.
+    """
+    from app.models.all import Game, PlayerGameLog
+
+    stmt = (
+        select(PlayerGameLog)
+        .join(Game, Game.game_id == PlayerGameLog.game_id)
+        .where(PlayerGameLog.player_id == player_id)
+        .where(Game.game_date < as_of_date)
+        .order_by(Game.game_date.desc())
+        .limit(82)
+    )
+    rows = list(session.scalars(stmt))
+
+    last_10 = rows[:10]
+    last_5 = rows[:5]
+    season = rows[:82]
+
+    def _stat_values(slice_: list) -> list[float]:
+        if market_key == "pra":
+            return [
+                float((r.points or 0) + (r.rebounds or 0) + (r.assists or 0))
+                for r in slice_
+            ]
+        column = _MARKET_TO_COLUMN.get(market_key)
+        if column is None or column == "_pra_synthetic":
+            return []
+        return [float(getattr(r, column, 0) or 0) for r in slice_]
+
+    stat_10 = _stat_values(last_10)
+    stat_5 = _stat_values(last_5)
+    stat_season = _stat_values(season)
+
+    minutes_10 = [float(r.minutes or 0.0) for r in last_10]
+    minutes_season = [float(r.minutes or 0.0) for r in season]
+    usage_10 = [_usage_proxy(r) for r in last_10]
+
+    starter_flags = [float(bool(r.starter_flag)) for r in last_10]
+    starter_flag_rate = _safe_mean(starter_flags) if starter_flags else None
+    minutes_mean_season = _safe_mean(minutes_season) if minutes_season else None
+
+    return FeatureSnapshot(
+        stat_std_10=_safe_std(stat_10) if stat_10 else None,
+        stat_mean_10=_safe_mean(stat_10) if stat_10 else None,
+        predicted_minutes_std=predicted_minutes_std,
+        minutes_std_10=_safe_std(minutes_10) if minutes_10 else None,
+        minutes_mean_10=_safe_mean(minutes_10) if minutes_10 else None,
+        usage_std_10=_safe_std(usage_10) if usage_10 else None,
+        usage_mean_10=_safe_mean(usage_10) if usage_10 else None,
+        mean_5=_safe_mean(stat_5) if stat_5 else None,
+        mean_season=_safe_mean(stat_season) if stat_season else None,
+        std_season=_safe_std(stat_season) if stat_season else None,
+        starter_flag_rate=starter_flag_rate,
+        minutes_mean_season=minutes_mean_season,
     )
