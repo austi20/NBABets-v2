@@ -13,16 +13,7 @@ from app.services.live_games import sync_live_games_from_nba_api
 from app.services.local_autonomy.policy_state import load_local_agent_policy_state
 from app.services.parlays import ParlayRecommendation
 from app.services.prop_analysis import PropOpportunity, SportsbookQuote
-
-
-# Markets with high per-game variance that should be suppressed relative to
-# stable production markets (points, rebounds, assists, combos).
-_VOLATILE_MARKET_PENALTY: dict[str, int] = {
-    "threes": 10,
-    "turnovers": 12,
-    "steals": 8,
-    "blocks": 8,
-}
+from app.services.volatility import VolatilityScore
 
 
 @dataclass(frozen=True)
@@ -310,6 +301,7 @@ def build_prop_insight(
     injury: InjuryStatusBadge | None = None,
     *,
     now: datetime | None = None,
+    volatility: VolatilityScore | None = None,
 ) -> PropInsight:
     best_quote = max(
         opportunity.quotes,
@@ -344,6 +336,7 @@ def build_prop_insight(
         uncertainty_ratio=uncertainty_ratio,
         injury=injury,
         now=now,
+        volatility=volatility,
     )
     warnings = _prop_warnings(opportunity, best_quote, market_width, uncertainty_ratio, injury, latest_quote_at, now=now)
     reasons = _prop_reasons(opportunity, best_quote, edge, expected_profit)
@@ -544,6 +537,7 @@ def _prop_confidence_score(
     uncertainty_ratio: float | None,
     injury: InjuryStatusBadge | None,
     now: datetime | None,
+    volatility: VolatilityScore | None = None,
 ) -> int:
     score = min(int(best_quote.hit_probability * 55), 55)
     score += min(int(max(edge, 0.0) * 300), 20)
@@ -563,7 +557,8 @@ def _prop_confidence_score(
         score -= injury.severity
     if best_quote.is_alternate_line:
         score -= 2
-    score -= _VOLATILE_MARKET_PENALTY.get(opportunity.market_key, 0)
+    if volatility is not None:
+        score = int(score * volatility.confidence_multiplier)
     return max(1, min(score, 99))
 
 

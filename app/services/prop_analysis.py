@@ -75,6 +75,9 @@ class PropOpportunity:
     boom_probability: float = 0.0
     bust_probability: float = 0.0
     availability_branches: int = 1
+    volatility_coefficient: float = 0.0
+    volatility_tier: str = "low"
+    adjusted_over_probability: float | None = None
 
 
 class PropAnalysisService:

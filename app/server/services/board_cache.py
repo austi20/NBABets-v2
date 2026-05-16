@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from typing import cast
 
@@ -23,6 +23,7 @@ from app.services.insights import (
 from app.services.parlays import MultiGameParlayService, ParlayRecommendation, SameGameParlayService
 from app.services.prop_analysis import PropAnalysisService, PropOpportunity
 from app.services.query import BoardAvailability, QueryService
+from app.services.volatility import build_feature_snapshot, compute_volatility
 
 
 @dataclass(frozen=True)
@@ -112,17 +113,36 @@ class BoardCache:
             )
 
         opportunity_insights: dict[tuple[int, int, str, float], PropInsight] = {}
-        for opportunity in opportunities:
-            key = (
-                opportunity.game_id,
-                opportunity.player_id,
-                opportunity.market_key,
-                float(opportunity.consensus_line),
-            )
-            opportunity_insights[key] = build_prop_insight(
-                opportunity,
-                injury_status_by_player_id.get(opportunity.player_id),
-            )
+        with session_scope() as volatility_session:
+            for idx, opportunity in enumerate(opportunities):
+                volatility = compute_volatility(
+                    raw_probability=opportunity.calibrated_over_probability,
+                    features=build_feature_snapshot(
+                        session=volatility_session,
+                        player_id=opportunity.player_id,
+                        market_key=opportunity.market_key,
+                        as_of_date=board_date,
+                        predicted_minutes_std=None,
+                    ),
+                )
+                enriched = replace(
+                    opportunity,
+                    volatility_coefficient=volatility.coefficient,
+                    volatility_tier=volatility.tier,
+                    adjusted_over_probability=volatility.adjusted_probability,
+                )
+                opportunities[idx] = enriched
+                key = (
+                    enriched.game_id,
+                    enriched.player_id,
+                    enriched.market_key,
+                    float(enriched.consensus_line),
+                )
+                opportunity_insights[key] = build_prop_insight(
+                    enriched,
+                    injury_status_by_player_id.get(enriched.player_id),
+                    volatility=volatility,
+                )
 
         parlay_insights: dict[tuple[str, int, int, int], ParlayInsight] = {}
         for sportsbook_key, by_leg_count_same_game in same_game_sections_by_book.items():
