@@ -402,6 +402,8 @@ function renderPlayerCard(
       variant={options.featured ? "featured" : "default"}
       selected={options.selected}
       onClick={options.onSelect}
+      volatilityTier={opportunity.volatility_tier}
+      volatilityCoefficient={opportunity.volatility_coefficient}
     />
   );
 }

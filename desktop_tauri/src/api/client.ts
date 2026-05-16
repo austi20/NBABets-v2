@@ -359,6 +359,9 @@ export type PropOpportunity = {
   boom_probability: number;
   bust_probability: number;
   availability_branches: number;
+  volatility_coefficient: number;
+  volatility_tier: "low" | "medium" | "high";
+  adjusted_over_probability: number | null;
 };
 
 export type PropInsight = {

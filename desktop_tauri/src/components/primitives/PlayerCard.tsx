@@ -2,6 +2,7 @@ import { ConfidenceBar } from "./ConfidenceBar";
 import { EdgeBadge } from "./EdgeBadge";
 import { FreshnessBadge } from "./FreshnessBadge";
 import { InjuryPill } from "./InjuryPill";
+import { VolatilityBadge, type VolatilityTier } from "./VolatilityBadge";
 
 type PlayerCardProps = {
   playerName: string;
@@ -18,6 +19,8 @@ type PlayerCardProps = {
   variant?: "default" | "featured";
   selected?: boolean;
   onClick?: () => void;
+  volatilityTier?: VolatilityTier;
+  volatilityCoefficient?: number;
 };
 
 export function PlayerCard({
@@ -35,6 +38,8 @@ export function PlayerCard({
   variant = "default",
   selected = false,
   onClick,
+  volatilityTier,
+  volatilityCoefficient,
 }: PlayerCardProps) {
   return (
     <article
@@ -74,6 +79,12 @@ export function PlayerCard({
       <div className="player-badges">
         <InjuryPill status={injuryStatus} />
         <FreshnessBadge fetchedAt={fetchedAt} />
+        {volatilityTier ? (
+          <VolatilityBadge
+            tier={volatilityTier}
+            coefficient={volatilityCoefficient ?? 0}
+          />
+        ) : null}
         {bookLabel ? <span className="player-book">{bookLabel}</span> : null}
         {selected ? <span className="selected-badge">Selected</span> : null}
       </div>
