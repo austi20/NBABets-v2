@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from typing import cast
 
+from app.config.settings import get_settings
 from app.db.session import session_scope
 from app.services.insights import (
     BoardSummary,
@@ -113,35 +114,48 @@ class BoardCache:
             )
 
         opportunity_insights: dict[tuple[int, int, str, float], PropInsight] = {}
-        with session_scope() as volatility_session:
-            for idx, opportunity in enumerate(opportunities):
-                volatility = compute_volatility(
-                    raw_probability=opportunity.calibrated_over_probability,
-                    features=build_feature_snapshot(
-                        session=volatility_session,
-                        player_id=opportunity.player_id,
-                        market_key=opportunity.market_key,
-                        as_of_date=board_date,
-                        predicted_minutes_std=None,
-                    ),
-                )
-                enriched = replace(
-                    opportunity,
-                    volatility_coefficient=volatility.coefficient,
-                    volatility_tier=volatility.tier,
-                    adjusted_over_probability=volatility.adjusted_probability,
-                )
-                opportunities[idx] = enriched
+        if get_settings().volatility_tier_enabled:
+            with session_scope() as volatility_session:
+                for idx, opportunity in enumerate(opportunities):
+                    volatility = compute_volatility(
+                        raw_probability=opportunity.calibrated_over_probability,
+                        features=build_feature_snapshot(
+                            session=volatility_session,
+                            player_id=opportunity.player_id,
+                            market_key=opportunity.market_key,
+                            as_of_date=board_date,
+                            predicted_minutes_std=None,
+                        ),
+                    )
+                    enriched = replace(
+                        opportunity,
+                        volatility_coefficient=volatility.coefficient,
+                        volatility_tier=volatility.tier,
+                        adjusted_over_probability=volatility.adjusted_probability,
+                    )
+                    opportunities[idx] = enriched
+                    key = (
+                        enriched.game_id,
+                        enriched.player_id,
+                        enriched.market_key,
+                        float(enriched.consensus_line),
+                    )
+                    opportunity_insights[key] = build_prop_insight(
+                        enriched,
+                        injury_status_by_player_id.get(enriched.player_id),
+                        volatility=volatility,
+                    )
+        else:
+            for opportunity in opportunities:
                 key = (
-                    enriched.game_id,
-                    enriched.player_id,
-                    enriched.market_key,
-                    float(enriched.consensus_line),
+                    opportunity.game_id,
+                    opportunity.player_id,
+                    opportunity.market_key,
+                    float(opportunity.consensus_line),
                 )
                 opportunity_insights[key] = build_prop_insight(
-                    enriched,
-                    injury_status_by_player_id.get(enriched.player_id),
-                    volatility=volatility,
+                    opportunity,
+                    injury_status_by_player_id.get(opportunity.player_id),
                 )
 
         parlay_insights: dict[tuple[str, int, int, int], ParlayInsight] = {}

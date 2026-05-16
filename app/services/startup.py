@@ -415,10 +415,11 @@ class StartupRunner:
                 historical=cached_historical,
             )
         self._set_metric("predictions_generated", len(predictions))
-        try:
-            _emit_volatility_distribution(board_date)
-        except Exception:  # noqa: BLE001
-            _startup_log.exception("volatility distribution log failed")
+        if get_settings().volatility_tier_enabled:
+            try:
+                _emit_volatility_distribution(board_date)
+            except Exception:  # noqa: BLE001
+                _startup_log.exception("volatility distribution log failed")
         return {"board_date": board_date, "cached_historical": cached_historical}
 
     def _step_backtest(

@@ -103,3 +103,27 @@ def test_score_dataclass_is_frozen() -> None:
 def test_default_config_weights_are_immutable() -> None:
     with pytest.raises(TypeError):
         DEFAULT_CONFIG.weights["stat_cv"] = 0.99  # type: ignore[index]
+
+
+def test_volatility_tier_disabled_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The VOLATILITY_TIER_ENABLED env var flips the kill switch."""
+    from app.config.settings import get_settings
+
+    monkeypatch.setenv("VOLATILITY_TIER_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().volatility_tier_enabled is False
+    finally:
+        get_settings.cache_clear()
+
+
+def test_volatility_tier_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without an env override, the kill switch is on (i.e. enabled=True)."""
+    from app.config.settings import get_settings
+
+    monkeypatch.delenv("VOLATILITY_TIER_ENABLED", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().volatility_tier_enabled is True
+    finally:
+        get_settings.cache_clear()

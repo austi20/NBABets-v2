@@ -166,6 +166,7 @@ class Settings(BaseSettings):
     model_version: str = Field(default="v1", alias="MODEL_VERSION")
     training_seed: int = Field(default=42, alias="TRAINING_SEED")
     enable_provider_cache: bool = Field(default=True, alias="ENABLE_PROVIDER_CACHE")
+    volatility_tier_enabled: bool = Field(default=True, alias="VOLATILITY_TIER_ENABLED")
     provider_cache_log_overlap_days: int = Field(default=2, alias="PROVIDER_CACHE_LOG_OVERLAP_DAYS")
     provider_cache_odds_ttl_minutes: int = Field(default=5, alias="PROVIDER_CACHE_ODDS_TTL_MINUTES")
     provider_cache_injuries_ttl_minutes: int = Field(default=10, alias="PROVIDER_CACHE_INJURIES_TTL_MINUTES")
