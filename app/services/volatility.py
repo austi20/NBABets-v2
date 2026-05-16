@@ -145,3 +145,27 @@ def normalize_recent_form_divergence(
     denom = max(std_season, 1.0)
     z = abs(mean_5 - mean_season) / denom
     return _clip01(z / config.recent_form_z_max)
+
+
+Archetype = Literal["starter", "rotation", "bench", "fringe"]
+
+_ARCHETYPE_RISK: dict[Archetype, float] = {
+    "starter": 0.0,
+    "rotation": 0.3,
+    "bench": 0.7,
+    "fringe": 1.0,
+}
+
+
+def classify_archetype(*, starter_flag_rate: float, minutes_mean_season: float) -> Archetype:
+    if starter_flag_rate >= 0.7 and minutes_mean_season >= 24.0:
+        return "starter"
+    if minutes_mean_season >= 18.0:
+        return "rotation"
+    if minutes_mean_season >= 10.0:
+        return "bench"
+    return "fringe"
+
+
+def archetype_risk(archetype: Archetype) -> float:
+    return _ARCHETYPE_RISK[archetype]
