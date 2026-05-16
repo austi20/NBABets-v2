@@ -169,3 +169,127 @@ def classify_archetype(*, starter_flag_rate: float, minutes_mean_season: float) 
 
 def archetype_risk(archetype: Archetype) -> float:
     return _ARCHETYPE_RISK[archetype]
+
+
+@dataclass(frozen=True)
+class FeatureSnapshot:
+    """Inputs required to compute a volatility coefficient.
+
+    Each field is Optional; `compute_volatility` drops missing inputs and
+    renormalizes the remaining weights. If every input is None, the score
+    is neutral (coefficient=0.5) with reason="insufficient_features".
+    """
+
+    stat_std_10: float | None
+    stat_mean_10: float | None
+    predicted_minutes_std: float | None
+    minutes_std_10: float | None
+    minutes_mean_10: float | None
+    usage_std_10: float | None
+    usage_mean_10: float | None
+    mean_5: float | None
+    mean_season: float | None
+    std_season: float | None
+    starter_flag_rate: float | None
+    minutes_mean_season: float | None
+
+
+def _maybe_stat_cv(snap: FeatureSnapshot, config: VolatilityConfig) -> float | None:
+    if snap.stat_std_10 is None or snap.stat_mean_10 is None:
+        return None
+    return normalize_stat_cv(snap.stat_std_10, snap.stat_mean_10, config=config)
+
+
+def _maybe_minutes(snap: FeatureSnapshot, config: VolatilityConfig) -> float | None:
+    if (
+        snap.predicted_minutes_std is None
+        or snap.minutes_std_10 is None
+        or snap.minutes_mean_10 is None
+    ):
+        return None
+    return normalize_minutes_instability(
+        predicted_std=snap.predicted_minutes_std,
+        minutes_std_10=snap.minutes_std_10,
+        minutes_mean_10=snap.minutes_mean_10,
+        config=config,
+    )
+
+
+def _maybe_usage(snap: FeatureSnapshot, config: VolatilityConfig) -> float | None:
+    if snap.usage_std_10 is None or snap.usage_mean_10 is None:
+        return None
+    return normalize_usage_instability(snap.usage_std_10, snap.usage_mean_10, config=config)
+
+
+def _maybe_recent_form(snap: FeatureSnapshot, config: VolatilityConfig) -> float | None:
+    if snap.mean_5 is None or snap.mean_season is None or snap.std_season is None:
+        return None
+    return normalize_recent_form_divergence(
+        mean_5=snap.mean_5,
+        mean_season=snap.mean_season,
+        std_season=snap.std_season,
+        config=config,
+    )
+
+
+def _maybe_archetype(snap: FeatureSnapshot) -> float | None:
+    if snap.starter_flag_rate is None or snap.minutes_mean_season is None:
+        return None
+    archetype = classify_archetype(
+        starter_flag_rate=snap.starter_flag_rate,
+        minutes_mean_season=snap.minutes_mean_season,
+    )
+    return archetype_risk(archetype)
+
+
+def compute_volatility(
+    *,
+    raw_probability: float,
+    features: FeatureSnapshot,
+    config: VolatilityConfig = DEFAULT_CONFIG,
+) -> VolatilityScore:
+    raw_inputs: dict[str, float | None] = {
+        "stat_cv": _maybe_stat_cv(features, config),
+        "minutes_instability": _maybe_minutes(features, config),
+        "usage_instability": _maybe_usage(features, config),
+        "recent_form_divergence": _maybe_recent_form(features, config),
+        "archetype_risk": _maybe_archetype(features),
+    }
+
+    available = {name: value for name, value in raw_inputs.items() if value is not None}
+
+    if not available:
+        return VolatilityScore(
+            coefficient=0.5,
+            tier=tier_from_coefficient(0.5, config=config),
+            contributors=(),
+            adjusted_probability=adjust_probability(raw_probability, 0.5, config=config),
+            confidence_multiplier=confidence_multiplier(0.5, config=config),
+            reason="insufficient_features",
+        )
+
+    weight_sum = sum(config.weights[name] for name in available)
+    contributors: list[VolatilityContributor] = []
+    coefficient = 0.0
+    for name, normalized in available.items():
+        renormalized_weight = config.weights[name] / weight_sum
+        contribution = renormalized_weight * normalized
+        contributors.append(
+            VolatilityContributor(
+                name=name,
+                raw_value=normalized,
+                weight=renormalized_weight,
+                contribution=contribution,
+            )
+        )
+        coefficient += contribution
+
+    coefficient = _clip01(coefficient)
+    return VolatilityScore(
+        coefficient=coefficient,
+        tier=tier_from_coefficient(coefficient, config=config),
+        contributors=tuple(contributors),
+        adjusted_probability=adjust_probability(raw_probability, coefficient, config=config),
+        confidence_multiplier=confidence_multiplier(coefficient, config=config),
+        reason="",
+    )
