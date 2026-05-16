@@ -205,14 +205,14 @@ def _maybe_stat_cv(snap: FeatureSnapshot, config: VolatilityConfig) -> float | N
 
 
 def _maybe_minutes(snap: FeatureSnapshot, config: VolatilityConfig) -> float | None:
-    if (
-        snap.predicted_minutes_std is None
-        or snap.minutes_std_10 is None
-        or snap.minutes_mean_10 is None
-    ):
+    # predicted_minutes_std is not available outside the training pipeline, so
+    # fall back to 0 when missing and let the CV term carry the signal. The
+    # input is dropped entirely only when the observed minutes data is gone.
+    if snap.minutes_std_10 is None or snap.minutes_mean_10 is None:
         return None
+    predicted_std = snap.predicted_minutes_std if snap.predicted_minutes_std is not None else 0.0
     return normalize_minutes_instability(
-        predicted_std=snap.predicted_minutes_std,
+        predicted_std=predicted_std,
         minutes_std_10=snap.minutes_std_10,
         minutes_mean_10=snap.minutes_mean_10,
         config=config,

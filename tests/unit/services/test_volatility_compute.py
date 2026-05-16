@@ -122,3 +122,22 @@ def test_partial_missing_uses_remaining_inputs() -> None:
     # Only fringe archetype contributes -> renormalized weight 1.0 -> coefficient 1.0
     assert math.isclose(score.coefficient, 1.0, abs_tol=1e-6)
     assert score.reason == ""
+
+
+def test_minutes_instability_falls_back_to_cv_when_predicted_std_missing() -> None:
+    """When predicted_minutes_std is None but observed minutes data is present,
+    minutes_instability must still contribute (CV-only fallback per spec notes).
+    """
+    snap = _full_snapshot(
+        predicted_minutes_std=None,  # not available outside the training pipeline
+        minutes_std_10=18.0,         # cv = 18/30 = 0.6 -> normalized to 1.0
+        minutes_mean_10=30.0,
+    )
+    score = compute_volatility(raw_probability=0.65, features=snap)
+    names = {c.name for c in score.contributors}
+    assert "minutes_instability" in names, "minutes must not be dropped when only predicted_std is None"
+    assert len(score.contributors) == 5
+    minutes_contrib = next(c for c in score.contributors if c.name == "minutes_instability")
+    # pred_component = 0 (None coerced to 0), cv_component = clip(0.6/0.6) = 1.0,
+    # so normalize_minutes_instability returns (0 + 1.0)/2 = 0.5.
+    assert math.isclose(minutes_contrib.raw_value, 0.5, abs_tol=1e-6)
