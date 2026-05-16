@@ -34,6 +34,77 @@ from app.training.data import DatasetLoader
 from app.training.pipeline import TrainingPipeline
 
 _startup_log = _startup_logging.getLogger(__name__)
+
+
+def _emit_volatility_distribution(board_date: date | None) -> None:
+    """Log a one-line summary of the predicted volatility tier distribution.
+
+    Pulls every prediction whose `predicted_at` falls on `board_date` (or any
+    if board_date is None), computes a `VolatilityScore` for each, and emits a
+    single info-level line with low/medium/high counts plus p50/p90 of the
+    coefficient and the count of insufficient_features predictions.
+    """
+    from collections import Counter
+    from datetime import datetime as _datetime
+    from datetime import time as _time
+
+    from sqlalchemy import select
+
+    from app.models.all import Prediction, PropMarket
+    from app.services.volatility import build_feature_snapshot, compute_volatility
+
+    with session_scope() as session:
+        stmt = select(Prediction)
+        if board_date is not None:
+            start = _datetime.combine(board_date, _time.min, tzinfo=UTC)
+            stmt = stmt.where(Prediction.predicted_at >= start)
+        predictions = session.scalars(stmt).all()
+
+        markets: dict[int, str] = {}
+        tiers: Counter[str] = Counter()
+        coefficients: list[float] = []
+        insufficient = 0
+        for prediction in predictions:
+            market_key = markets.get(prediction.market_id) if prediction.market_id else None
+            if market_key is None and prediction.market_id is not None:
+                market = session.get(PropMarket, prediction.market_id)
+                if market is not None:
+                    market_key = market.key
+                    markets[prediction.market_id] = market_key
+            if market_key is None:
+                market_key = "points"
+            score = compute_volatility(
+                raw_probability=prediction.over_probability,
+                features=build_feature_snapshot(
+                    session=session,
+                    player_id=prediction.player_id,
+                    market_key=market_key,
+                    as_of_date=prediction.predicted_at.date(),
+                    predicted_minutes_std=None,
+                ),
+            )
+            tiers[score.tier] += 1
+            coefficients.append(score.coefficient)
+            if score.reason == "insufficient_features":
+                insufficient += 1
+
+        if not coefficients:
+            return
+        sorted_c = sorted(coefficients)
+        n = len(sorted_c)
+        p50 = sorted_c[n // 2]
+        p90 = sorted_c[min(n - 1, int(n * 0.9))]
+        _startup_log.info(
+            "volatility: tier_distribution low=%d medium=%d high=%d coef_p50=%.2f p90=%.2f insufficient_features=%d",
+            tiers.get("low", 0),
+            tiers.get("medium", 0),
+            tiers.get("high", 0),
+            p50,
+            p90,
+            insufficient,
+        )
+
+
 _STEP_RESULT_KEYS = frozenset({"refresh_mode", "reused_training", "board_date", "cached_historical", "early_complete"})
 _OPTIONAL_STEP_KEYS = frozenset({"start_local_ai", "backtest", "automation_report", "analyze_props"})
 _STEP_SPECS = (
@@ -344,6 +415,10 @@ class StartupRunner:
                 historical=cached_historical,
             )
         self._set_metric("predictions_generated", len(predictions))
+        try:
+            _emit_volatility_distribution(board_date)
+        except Exception:  # noqa: BLE001
+            _startup_log.exception("volatility distribution log failed")
         return {"board_date": board_date, "cached_historical": cached_historical}
 
     def _step_backtest(
