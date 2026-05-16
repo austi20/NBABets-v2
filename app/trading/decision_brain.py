@@ -96,6 +96,7 @@ class DecisionBrainPolicy:
     ranking_weight_freshness: float
     require_injury_refresh_minutes: int = 30
     require_projection_refresh_minutes: int = 60
+    max_volatility_coefficient: float | None = None  # None disables the gate
 
 
 @dataclass(frozen=True)
@@ -357,6 +358,7 @@ def load_policy(settings: Settings) -> DecisionBrainPolicy:
         ranking_weight_freshness=_float_or(fields.get("ranking_weight_freshness"), 0.10),
         require_injury_refresh_minutes=int(fields.get("require_injury_refresh_minutes") or 30),
         require_projection_refresh_minutes=int(fields.get("require_projection_refresh_minutes") or 60),
+        max_volatility_coefficient=_float_or_none(fields.get("max_volatility_coefficient")),
     )
 
 
@@ -1139,6 +1141,10 @@ def _candidate_from_opportunity(
     model_prob = _float_or_none(getattr(best_quote, "hit_probability", None))
     if model_prob is None:
         model_prob = _float_or_none(getattr(opportunity, "hit_probability", None))
+    # Prefer the volatility-adjusted probability when the opportunity carries one.
+    adjusted_prob = _float_or_none(getattr(opportunity, "adjusted_over_probability", None))
+    if adjusted_prob is not None:
+        model_prob = adjusted_prob
     no_vig = _float_or_none(getattr(best_quote, "no_vig_market_probability", None))
     market_prob = _float_or_none(getattr(insight, "implied_probability", None)) if insight is not None else None
     if market_prob is None:
@@ -1158,6 +1164,15 @@ def _candidate_from_opportunity(
     # Board-derived candidates trade the app's local board date. NBA evening starts
     # may be stored as next-day UTC timestamps, which must not trip same-day policy.
     game_date = board_date
+
+    # Volatility gate: drop candidates that exceed the configured ceiling.
+    volatility_coefficient = _float_or_none(getattr(opportunity, "volatility_coefficient", None))
+    if (
+        policy.max_volatility_coefficient is not None
+        and volatility_coefficient is not None
+        and volatility_coefficient > policy.max_volatility_coefficient
+    ):
+        return None
 
     return DecisionBrainCandidate(
         stable_id=_stable_id(

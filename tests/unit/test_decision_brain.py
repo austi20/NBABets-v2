@@ -724,3 +724,82 @@ def test_rank_sort_key_prefers_higher_consistency_score() -> None:
         "brain_blockers": [],
     }
     assert _rank_sort_key(row, high) < _rank_sort_key(row, low)
+
+
+def test_decision_brain_uses_adjusted_over_probability_when_present(tmp_path: Path) -> None:
+    """When the opportunity carries an adjusted_over_probability (set by the
+    volatility pipeline), the candidate uses it as model_prob instead of the
+    raw hit_probability."""
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+
+    board = _board_entry()
+    opportunity = board.opportunities[0]
+    # Inject volatility-adjusted fields onto the fake opportunity.
+    object.__setattr__(opportunity, "adjusted_over_probability", 0.55)
+    object.__setattr__(opportunity, "volatility_coefficient", 0.4)
+    object.__setattr__(opportunity, "volatility_tier", "medium")
+
+    candidates = candidates_from_board(board, policy=policy, limit=25)
+    assert len(candidates) == 1
+    # adjusted_over_probability (0.55) is below the un-adjusted hit_probability
+    # (0.612), so model_prob should reflect the adjustment.
+    assert candidates[0].model_prob == pytest.approx(0.55, abs=1e-6)
+
+
+def test_decision_brain_blocks_candidate_above_max_volatility(tmp_path: Path) -> None:
+    """When policy.max_volatility_coefficient is set, opportunities with
+    volatility above it are dropped."""
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    # Patch the policy file to include a max_volatility_coefficient gate.
+    policy_path = brain_root / "00 System" / "Policy Core.md"
+    existing = policy_path.read_text(encoding="utf-8")
+    policy_path.write_text(
+        existing.replace(
+            "ranking_weight_freshness: 0.10",
+            "ranking_weight_freshness: 0.10\nmax_volatility_coefficient: 0.50",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+    assert policy.max_volatility_coefficient == 0.50
+
+    board = _board_entry()
+    opportunity = board.opportunities[0]
+    object.__setattr__(opportunity, "volatility_coefficient", 0.80)  # above 0.50 gate
+    object.__setattr__(opportunity, "adjusted_over_probability", 0.55)
+    object.__setattr__(opportunity, "volatility_tier", "high")
+
+    candidates = candidates_from_board(board, policy=policy, limit=25)
+    assert candidates == []
+
+
+def test_decision_brain_passes_candidate_below_max_volatility(tmp_path: Path) -> None:
+    """An opportunity below the gate is still admitted."""
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    policy_path = brain_root / "00 System" / "Policy Core.md"
+    existing = policy_path.read_text(encoding="utf-8")
+    policy_path.write_text(
+        existing.replace(
+            "ranking_weight_freshness: 0.10",
+            "ranking_weight_freshness: 0.10\nmax_volatility_coefficient: 0.90",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+
+    board = _board_entry()
+    opportunity = board.opportunities[0]
+    object.__setattr__(opportunity, "volatility_coefficient", 0.30)
+    object.__setattr__(opportunity, "adjusted_over_probability", 0.60)
+
+    candidates = candidates_from_board(board, policy=policy, limit=25)
+    assert len(candidates) == 1
