@@ -326,7 +326,7 @@ class _BaseParlayService:
         seen_signatures: set[tuple[tuple[int, int, str, float], ...]] = set()
         sort_strategies = [
             lambda candidate: (
-                candidate.quote.hit_probability,
+                _effective_hit_probability(candidate),
                 self._single_leg_expected_profit(candidate),
                 self._single_leg_edge(candidate),
                 candidate.opportunity.projected_mean,
@@ -334,13 +334,13 @@ class _BaseParlayService:
             lambda candidate: (
                 self._single_leg_expected_profit(candidate),
                 self._single_leg_edge(candidate),
-                candidate.quote.hit_probability,
+                _effective_hit_probability(candidate),
                 candidate.opportunity.projected_mean,
             ),
             lambda candidate: (
                 self._single_leg_edge(candidate),
                 self._single_leg_expected_profit(candidate),
-                candidate.quote.hit_probability,
+                _effective_hit_probability(candidate),
                 candidate.opportunity.projected_mean,
             ),
         ]
@@ -433,8 +433,8 @@ class _BaseParlayService:
                 recommended_side=candidate.quote.recommended_side,
                 line_value=candidate.quote.line_value,
                 american_odds=candidate.american_odds,
-                hit_probability=candidate.quote.hit_probability,
-                likelihood_score=min(int(candidate.quote.hit_probability * 100), 99),
+                hit_probability=_effective_hit_probability(candidate),
+                likelihood_score=min(int(_effective_hit_probability(candidate) * 100), 99),
                 is_live_quote=candidate.quote.is_live_quote,
                 verification_status=candidate.quote.verification_status,
                 odds_source_provider=candidate.quote.odds_source_provider,
@@ -901,6 +901,14 @@ class _CandidateLeg:
     opportunity: PropOpportunity
     quote: SportsbookQuote
     american_odds: int
+
+
+def _effective_hit_probability(candidate: _CandidateLeg) -> float:
+    """Use the volatility-adjusted over probability when the opportunity carries one."""
+    adjusted = getattr(candidate.opportunity, "adjusted_over_probability", None)
+    if adjusted is not None:
+        return float(adjusted)
+    return float(candidate.quote.hit_probability)
 
 
 def _nearest_positive_definite(matrix: np.ndarray) -> np.ndarray:
