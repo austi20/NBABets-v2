@@ -167,22 +167,44 @@ class Settings(BaseSettings):
     training_seed: int = Field(default=42, alias="TRAINING_SEED")
     enable_provider_cache: bool = Field(default=True, alias="ENABLE_PROVIDER_CACHE")
     volatility_tier_enabled: bool = Field(default=True, alias="VOLATILITY_TIER_ENABLED")
-    # --- 2026-05-16 backtest tuning (see scripts/backtest_lever_analysis.py) ---
-    # The model is systematically bullish: 6-day backtest had overs hit 46.3%
-    # vs unders 54.8%. Subtract this constant from the model's over_probability
-    # before grading / surfacing. Set to 0.0 to disable.
+    # --- 2026-05-16 backtest tuning (see scripts/backtest_lever_analysis.py
+    # and scripts/grade_historical_props.py) ---
+    # GLOBAL side-bias fallback. 60-day historical sample (5,289 BDL closing
+    # lines from 2026-03-15 to 2026-05-15): overs hit 41.5% vs unders 58.5%.
+    # Calibration is most off when the market implies p~0.55 over (-6.6pt
+    # gap). Default offset 0.07 matches the empirical bias on most markets.
     over_probability_bias_offset: float = Field(
-        default=0.05, alias="OVER_PROBABILITY_BIAS_OFFSET"
+        default=0.07, alias="OVER_PROBABILITY_BIAS_OFFSET"
     )
-    # Calibration breaks above |p-0.5|=0.30 (model probability >0.80 hit only
-    # 41.1%, model probability >0.90 hit 35.5%). Drop these from surfacing.
-    # 0.0 disables the filter.
+    # PER-MARKET side-bias offsets. Same historical sample but per market
+    # (n>=200 picks each). Format: "market:offset,market:offset". When a
+    # market matches here, this offset is used instead of the global one.
+    # Positive offset = tilt toward UNDER (model is bullish on this market);
+    # negative offset = tilt toward OVER (model is bearish on this market).
+    # Empirically derived defaults:
+    #   points     +0.10 (overs hit 40.6%, n=837)
+    #   rebounds   +0.10 (overs hit 40.8%, n=652)
+    #   threes     +0.10 (overs hit 39.3%, n=451 — also disabled below)
+    #   assists    +0.07 (overs hit 43.1%, n=369)
+    #   blocks     +0.13 (overs hit 37.1%, n=280)
+    #   steals     -0.10 (overs hit 59.1%, n=821 — the only over-favored market)
+    per_market_bias_csv: str = Field(
+        default=(
+            "points:0.10,rebounds:0.10,threes:0.10,assists:0.07,"
+            "blocks:0.13,steals:-0.10,pra:0.02,points_rebounds:0.06,"
+            "points_assists:0.01,rebounds_assists:0.07"
+        ),
+        alias="PER_MARKET_BIAS",
+    )
+    # Calibration breaks above |p-0.5|=0.30 (6-day backtest: model probability
+    # >0.80 hit only 41.1%, >0.90 hit 35.5%; sportsbook >0.6 implied hit 42%).
+    # Drop these from surfacing. 0.0 disables the filter.
     max_surfaceable_edge: float = Field(
         default=0.30, alias="MAX_SURFACEABLE_EDGE"
     )
     # Markets that should never appear in surfaced picks regardless of score.
-    # Threes hit only 47.1% across the 6-day backtest; until recalibrated they
-    # are excluded from /api/props results.
+    # Threes hit only 39.3% (overs) across 451 historical closing lines;
+    # excluded from /api/props results until recalibrated.
     disabled_markets_csv: str = Field(
         default="threes", alias="DISABLED_MARKETS"
     )
@@ -190,6 +212,20 @@ class Settings(BaseSettings):
     @property
     def disabled_markets(self) -> frozenset[str]:
         return frozenset(m.strip().lower() for m in self.disabled_markets_csv.split(",") if m.strip())
+
+    @property
+    def per_market_bias_offsets(self) -> dict[str, float]:
+        out: dict[str, float] = {}
+        for token in self.per_market_bias_csv.split(","):
+            if ":" not in token:
+                continue
+            key, val = token.split(":", 1)
+            key = key.strip().lower()
+            try:
+                out[key] = float(val.strip())
+            except ValueError:
+                continue
+        return out
     provider_cache_log_overlap_days: int = Field(default=2, alias="PROVIDER_CACHE_LOG_OVERLAP_DAYS")
     provider_cache_odds_ttl_minutes: int = Field(default=5, alias="PROVIDER_CACHE_ODDS_TTL_MINUTES")
     provider_cache_injuries_ttl_minutes: int = Field(default=10, alias="PROVIDER_CACHE_INJURIES_TTL_MINUTES")

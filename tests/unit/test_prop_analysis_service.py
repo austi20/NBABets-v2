@@ -42,9 +42,10 @@ def test_quote_recommendation_delegates_to_prop_pricer() -> None:
 def test_quote_recommendation_applies_side_bias_offset() -> None:
     """6-day backtest tuning: input to price_prop must be the bias-corrected
     over/under probabilities (overs tilted down, unders tilted up by offset)."""
-    # Default offset is 0.05. Force a clean value for the assertion.
+    # Force a clean global offset; clear any per-market override.
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setenv("OVER_PROBABILITY_BIAS_OFFSET", "0.05")
+    monkeypatch.setenv("PER_MARKET_BIAS", "")
     try:
         get_settings.cache_clear()  # type: ignore[attr-defined]
 
@@ -65,6 +66,64 @@ def test_quote_recommendation_applies_side_bias_offset() -> None:
         passed = kwargs["prediction"]
         assert abs(passed["calibration_adjusted_probability"] - 0.56) < 1e-9
         assert abs(passed["under_probability"] - 0.44) < 1e-9
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+
+def test_quote_recommendation_per_market_offset_overrides_global() -> None:
+    """When a market has a per-market offset, it takes precedence over the
+    global offset (steals empirically has a NEGATIVE offset — overs hit more
+    than 50%, so we tilt toward over instead of away from it)."""
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("OVER_PROBABILITY_BIAS_OFFSET", "0.07")
+    monkeypatch.setenv("PER_MARKET_BIAS", "steals:-0.10,points:0.10")
+    try:
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        decision = PropDecision(
+            model_prob=0.60, market_prob=0.50, no_vig_market_prob=0.50,
+            ev=0.10, recommendation="OVER", confidence="medium",
+            driver="x", market_key="steals", line_value=1.5,
+            over_odds=-110, under_odds=-110,
+        )
+        with patch("app.services.prop_analysis.price_prop", return_value=decision) as mock_price:
+            # steals market: -0.10 offset means OVER gets +0.10 (tilt toward over)
+            _quote_recommendation(
+                over_odds=-110, under_odds=-110,
+                calibrated_over_probability=0.50,
+                calibrated_under_probability=0.50,
+                market_key="steals",
+            )
+        passed = mock_price.call_args.kwargs["prediction"]
+        # 0.50 - (-0.10) = 0.60 over; 0.50 + (-0.10) = 0.40 under
+        assert abs(passed["calibration_adjusted_probability"] - 0.60) < 1e-9
+        assert abs(passed["under_probability"] - 0.40) < 1e-9
+
+        # points market uses its own +0.10 offset
+        with patch("app.services.prop_analysis.price_prop", return_value=decision) as mock_price:
+            _quote_recommendation(
+                over_odds=-110, under_odds=-110,
+                calibrated_over_probability=0.55,
+                calibrated_under_probability=0.45,
+                market_key="points",
+            )
+        passed = mock_price.call_args.kwargs["prediction"]
+        # 0.55 - 0.10 = 0.45 over; 0.45 + 0.10 = 0.55 under
+        assert abs(passed["calibration_adjusted_probability"] - 0.45) < 1e-9
+        assert abs(passed["under_probability"] - 0.55) < 1e-9
+
+        # Unlisted market falls back to the global 0.07 offset
+        with patch("app.services.prop_analysis.price_prop", return_value=decision) as mock_price:
+            _quote_recommendation(
+                over_odds=-110, under_odds=-110,
+                calibrated_over_probability=0.60,
+                calibrated_under_probability=0.40,
+                market_key="unknown_market",
+            )
+        passed = mock_price.call_args.kwargs["prediction"]
+        assert abs(passed["calibration_adjusted_probability"] - 0.53) < 1e-9
+        assert abs(passed["under_probability"] - 0.47) < 1e-9
     finally:
         monkeypatch.undo()
         get_settings.cache_clear()  # type: ignore[attr-defined]

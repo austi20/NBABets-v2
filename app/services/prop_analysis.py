@@ -284,6 +284,7 @@ class PropAnalysisService:
                 under_odds=under_odds,
                 calibrated_over_probability=prediction.calibration_adjusted_probability,
                 calibrated_under_probability=calibrated_under,
+                market_key=market_key,
             )
             if recommendation is None:
                 continue
@@ -520,16 +521,23 @@ def _quote_recommendation(
     under_odds: int | None,
     calibrated_over_probability: float,
     calibrated_under_probability: float,
+    market_key: str | None = None,
 ) -> tuple[str, float, float] | None:
     if over_odds is None and under_odds is None:
         return None
-    # Apply model side-bias correction. 6-day backtest showed overs hit 46.3%
-    # while unders hit 54.8% — the calibrator is systematically bullish. Tilt
-    # the input over_probability down by the configured offset; the under side
-    # is re-derived to preserve normalization.
+    # Apply model side-bias correction. 60-day BDL historical sample (5,289
+    # closing lines): overs hit 41.5% vs unders 58.5%. The calibrator is
+    # systematically bullish in nearly every market. Tilt the input
+    # over_probability down by the per-market offset (or global fallback);
+    # the under side is re-derived to preserve normalization.
     from app.config.settings import get_settings
 
-    offset = get_settings().over_probability_bias_offset
+    settings = get_settings()
+    offset = settings.over_probability_bias_offset
+    if market_key is not None:
+        per_market = settings.per_market_bias_offsets.get(market_key.lower())
+        if per_market is not None:
+            offset = per_market
     corrected_over = max(0.001, min(0.999, float(calibrated_over_probability) - offset))
     corrected_under = max(0.001, min(0.999, float(calibrated_under_probability) + offset))
     decision = price_prop(
