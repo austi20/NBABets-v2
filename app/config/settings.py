@@ -167,6 +167,29 @@ class Settings(BaseSettings):
     training_seed: int = Field(default=42, alias="TRAINING_SEED")
     enable_provider_cache: bool = Field(default=True, alias="ENABLE_PROVIDER_CACHE")
     volatility_tier_enabled: bool = Field(default=True, alias="VOLATILITY_TIER_ENABLED")
+    # --- 2026-05-16 backtest tuning (see scripts/backtest_lever_analysis.py) ---
+    # The model is systematically bullish: 6-day backtest had overs hit 46.3%
+    # vs unders 54.8%. Subtract this constant from the model's over_probability
+    # before grading / surfacing. Set to 0.0 to disable.
+    over_probability_bias_offset: float = Field(
+        default=0.05, alias="OVER_PROBABILITY_BIAS_OFFSET"
+    )
+    # Calibration breaks above |p-0.5|=0.30 (model probability >0.80 hit only
+    # 41.1%, model probability >0.90 hit 35.5%). Drop these from surfacing.
+    # 0.0 disables the filter.
+    max_surfaceable_edge: float = Field(
+        default=0.30, alias="MAX_SURFACEABLE_EDGE"
+    )
+    # Markets that should never appear in surfaced picks regardless of score.
+    # Threes hit only 47.1% across the 6-day backtest; until recalibrated they
+    # are excluded from /api/props results.
+    disabled_markets_csv: str = Field(
+        default="threes", alias="DISABLED_MARKETS"
+    )
+
+    @property
+    def disabled_markets(self) -> frozenset[str]:
+        return frozenset(m.strip().lower() for m in self.disabled_markets_csv.split(",") if m.strip())
     provider_cache_log_overlap_days: int = Field(default=2, alias="PROVIDER_CACHE_LOG_OVERLAP_DAYS")
     provider_cache_odds_ttl_minutes: int = Field(default=5, alias="PROVIDER_CACHE_ODDS_TTL_MINUTES")
     provider_cache_injuries_ttl_minutes: int = Field(default=10, alias="PROVIDER_CACHE_INJURIES_TTL_MINUTES")

@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.config.settings import get_settings
 from app.db.session import session_scope
 from app.server.board_access import board_cache_entry_or_503
 from app.server.schemas.props import (
@@ -29,6 +30,25 @@ def _passes_confidence_filter(tier: str, selected_filter: str) -> bool:
         return True
     required = _CONFIDENCE_FILTER_MIN.get(selected_filter, 0)
     return _CONFIDENCE_ORDER.get(tier, 0) >= required
+
+
+def _passes_backtest_tuning_filters(
+    market_key: str,
+    hit_probability: float,
+    *,
+    disabled_markets: frozenset[str],
+    max_edge: float,
+) -> bool:
+    """Apply 2026-05-16 backtest-driven filters.
+
+    Returns False if the opportunity should be dropped (disabled market, or
+    model edge exceeds the configured ceiling where calibration breaks down).
+    """
+    if market_key.lower() in disabled_markets:
+        return False
+    if max_edge > 0 and abs(float(hit_probability) - 0.5) > max_edge:
+        return False
+    return True
 
 
 def _opportunity_key(opportunity: PropOpportunity) -> tuple[int, int, str, float]:
@@ -108,10 +128,20 @@ def list_props(
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> PropListResponseModel:
     entry = board_cache_entry_or_503(request)
+    settings = get_settings()
+    disabled_markets = settings.disabled_markets
+    max_edge = settings.max_surfaceable_edge
 
     filtered: list[PropOpportunity] = []
     for opportunity in entry.opportunities:
         insight = entry.opportunity_insights[_opportunity_key(opportunity)]
+        if not _passes_backtest_tuning_filters(
+            opportunity.market_key,
+            insight.best_quote.hit_probability,
+            disabled_markets=disabled_markets,
+            max_edge=max_edge,
+        ):
+            continue
         if market != "All" and opportunity.market_key.lower() != market.lower():
             continue
         if book != "All" and insight.best_quote.sportsbook_name.lower() != book.lower():

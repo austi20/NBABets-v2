@@ -523,10 +523,19 @@ def _quote_recommendation(
 ) -> tuple[str, float, float] | None:
     if over_odds is None and under_odds is None:
         return None
+    # Apply model side-bias correction. 6-day backtest showed overs hit 46.3%
+    # while unders hit 54.8% — the calibrator is systematically bullish. Tilt
+    # the input over_probability down by the configured offset; the under side
+    # is re-derived to preserve normalization.
+    from app.config.settings import get_settings
+
+    offset = get_settings().over_probability_bias_offset
+    corrected_over = max(0.001, min(0.999, float(calibrated_over_probability) - offset))
+    corrected_under = max(0.001, min(0.999, float(calibrated_under_probability) + offset))
     decision = price_prop(
         prediction={
-            "calibration_adjusted_probability": float(calibrated_over_probability),
-            "under_probability": float(calibrated_under_probability),
+            "calibration_adjusted_probability": corrected_over,
+            "under_probability": corrected_under,
         },
         line_snapshot={
             "market_key": "",
