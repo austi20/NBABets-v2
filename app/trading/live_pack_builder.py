@@ -138,6 +138,21 @@ def pick_executable_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any
             and original_rec in _EXECUTABLE_REC
         )
         if not selected_live and not selected_observe:
+            if (
+                not status
+                and original_rec in _EXECUTABLE_REC
+                and row.get("kalshi_ticker")
+                and row.get("line_value") not in (None, "")
+            ):
+                _log.warning(
+                    "pick_executable_entries: dropping otherwise-executable row "
+                    "(player_id=%s market_key=%s line_value=%s kalshi_ticker=%s): "
+                    "candidate_status missing -- row never enriched by decision brain",
+                    row.get("player_id"),
+                    row.get("market_key"),
+                    row.get("line_value"),
+                    row.get("kalshi_ticker"),
+                )
             continue
         if not row.get("kalshi_ticker"):
             continue

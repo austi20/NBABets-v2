@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -108,6 +109,36 @@ def test_pick_executable_skips_observe() -> None:
     picked = pick_executable_entries(rows)
     assert len(picked) == 1
     assert picked[0]["kalshi_ticker"] == "B"
+
+
+def test_pick_executable_warns_when_candidate_status_missing(caplog: pytest.LogCaptureFixture) -> None:
+    row = {
+        "recommendation": "buy_yes",
+        "original_recommendation": "buy_yes",
+        "kalshi_ticker": "KX-MISSING",
+        "line_value": 25.5,
+        "player_id": "237",
+        "market_key": "points",
+    }
+    with caplog.at_level(logging.WARNING, logger="app.trading.live_pack_builder"):
+        picked = pick_executable_entries([row])
+    assert picked == []
+    assert any("KX-MISSING" in rec.message for rec in caplog.records)
+    assert any("candidate_status missing" in rec.message for rec in caplog.records)
+
+
+def test_pick_executable_no_warning_when_ticker_missing(caplog: pytest.LogCaptureFixture) -> None:
+    row = {
+        "recommendation": "buy_yes",
+        "original_recommendation": "buy_yes",
+        "line_value": 25.5,
+        "player_id": "237",
+        "market_key": "points",
+    }
+    with caplog.at_level(logging.WARNING, logger="app.trading.live_pack_builder"):
+        picked = pick_executable_entries([row])
+    assert picked == []
+    assert not any("candidate_status missing" in rec.message for rec in caplog.records)
 
 
 def test_blocked_rows_are_visible_but_not_executable() -> None:
