@@ -904,10 +904,19 @@ class _CandidateLeg:
 
 
 def _effective_hit_probability(candidate: _CandidateLeg) -> float:
-    """Use the volatility-adjusted over probability when the opportunity carries one."""
+    """Use the volatility-adjusted over probability when the opportunity carries one.
+
+    ``adjusted_over_probability`` is always the OVER-side probability after bias +
+    volatility correction. For UNDER legs we must flip it to ``1 - p``.
+    """
     adjusted = getattr(candidate.opportunity, "adjusted_over_probability", None)
-    if adjusted is not None:
+    if adjusted is None:
+        return float(candidate.quote.hit_probability)
+    side = str(getattr(candidate.quote, "recommended_side", "") or "").strip().lower()
+    if side == "over":
         return float(adjusted)
+    if side == "under":
+        return max(0.001, min(0.999, 1.0 - float(adjusted)))
     return float(candidate.quote.hit_probability)
 
 

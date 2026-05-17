@@ -51,12 +51,45 @@ def test_effective_hit_probability_prefers_adjusted() -> None:
 
     candidate_with_adjusted = SimpleNamespace(
         opportunity=SimpleNamespace(adjusted_over_probability=0.55),
-        quote=SimpleNamespace(hit_probability=0.65),
+        quote=SimpleNamespace(hit_probability=0.65, recommended_side="OVER"),
     )
     assert math.isclose(_effective_hit_probability(candidate_with_adjusted), 0.55)
 
     candidate_no_adjusted = SimpleNamespace(
         opportunity=SimpleNamespace(adjusted_over_probability=None),
-        quote=SimpleNamespace(hit_probability=0.65),
+        quote=SimpleNamespace(hit_probability=0.65, recommended_side="OVER"),
     )
     assert math.isclose(_effective_hit_probability(candidate_no_adjusted), 0.65)
+
+
+def test_effective_hit_probability_flips_for_under_side() -> None:
+    """For UNDER legs the adjusted OVER probability must be flipped to 1 - p."""
+    from types import SimpleNamespace
+
+    from app.services.parlays import _effective_hit_probability
+
+    under_candidate = SimpleNamespace(
+        opportunity=SimpleNamespace(adjusted_over_probability=0.55),
+        quote=SimpleNamespace(hit_probability=0.55, recommended_side="UNDER"),
+    )
+    assert math.isclose(_effective_hit_probability(under_candidate), 0.45)
+
+    # Lowercase variant should be handled identically.
+    under_lower = SimpleNamespace(
+        opportunity=SimpleNamespace(adjusted_over_probability=0.7),
+        quote=SimpleNamespace(hit_probability=0.55, recommended_side="under"),
+    )
+    assert math.isclose(_effective_hit_probability(under_lower), 0.3)
+
+
+def test_effective_hit_probability_unknown_side_falls_back() -> None:
+    """An unknown/empty recommended_side falls back to quote.hit_probability."""
+    from types import SimpleNamespace
+
+    from app.services.parlays import _effective_hit_probability
+
+    candidate = SimpleNamespace(
+        opportunity=SimpleNamespace(adjusted_over_probability=0.55),
+        quote=SimpleNamespace(hit_probability=0.61, recommended_side=""),
+    )
+    assert math.isclose(_effective_hit_probability(candidate), 0.61)
