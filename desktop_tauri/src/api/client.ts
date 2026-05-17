@@ -400,6 +400,7 @@ export type PropsQuery = {
   book?: string;
   page?: number;
   page_size?: number;
+  show_all?: boolean;
 };
 
 export type ParlayLeg = {
@@ -504,7 +505,7 @@ export type LocalAgentStatus = {
   last_confidence: number | null;
 };
 
-function withQuery(path: string, params: Record<string, string | number | undefined>): string {
+function withQuery(path: string, params: Record<string, string | number | boolean | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== "") {

@@ -126,6 +126,7 @@ def list_props(
     book: str = Query(default="All"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    show_all: bool = Query(default=False),
 ) -> PropListResponseModel:
     entry = board_cache_entry_or_503(request)
     settings = get_settings()
@@ -135,7 +136,7 @@ def list_props(
     filtered: list[PropOpportunity] = []
     for opportunity in entry.opportunities:
         insight = entry.opportunity_insights[_opportunity_key(opportunity)]
-        if not _passes_backtest_tuning_filters(
+        if not show_all and not _passes_backtest_tuning_filters(
             opportunity.market_key,
             insight.best_quote.hit_probability,
             disabled_markets=disabled_markets,
@@ -146,7 +147,7 @@ def list_props(
             continue
         if book != "All" and insight.best_quote.sportsbook_name.lower() != book.lower():
             continue
-        if not _passes_confidence_filter(insight.confidence_tier, confidence):
+        if not show_all and not _passes_confidence_filter(insight.confidence_tier, confidence):
             continue
         filtered.append(opportunity)
 

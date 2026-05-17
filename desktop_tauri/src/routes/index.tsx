@@ -49,6 +49,7 @@ type DashboardFilters = {
   market: string;
   book: string;
   sort: string;
+  showAll: boolean;
 };
 
 type SelectedOpportunity = {
@@ -115,7 +116,16 @@ function DashboardPage() {
     isLoading: propsLoading,
   } = useQuery({
     queryKey: ["props", filters, boardAvailability?.board_date],
-    queryFn: () => api.props({ ...filters, page: 1, page_size: 200 }),
+    queryFn: () =>
+      api.props({
+        confidence: filters.confidence,
+        market: filters.market,
+        book: filters.book,
+        sort: filters.sort,
+        page: 1,
+        page_size: 200,
+        show_all: filters.showAll ? true : undefined,
+      }),
     enabled: Boolean(startup.snapshot?.completed),
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -295,6 +305,14 @@ function DashboardPage() {
               </option>
             ))}
           </select>
+        </label>
+        <label className="sort-control">
+          <span className="micro-label">Show all props (no filters)</span>
+          <input
+            type="checkbox"
+            checked={filters.showAll}
+            onChange={(event) => updateFilter("showAll", event.target.checked)}
+          />
         </label>
       </section>
 
@@ -584,6 +602,7 @@ function readFiltersFromUrl(): DashboardFilters {
     market: normalizeOption(params.get("market"), MARKET_FILTERS, "All"),
     book: params.get("book") || "All",
     sort: SORT_OPTIONS.includes(params.get("sort") || "") ? params.get("sort") || "Best Edge" : "Best Edge",
+    showAll: params.get("show_all") === "true",
   };
 }
 
@@ -596,6 +615,11 @@ function writeFiltersToUrl(filters: DashboardFilters) {
   setParam(params, "market", filters.market, "All");
   setParam(params, "book", filters.book, "All");
   setParam(params, "sort", filters.sort, "Best Edge");
+  if (filters.showAll) {
+    params.set("show_all", "true");
+  } else {
+    params.delete("show_all");
+  }
   const next = params.toString();
   const nextUrl = next ? `${window.location.pathname}?${next}` : window.location.pathname;
   window.history.replaceState(null, "", nextUrl);
@@ -607,6 +631,7 @@ function defaultFilters(): DashboardFilters {
     market: "All",
     book: "All",
     sort: "Best Edge",
+    showAll: false,
   };
 }
 
