@@ -754,6 +754,37 @@ def test_decision_brain_uses_adjusted_over_probability_when_present(tmp_path: Pa
     assert candidates[0].model_prob == pytest.approx(0.55, abs=1e-6)
 
 
+def test_decision_brain_flips_adjusted_prob_for_under_recommendation(tmp_path: Path) -> None:
+    """When the recommended side is UNDER, model_prob must be (1 -
+    adjusted_over_probability), not the adjusted_over_probability itself.
+    Pre-fix this was a silent semantic bug — only visible once bias
+    correction started flipping a meaningful share of picks to UNDER."""
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root)
+    settings = _settings(tmp_path, brain_root)
+    policy = load_policy(settings)
+
+    board = _board_entry()
+    opportunity = board.opportunities[0]
+    quote = opportunity.quotes[0]
+    # Bias-corrected pipeline picked the UNDER side; volatility shrunk the
+    # over prob to 0.45 (so the under prob is 0.55).
+    object.__setattr__(quote, "recommended_side", "under")
+    object.__setattr__(opportunity, "recommended_side", "under")
+    object.__setattr__(quote, "hit_probability", 0.55)
+    object.__setattr__(opportunity, "hit_probability", 0.55)
+    object.__setattr__(opportunity, "adjusted_over_probability", 0.45)
+    object.__setattr__(opportunity, "volatility_coefficient", 0.30)
+    object.__setattr__(opportunity, "volatility_tier", "low")
+
+    candidates = candidates_from_board(board, policy=policy, limit=25)
+    assert len(candidates) == 1
+    # model_prob is the prob of the recommended (UNDER) side hitting, so
+    # 1 - 0.45 = 0.55. Bug would yield 0.45 here.
+    assert candidates[0].model_prob == pytest.approx(0.55, abs=1e-6)
+    assert candidates[0].recommendation == "buy_no"
+
+
 def test_decision_brain_blocks_candidate_above_max_volatility(tmp_path: Path) -> None:
     """When policy.max_volatility_coefficient is set, opportunities with
     volatility above it are dropped."""

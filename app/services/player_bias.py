@@ -86,3 +86,29 @@ def reset_caches() -> None:
     """Test helper: clear the lru_caches so subsequent calls re-read the file."""
     _load_offsets.cache_clear()
     _provider_id_for_db.cache_clear()
+
+
+def effective_over_bias_offset(player_id: int | None, market_key: str | None) -> float:
+    """Return the over-probability bias offset for a (player, market) pair.
+
+    Precedence (highest to lowest):
+      1. Per-player learned offset (data/player_bias_offsets.json)
+      2. Per-market offset (Settings.per_market_bias_offsets)
+      3. Global Settings.over_probability_bias_offset
+
+    Positive offset => tilt over_probability DOWN toward UNDER (model is
+    bullish here). Negative offset => tilt UP toward OVER. The same number
+    is used by both prop_analysis._quote_recommendation (which picks the
+    recommended side) and board_cache (which composes the volatility-shrunk
+    probability), so the chain stays consistent end-to-end.
+    """
+    settings = get_settings()
+    offset = settings.over_probability_bias_offset
+    if market_key is not None:
+        per_market = settings.per_market_bias_offsets.get(market_key.lower())
+        if per_market is not None:
+            offset = per_market
+    player_offset = get_player_bias_offset(player_id)
+    if player_offset is not None:
+        offset = player_offset
+    return offset

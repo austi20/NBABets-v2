@@ -22,6 +22,7 @@ from app.services.insights import (
     load_provider_statuses,
 )
 from app.services.parlays import MultiGameParlayService, ParlayRecommendation, SameGameParlayService
+from app.services.player_bias import effective_over_bias_offset
 from app.services.prop_analysis import PropAnalysisService, PropOpportunity
 from app.services.query import BoardAvailability, QueryService
 from app.services.volatility import build_feature_snapshot, compute_volatility
@@ -117,8 +118,21 @@ class BoardCache:
         if get_settings().volatility_tier_enabled:
             with session_scope() as volatility_session:
                 for idx, opportunity in enumerate(opportunities):
+                    # Apply the same side-bias offset used by _quote_recommendation
+                    # BEFORE volatility shrinkage, so adjusted_over_probability is
+                    # composed end-to-end (per-player -> per-market -> global, then
+                    # volatility-shrunk). Downstream consumers (decision_brain,
+                    # parlays) can trust adjusted_over_probability without
+                    # re-applying the bias themselves.
+                    bias_offset = effective_over_bias_offset(
+                        opportunity.player_id, opportunity.market_key
+                    )
+                    bias_corrected_over = max(
+                        0.001,
+                        min(0.999, opportunity.calibrated_over_probability - bias_offset),
+                    )
                     volatility = compute_volatility(
-                        raw_probability=opportunity.calibrated_over_probability,
+                        raw_probability=bias_corrected_over,
                         features=build_feature_snapshot(
                             session=volatility_session,
                             player_id=opportunity.player_id,

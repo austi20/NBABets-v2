@@ -1141,10 +1141,22 @@ def _candidate_from_opportunity(
     model_prob = _float_or_none(getattr(best_quote, "hit_probability", None))
     if model_prob is None:
         model_prob = _float_or_none(getattr(opportunity, "hit_probability", None))
-    # Prefer the volatility-adjusted probability when the opportunity carries one.
-    adjusted_prob = _float_or_none(getattr(opportunity, "adjusted_over_probability", None))
-    if adjusted_prob is not None:
-        model_prob = adjusted_prob
+    # Prefer the volatility-adjusted probability when the opportunity carries
+    # one. adjusted_over_probability is always the OVER side after bias +
+    # volatility, so for UNDER-recommended candidates we must flip it; otherwise
+    # the EV math runs against the wrong side of the line. The recommendation
+    # was set in PropAnalysisService._quote_recommendation, so it already
+    # accounts for the bias offset.
+    adjusted_over = _float_or_none(getattr(opportunity, "adjusted_over_probability", None))
+    if adjusted_over is not None:
+        rec_side = (
+            str(getattr(best_quote, "recommended_side", "") or "").strip().lower()
+        )
+        if rec_side == "over":
+            model_prob = adjusted_over
+        elif rec_side == "under":
+            model_prob = max(0.001, min(0.999, 1.0 - adjusted_over))
+        # else: unknown side, keep the bias-corrected best_quote.hit_probability
     no_vig = _float_or_none(getattr(best_quote, "no_vig_market_probability", None))
     market_prob = _float_or_none(getattr(insight, "implied_probability", None)) if insight is not None else None
     if market_prob is None:

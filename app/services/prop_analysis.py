@@ -527,26 +527,12 @@ def _quote_recommendation(
 ) -> tuple[str, float, float] | None:
     if over_odds is None and under_odds is None:
         return None
-    # Apply model side-bias correction. Fallback chain (precedence high->low):
-    #   1. Per-player learned offset (Bayesian-shrunk from historical_grading.csv,
-    #      222 players in the 60-day sample; std 0.08, range -0.10 .. +0.27)
-    #   2. Per-market offset (10 markets with empirical defaults)
-    #   3. Global over_probability_bias_offset
-    # The chain is monotonic: a player-specific offset always overrides the
-    # market default, because per-player variance explained ~30x more than
-    # per-(archetype, market) cohorts in the 5,289-row backtest.
-    from app.config.settings import get_settings
-    from app.services.player_bias import get_player_bias_offset
+    # Apply model side-bias correction. The chain (player -> market -> global)
+    # lives in app.services.player_bias.effective_over_bias_offset so every
+    # consumer (insights, board_cache, decision_brain) sees the same offset.
+    from app.services.player_bias import effective_over_bias_offset
 
-    settings = get_settings()
-    offset = settings.over_probability_bias_offset
-    if market_key is not None:
-        per_market = settings.per_market_bias_offsets.get(market_key.lower())
-        if per_market is not None:
-            offset = per_market
-    player_offset = get_player_bias_offset(player_id)
-    if player_offset is not None:
-        offset = player_offset
+    offset = effective_over_bias_offset(player_id, market_key)
     corrected_over = max(0.001, min(0.999, float(calibrated_over_probability) - offset))
     corrected_under = max(0.001, min(0.999, float(calibrated_under_probability) + offset))
     decision = price_prop(
