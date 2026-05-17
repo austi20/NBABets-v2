@@ -71,6 +71,71 @@ def test_quote_recommendation_applies_side_bias_offset() -> None:
         get_settings.cache_clear()  # type: ignore[attr-defined]
 
 
+def test_quote_recommendation_player_offset_overrides_market_and_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-player Bayesian offset is the highest-precedence side-bias source."""
+    from app.services import player_bias
+
+    monkeypatch.setenv("OVER_PROBABILITY_BIAS_OFFSET", "0.07")
+    monkeypatch.setenv("PER_MARKET_BIAS", "points:0.10")
+    monkeypatch.setenv("PLAYER_BIAS_ENABLED", "true")
+    get_settings.cache_clear()  # type: ignore[attr-defined]
+
+    decision = PropDecision(
+        model_prob=0.50, market_prob=0.50, no_vig_market_prob=0.50,
+        ev=0.0, recommendation="UNDER", confidence="medium",
+        driver="x", market_key="player_points", line_value=24.5,
+        over_odds=-110, under_odds=-110,
+    )
+    # Stub: this player has a learned offset of +0.22 (Kawhi-style under tilt)
+    with patch.object(player_bias, "get_player_bias_offset", return_value=0.22):
+        with patch("app.services.prop_analysis.price_prop", return_value=decision) as mock_price:
+            _quote_recommendation(
+                over_odds=-110, under_odds=-110,
+                calibrated_over_probability=0.60,
+                calibrated_under_probability=0.40,
+                market_key="points",
+                player_id=42,
+            )
+    passed = mock_price.call_args.kwargs["prediction"]
+    # Player offset 0.22 dominates the points market offset 0.10 and the
+    # global 0.07: 0.60 - 0.22 = 0.38 over, 0.40 + 0.22 = 0.62 under.
+    assert abs(passed["calibration_adjusted_probability"] - 0.38) < 1e-9
+    assert abs(passed["under_probability"] - 0.62) < 1e-9
+
+
+def test_quote_recommendation_falls_back_to_market_when_no_player_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the player has no learned offset, fall back to per-market."""
+    from app.services import player_bias
+
+    monkeypatch.setenv("OVER_PROBABILITY_BIAS_OFFSET", "0.07")
+    monkeypatch.setenv("PER_MARKET_BIAS", "points:0.10")
+    get_settings.cache_clear()  # type: ignore[attr-defined]
+
+    decision = PropDecision(
+        model_prob=0.45, market_prob=0.50, no_vig_market_prob=0.50,
+        ev=0.0, recommendation="UNDER", confidence="medium",
+        driver="x", market_key="player_points", line_value=24.5,
+        over_odds=-110, under_odds=-110,
+    )
+    with patch.object(player_bias, "get_player_bias_offset", return_value=None):
+        with patch("app.services.prop_analysis.price_prop", return_value=decision) as mock_price:
+            _quote_recommendation(
+                over_odds=-110, under_odds=-110,
+                calibrated_over_probability=0.55,
+                calibrated_under_probability=0.45,
+                market_key="points",
+                player_id=42,
+            )
+    passed = mock_price.call_args.kwargs["prediction"]
+    # No player offset -> per-market 0.10: 0.55 - 0.10 = 0.45 over.
+    assert abs(passed["calibration_adjusted_probability"] - 0.45) < 1e-9
+    assert abs(passed["under_probability"] - 0.55) < 1e-9
+
+
 def test_quote_recommendation_per_market_offset_overrides_global() -> None:
     """When a market has a per-market offset, it takes precedence over the
     global offset (steals empirically has a NEGATIVE offset — overs hit more

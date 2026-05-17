@@ -208,6 +208,13 @@ class Settings(BaseSettings):
     disabled_markets_csv: str = Field(
         default="threes", alias="DISABLED_MARKETS"
     )
+    # Per-player bias offsets (loaded from data/player_bias_offsets.json).
+    # Bayesian-shrunk over the per-market prior; takes precedence over the
+    # per-market offset when a player has a learned offset. Set to false to
+    # disable lookups entirely (falls back to per-market/global).
+    player_bias_enabled: bool = Field(
+        default=True, alias="PLAYER_BIAS_ENABLED"
+    )
 
     @property
     def disabled_markets(self) -> frozenset[str]:

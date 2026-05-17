@@ -1,0 +1,1564 @@
+{
+  "schema_version": 1,
+  "source": "historical_grading.csv",
+  "prior_strength": 20.0,
+  "min_sample_size": 5,
+  "total_rows_graded": 5289,
+  "player_count": 222,
+  "offsets": {
+    "201": {
+      "name": "Isaiah Hartenstein",
+      "n": 12,
+      "raw_over_rate": 0.4167,
+      "shrunk_over_rate": 0.4077,
+      "offset": 0.0923
+    },
+    "175": {
+      "name": "Shai Gilgeous-Alexander",
+      "n": 31,
+      "raw_over_rate": 0.5161,
+      "shrunk_over_rate": 0.4731,
+      "offset": 0.0269
+    },
+    "131": {
+      "name": "Donte DiVincenzo",
+      "n": 7,
+      "raw_over_rate": 0.5714,
+      "shrunk_over_rate": 0.5493,
+      "offset": -0.0493
+    },
+    "666541": {
+      "name": "Luguentz Dort",
+      "n": 9,
+      "raw_over_rate": 0.5556,
+      "shrunk_over_rate": 0.4931,
+      "offset": 0.0069
+    },
+    "3547259": {
+      "name": "Jaden McDaniels",
+      "n": 19,
+      "raw_over_rate": 0.3158,
+      "shrunk_over_rate": 0.385,
+      "offset": 0.115
+    },
+    "3547238": {
+      "name": "Anthony Edwards",
+      "n": 13,
+      "raw_over_rate": 0.0769,
+      "shrunk_over_rate": 0.2814,
+      "offset": 0.2186
+    },
+    "38017685": {
+      "name": "Chet Holmgren",
+      "n": 17,
+      "raw_over_rate": 0.5882,
+      "shrunk_over_rate": 0.4914,
+      "offset": 0.0086
+    },
+    "1028037477": {
+      "name": "Ajay Mitchell",
+      "n": 15,
+      "raw_over_rate": 0.5333,
+      "shrunk_over_rate": 0.4809,
+      "offset": 0.0191
+    },
+    "56677833": {
+      "name": "Cason Wallace",
+      "n": 12,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4942,
+      "offset": 0.0058
+    },
+    "176": {
+      "name": "Rudy Gobert",
+      "n": 24,
+      "raw_over_rate": 0.2917,
+      "shrunk_over_rate": 0.344,
+      "offset": 0.156
+    },
+    "387": {
+      "name": "Julius Randle",
+      "n": 24,
+      "raw_over_rate": 0.4167,
+      "shrunk_over_rate": 0.4115,
+      "offset": 0.0885
+    },
+    "322": {
+      "name": "Donovan Mitchell",
+      "n": 20,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.3318,
+      "offset": 0.1682
+    },
+    "666950": {
+      "name": "P.J. Washington",
+      "n": 11,
+      "raw_over_rate": 0.4545,
+      "shrunk_over_rate": 0.4602,
+      "offset": 0.0398
+    },
+    "666940": {
+      "name": "Dean Wade",
+      "n": 5,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.5126,
+      "offset": -0.0126
+    },
+    "38017714": {
+      "name": "Keon Ellis",
+      "n": 5,
+      "raw_over_rate": 0.6,
+      "shrunk_over_rate": 0.5631,
+      "offset": -0.0631
+    },
+    "17896076": {
+      "name": "Evan Mobley",
+      "n": 23,
+      "raw_over_rate": 0.2174,
+      "shrunk_over_rate": 0.2955,
+      "offset": 0.2045
+    },
+    "3547293": {
+      "name": "Naji Marshall",
+      "n": 16,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4778,
+      "offset": 0.0222
+    },
+    "38017697": {
+      "name": "Max Christie",
+      "n": 16,
+      "raw_over_rate": 0.5625,
+      "shrunk_over_rate": 0.5136,
+      "offset": -0.0136
+    },
+    "1057262088": {
+      "name": "Cooper Flagg",
+      "n": 32,
+      "raw_over_rate": 0.4375,
+      "shrunk_over_rate": 0.4108,
+      "offset": 0.0892
+    },
+    "315": {
+      "name": "Khris Middleton",
+      "n": 12,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.3782,
+      "offset": 0.1218
+    },
+    "192": {
+      "name": "James Harden",
+      "n": 19,
+      "raw_over_rate": 0.4211,
+      "shrunk_over_rate": 0.4065,
+      "offset": 0.0935
+    },
+    "3547269": {
+      "name": "Immanuel Quickley",
+      "n": 24,
+      "raw_over_rate": 0.4167,
+      "shrunk_over_rate": 0.4229,
+      "offset": 0.0771
+    },
+    "397": {
+      "name": "Duncan Robinson",
+      "n": 14,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.4536,
+      "offset": 0.0464
+    },
+    "666423": {
+      "name": "RJ Barrett",
+      "n": 43,
+      "raw_over_rate": 0.186,
+      "shrunk_over_rate": 0.259,
+      "offset": 0.241
+    },
+    "17896075": {
+      "name": "Cade Cunningham",
+      "n": 25,
+      "raw_over_rate": 0.32,
+      "shrunk_over_rate": 0.3294,
+      "offset": 0.1706
+    },
+    "17896055": {
+      "name": "Scottie Barnes",
+      "n": 45,
+      "raw_over_rate": 0.4222,
+      "shrunk_over_rate": 0.4076,
+      "offset": 0.0924
+    },
+    "38017694": {
+      "name": "Jalen Duren",
+      "n": 35,
+      "raw_over_rate": 0.3429,
+      "shrunk_over_rate": 0.3669,
+      "offset": 0.1331
+    },
+    "56677826": {
+      "name": "Ausar Thompson",
+      "n": 28,
+      "raw_over_rate": 0.3929,
+      "shrunk_over_rate": 0.4001,
+      "offset": 0.0999
+    },
+    "200": {
+      "name": "Tobias Harris",
+      "n": 37,
+      "raw_over_rate": 0.3514,
+      "shrunk_over_rate": 0.3687,
+      "offset": 0.1313
+    },
+    "373": {
+      "name": "Jakob Poeltl",
+      "n": 32,
+      "raw_over_rate": 0.375,
+      "shrunk_over_rate": 0.3895,
+      "offset": 0.1105
+    },
+    "227": {
+      "name": "Brandon Ingram",
+      "n": 42,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.2427,
+      "offset": 0.2573
+    },
+    "265": {
+      "name": "Kyle Kuzma",
+      "n": 20,
+      "raw_over_rate": 0.6,
+      "shrunk_over_rate": 0.5159,
+      "offset": -0.0159
+    },
+    "3547250": {
+      "name": "Aaron Nesmith",
+      "n": 5,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.5126,
+      "offset": -0.0126
+    },
+    "38017733": {
+      "name": "A.J. Green",
+      "n": 22,
+      "raw_over_rate": 0.5455,
+      "shrunk_over_rate": 0.5115,
+      "offset": -0.0115
+    },
+    "38017712": {
+      "name": "Ryan Rollins",
+      "n": 31,
+      "raw_over_rate": 0.5806,
+      "shrunk_over_rate": 0.5101,
+      "offset": -0.0101
+    },
+    "56677832": {
+      "name": "Jarace Walker",
+      "n": 7,
+      "raw_over_rate": 0.2857,
+      "shrunk_over_rate": 0.4425,
+      "offset": 0.0575
+    },
+    "452": {
+      "name": "Myles Turner",
+      "n": 27,
+      "raw_over_rate": 0.2963,
+      "shrunk_over_rate": 0.3462,
+      "offset": 0.1538
+    },
+    "377": {
+      "name": "Bobby Portis",
+      "n": 10,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.3552,
+      "offset": 0.1448
+    },
+    "17895858": {
+      "name": "Quentin Grimes",
+      "n": 36,
+      "raw_over_rate": 0.3056,
+      "shrunk_over_rate": 0.3483,
+      "offset": 0.1517
+    },
+    "3547242": {
+      "name": "Deni Avdija",
+      "n": 49,
+      "raw_over_rate": 0.3673,
+      "shrunk_over_rate": 0.3736,
+      "offset": 0.1264
+    },
+    "56677850": {
+      "name": "Toumani Camara",
+      "n": 41,
+      "raw_over_rate": 0.5366,
+      "shrunk_over_rate": 0.5014,
+      "offset": -0.0014
+    },
+    "38017730": {
+      "name": "Dominick Barlow",
+      "n": 24,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.5639,
+      "offset": -0.0639
+    },
+    "1028025344": {
+      "name": "Donovan Clingan",
+      "n": 39,
+      "raw_over_rate": 0.5385,
+      "shrunk_over_rate": 0.5011,
+      "offset": -0.0011
+    },
+    "1028214238": {
+      "name": "Justin Edwards",
+      "n": 22,
+      "raw_over_rate": 0.7273,
+      "shrunk_over_rate": 0.596,
+      "offset": -0.096
+    },
+    "1057261935": {
+      "name": "VJ Edgecombe",
+      "n": 47,
+      "raw_over_rate": 0.6383,
+      "shrunk_over_rate": 0.5685,
+      "offset": -0.0685
+    },
+    "214": {
+      "name": "Jrue Holiday",
+      "n": 51,
+      "raw_over_rate": 0.5686,
+      "shrunk_over_rate": 0.5204,
+      "offset": -0.0204
+    },
+    "182": {
+      "name": "Jerami Grant",
+      "n": 9,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.4583,
+      "offset": 0.0417
+    },
+    "368": {
+      "name": "Cameron Payne",
+      "n": 12,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.4172,
+      "offset": 0.0828
+    },
+    "18": {
+      "name": "OG Anunoby",
+      "n": 23,
+      "raw_over_rate": 0.3913,
+      "shrunk_over_rate": 0.392,
+      "offset": 0.108
+    },
+    "202": {
+      "name": "Josh Hart",
+      "n": 30,
+      "raw_over_rate": 0.2667,
+      "shrunk_over_rate": 0.2963,
+      "offset": 0.2037
+    },
+    "73": {
+      "name": "Jalen Brunson",
+      "n": 30,
+      "raw_over_rate": 0.4333,
+      "shrunk_over_rate": 0.417,
+      "offset": 0.083
+    },
+    "61": {
+      "name": "Mikal Bridges",
+      "n": 22,
+      "raw_over_rate": 0.2273,
+      "shrunk_over_rate": 0.3316,
+      "offset": 0.1684
+    },
+    "399": {
+      "name": "Mitchell Robinson",
+      "n": 11,
+      "raw_over_rate": 0.3636,
+      "shrunk_over_rate": 0.4058,
+      "offset": 0.0942
+    },
+    "795959473": {
+      "name": "Pat Spencer",
+      "n": 19,
+      "raw_over_rate": 0.7895,
+      "shrunk_over_rate": 0.5955,
+      "offset": -0.0955
+    },
+    "56677858": {
+      "name": "Brandin Podziemski",
+      "n": 42,
+      "raw_over_rate": 0.4048,
+      "shrunk_over_rate": 0.4073,
+      "offset": 0.0927
+    },
+    "1057395872": {
+      "name": "Will Richard",
+      "n": 15,
+      "raw_over_rate": 0.4667,
+      "shrunk_over_rate": 0.4664,
+      "offset": 0.0336
+    },
+    "57875092": {
+      "name": "Gui Santos",
+      "n": 25,
+      "raw_over_rate": 0.44,
+      "shrunk_over_rate": 0.4451,
+      "offset": 0.0549
+    },
+    "447": {
+      "name": "Karl-Anthony Towns",
+      "n": 33,
+      "raw_over_rate": 0.303,
+      "shrunk_over_rate": 0.3275,
+      "offset": 0.1725
+    },
+    "3547249": {
+      "name": "Precious Achiuwa",
+      "n": 34,
+      "raw_over_rate": 0.4412,
+      "shrunk_over_rate": 0.429,
+      "offset": 0.071
+    },
+    "1057276634": {
+      "name": "Nique Clifford",
+      "n": 20,
+      "raw_over_rate": 0.35,
+      "shrunk_over_rate": 0.3703,
+      "offset": 0.1297
+    },
+    "1057390745": {
+      "name": "Maxime Raynaud",
+      "n": 35,
+      "raw_over_rate": 0.3143,
+      "shrunk_over_rate": 0.3485,
+      "offset": 0.1515
+    },
+    "56677842": {
+      "name": "Brice Sensabaugh",
+      "n": 24,
+      "raw_over_rate": 0.4167,
+      "shrunk_over_rate": 0.4194,
+      "offset": 0.0806
+    },
+    "1028025362": {
+      "name": "Isaiah Collier",
+      "n": 11,
+      "raw_over_rate": 0.5455,
+      "shrunk_over_rate": 0.4735,
+      "offset": 0.0265
+    },
+    "1028029291": {
+      "name": "Cody Williams",
+      "n": 26,
+      "raw_over_rate": 0.4231,
+      "shrunk_over_rate": 0.4213,
+      "offset": 0.0787
+    },
+    "125": {
+      "name": "DeMar DeRozan",
+      "n": 37,
+      "raw_over_rate": 0.5405,
+      "shrunk_over_rate": 0.4986,
+      "offset": 0.0014
+    },
+    "3547241": {
+      "name": "Killian Hayes",
+      "n": 9,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.4694,
+      "offset": 0.0306
+    },
+    "1057845274": {
+      "name": "Dylan Cardwell",
+      "n": 7,
+      "raw_over_rate": 0.0,
+      "shrunk_over_rate": 0.2879,
+      "offset": 0.2121
+    },
+    "3547287": {
+      "name": "Desmond Bane",
+      "n": 33,
+      "raw_over_rate": 0.3939,
+      "shrunk_over_rate": 0.4038,
+      "offset": 0.0962
+    },
+    "85": {
+      "name": "Wendell Carter Jr.",
+      "n": 23,
+      "raw_over_rate": 0.6087,
+      "shrunk_over_rate": 0.5197,
+      "offset": -0.0197
+    },
+    "666400": {
+      "name": "Nickeil Alexander-Walker",
+      "n": 8,
+      "raw_over_rate": 0.625,
+      "shrunk_over_rate": 0.5499,
+      "offset": -0.0499
+    },
+    "3547244": {
+      "name": "Onyeka Okongwu",
+      "n": 10,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.3792,
+      "offset": 0.1208
+    },
+    "17896040": {
+      "name": "Jalen Johnson",
+      "n": 12,
+      "raw_over_rate": 0.75,
+      "shrunk_over_rate": 0.5041,
+      "offset": -0.0041
+    },
+    "17896073": {
+      "name": "Jalen Suggs",
+      "n": 22,
+      "raw_over_rate": 0.4091,
+      "shrunk_over_rate": 0.4029,
+      "offset": 0.0971
+    },
+    "1028025497": {
+      "name": "Tristan Da Silva",
+      "n": 16,
+      "raw_over_rate": 0.4375,
+      "shrunk_over_rate": 0.4558,
+      "offset": 0.0442
+    },
+    "38017683": {
+      "name": "Paolo Banchero",
+      "n": 48,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.2768,
+      "offset": 0.2232
+    },
+    "38017677": {
+      "name": "Dyson Daniels",
+      "n": 9,
+      "raw_over_rate": 0.5556,
+      "shrunk_over_rate": 0.4767,
+      "offset": 0.0233
+    },
+    "303": {
+      "name": "CJ McCollum",
+      "n": 9,
+      "raw_over_rate": 0.5556,
+      "shrunk_over_rate": 0.5014,
+      "offset": -0.0014
+    },
+    "2189": {
+      "name": "Gary Payton II",
+      "n": 8,
+      "raw_over_rate": 0.75,
+      "shrunk_over_rate": 0.5613,
+      "offset": -0.0613
+    },
+    "313": {
+      "name": "De'Anthony Melton",
+      "n": 23,
+      "raw_over_rate": 0.3478,
+      "shrunk_over_rate": 0.402,
+      "offset": 0.098
+    },
+    "1028025235": {
+      "name": "Carlton Carrington",
+      "n": 16,
+      "raw_over_rate": 0.125,
+      "shrunk_over_rate": 0.3105,
+      "offset": 0.1895
+    },
+    "1057279594": {
+      "name": "Will Riley",
+      "n": 16,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.3454,
+      "offset": 0.1546
+    },
+    "1057262985": {
+      "name": "Tre Johnson",
+      "n": 10,
+      "raw_over_rate": 0.3,
+      "shrunk_over_rate": 0.4197,
+      "offset": 0.0803
+    },
+    "185": {
+      "name": "Draymond Green",
+      "n": 44,
+      "raw_over_rate": 0.3864,
+      "shrunk_over_rate": 0.3911,
+      "offset": 0.1089
+    },
+    "378": {
+      "name": "Kristaps Porzingis",
+      "n": 24,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4703,
+      "offset": 0.0297
+    },
+    "666508": {
+      "name": "Nicolas Claxton",
+      "n": 14,
+      "raw_over_rate": 0.6429,
+      "shrunk_over_rate": 0.531,
+      "offset": -0.031
+    },
+    "38017715": {
+      "name": "Josh Minott",
+      "n": 8,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.5049,
+      "offset": -0.0049
+    },
+    "1057275262": {
+      "name": "Nolan Traor\u00e9",
+      "n": 18,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.5546,
+      "offset": -0.0546
+    },
+    "1057279425": {
+      "name": "Drake Powell",
+      "n": 11,
+      "raw_over_rate": 0.0909,
+      "shrunk_over_rate": 0.349,
+      "offset": 0.151
+    },
+    "434": {
+      "name": "Jayson Tatum",
+      "n": 29,
+      "raw_over_rate": 0.3103,
+      "shrunk_over_rate": 0.3454,
+      "offset": 0.1546
+    },
+    "473": {
+      "name": "Derrick White",
+      "n": 16,
+      "raw_over_rate": 0.3125,
+      "shrunk_over_rate": 0.3876,
+      "offset": 0.1124
+    },
+    "3547276": {
+      "name": "Payton Pritchard",
+      "n": 15,
+      "raw_over_rate": 0.4667,
+      "shrunk_over_rate": 0.4642,
+      "offset": 0.0358
+    },
+    "17896060": {
+      "name": "Sam Hauser",
+      "n": 12,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.4268,
+      "offset": 0.0732
+    },
+    "18678058": {
+      "name": "Jordan Goodwin",
+      "n": 49,
+      "raw_over_rate": 0.6122,
+      "shrunk_over_rate": 0.5547,
+      "offset": -0.0547
+    },
+    "38017727": {
+      "name": "Collin Gillespie",
+      "n": 66,
+      "raw_over_rate": 0.303,
+      "shrunk_over_rate": 0.3279,
+      "offset": 0.1721
+    },
+    "8": {
+      "name": "Grayson Allen",
+      "n": 22,
+      "raw_over_rate": 0.3636,
+      "shrunk_over_rate": 0.3953,
+      "offset": 0.1047
+    },
+    "17553967": {
+      "name": "Neemias Queta",
+      "n": 14,
+      "raw_over_rate": 0.2857,
+      "shrunk_over_rate": 0.385,
+      "offset": 0.115
+    },
+    "1028036515": {
+      "name": "Oso Ighodaro",
+      "n": 42,
+      "raw_over_rate": 0.4762,
+      "shrunk_over_rate": 0.455,
+      "offset": 0.045
+    },
+    "17895966": {
+      "name": "Jalen Green",
+      "n": 71,
+      "raw_over_rate": 0.338,
+      "shrunk_over_rate": 0.355,
+      "offset": 0.145
+    },
+    "351": {
+      "name": "Royce O'Neale",
+      "n": 34,
+      "raw_over_rate": 0.4412,
+      "shrunk_over_rate": 0.427,
+      "offset": 0.073
+    },
+    "57": {
+      "name": "Devin Booker",
+      "n": 79,
+      "raw_over_rate": 0.3924,
+      "shrunk_over_rate": 0.3961,
+      "offset": 0.1039
+    },
+    "70": {
+      "name": "Jaylen Brown",
+      "n": 26,
+      "raw_over_rate": 0.5769,
+      "shrunk_over_rate": 0.5027,
+      "offset": -0.0027
+    },
+    "3547274": {
+      "name": "Tre Jones",
+      "n": 8,
+      "raw_over_rate": 0.625,
+      "shrunk_over_rate": 0.4839,
+      "offset": 0.0161
+    },
+    "3547264": {
+      "name": "Jalen Smith",
+      "n": 6,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.3856,
+      "offset": 0.1144
+    },
+    "1028048549": {
+      "name": "Cam Spencer",
+      "n": 5,
+      "raw_over_rate": 0.8,
+      "shrunk_over_rate": 0.5024,
+      "offset": -0.0024
+    },
+    "56677859": {
+      "name": "Olivier-Maxence Prosper",
+      "n": 5,
+      "raw_over_rate": 0.6,
+      "shrunk_over_rate": 0.4875,
+      "offset": 0.0125
+    },
+    "17896065": {
+      "name": "Josh Giddey",
+      "n": 15,
+      "raw_over_rate": 0.6,
+      "shrunk_over_rate": 0.4741,
+      "offset": 0.0259
+    },
+    "1057271583": {
+      "name": "Walter Clayton Jr.",
+      "n": 10,
+      "raw_over_rate": 0.1,
+      "shrunk_over_rate": 0.3039,
+      "offset": 0.1961
+    },
+    "56677824": {
+      "name": "Taylor Hendricks",
+      "n": 6,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.5609,
+      "offset": -0.0609
+    },
+    "1028039105": {
+      "name": "Jaylen Wells",
+      "n": 7,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.5098,
+      "offset": -0.0098
+    },
+    "1028025177": {
+      "name": "Matas Buzelis",
+      "n": 13,
+      "raw_over_rate": 0.3846,
+      "shrunk_over_rate": 0.3779,
+      "offset": 0.1221
+    },
+    "17896024": {
+      "name": "Herbert Jones",
+      "n": 21,
+      "raw_over_rate": 0.4762,
+      "shrunk_over_rate": 0.4692,
+      "offset": 0.0308
+    },
+    "3547256": {
+      "name": "Saddiq Bey",
+      "n": 23,
+      "raw_over_rate": 0.3478,
+      "shrunk_over_rate": 0.3928,
+      "offset": 0.1072
+    },
+    "666969": {
+      "name": "Zion Williamson",
+      "n": 22,
+      "raw_over_rate": 0.4091,
+      "shrunk_over_rate": 0.4224,
+      "offset": 0.0776
+    },
+    "18677986": {
+      "name": "Trey Murphy III",
+      "n": 15,
+      "raw_over_rate": 0.4667,
+      "shrunk_over_rate": 0.4604,
+      "offset": 0.0396
+    },
+    "1028027567": {
+      "name": "Yves Missi",
+      "n": 13,
+      "raw_over_rate": 0.1538,
+      "shrunk_over_rate": 0.32,
+      "offset": 0.18
+    },
+    "1057267077": {
+      "name": "Jeremiah Fears",
+      "n": 12,
+      "raw_over_rate": 0.75,
+      "shrunk_over_rate": 0.5254,
+      "offset": -0.0254
+    },
+    "1057274415": {
+      "name": "Derik Queen",
+      "n": 12,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.3434,
+      "offset": 0.1566
+    },
+    "24": {
+      "name": "Marvin Bagley III",
+      "n": 9,
+      "raw_over_rate": 0.7778,
+      "shrunk_over_rate": 0.4928,
+      "offset": 0.0072
+    },
+    "17553995": {
+      "name": "Austin Reaves",
+      "n": 48,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.3542,
+      "offset": 0.1458
+    },
+    "22": {
+      "name": "Deandre Ayton",
+      "n": 53,
+      "raw_over_rate": 0.3396,
+      "shrunk_over_rate": 0.3574,
+      "offset": 0.1426
+    },
+    "38017695": {
+      "name": "Tari Eason",
+      "n": 35,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.4273,
+      "offset": 0.0727
+    },
+    "38017684": {
+      "name": "Jabari Smith Jr.",
+      "n": 44,
+      "raw_over_rate": 0.5682,
+      "shrunk_over_rate": 0.5178,
+      "offset": -0.0178
+    },
+    "56677825": {
+      "name": "Amen Thompson",
+      "n": 53,
+      "raw_over_rate": 0.5472,
+      "shrunk_over_rate": 0.4972,
+      "offset": 0.0028
+    },
+    "1028028519": {
+      "name": "Reed Sheppard",
+      "n": 44,
+      "raw_over_rate": 0.2727,
+      "shrunk_over_rate": 0.3211,
+      "offset": 0.1789
+    },
+    "140": {
+      "name": "Kevin Durant",
+      "n": 53,
+      "raw_over_rate": 0.4151,
+      "shrunk_over_rate": 0.4121,
+      "offset": 0.0879
+    },
+    "420": {
+      "name": "Marcus Smart",
+      "n": 28,
+      "raw_over_rate": 0.4643,
+      "shrunk_over_rate": 0.4594,
+      "offset": 0.0406
+    },
+    "83": {
+      "name": "Clint Capela",
+      "n": 5,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.4202,
+      "offset": 0.0798
+    },
+    "237": {
+      "name": "LeBron James",
+      "n": 85,
+      "raw_over_rate": 0.5294,
+      "shrunk_over_rate": 0.5002,
+      "offset": -0.0002
+    },
+    "132": {
+      "name": "Luka Doncic",
+      "n": 36,
+      "raw_over_rate": 0.5556,
+      "shrunk_over_rate": 0.492,
+      "offset": 0.008
+    },
+    "247": {
+      "name": "Derrick Jones Jr.",
+      "n": 55,
+      "raw_over_rate": 0.2727,
+      "shrunk_over_rate": 0.3123,
+      "offset": 0.1877
+    },
+    "161": {
+      "name": "De'Aaron Fox",
+      "n": 53,
+      "raw_over_rate": 0.4151,
+      "shrunk_over_rate": 0.41,
+      "offset": 0.09
+    },
+    "101": {
+      "name": "John Collins",
+      "n": 39,
+      "raw_over_rate": 0.4615,
+      "shrunk_over_rate": 0.4468,
+      "offset": 0.0532
+    },
+    "666581": {
+      "name": "Darius Garland",
+      "n": 57,
+      "raw_over_rate": 0.386,
+      "shrunk_over_rate": 0.3927,
+      "offset": 0.1073
+    },
+    "3547246": {
+      "name": "Devin Vassell",
+      "n": 46,
+      "raw_over_rate": 0.5652,
+      "shrunk_over_rate": 0.5185,
+      "offset": -0.0185
+    },
+    "38017649": {
+      "name": "Julian Champagnie",
+      "n": 48,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4759,
+      "offset": 0.0241
+    },
+    "56677822": {
+      "name": "Victor Wembanyama",
+      "n": 55,
+      "raw_over_rate": 0.3273,
+      "shrunk_over_rate": 0.3441,
+      "offset": 0.1559
+    },
+    "38017686": {
+      "name": "Bennedict Mathurin",
+      "n": 24,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.3674,
+      "offset": 0.1326
+    },
+    "1028025261": {
+      "name": "Stephon Castle",
+      "n": 55,
+      "raw_over_rate": 0.4545,
+      "shrunk_over_rate": 0.4366,
+      "offset": 0.0634
+    },
+    "283": {
+      "name": "Brook Lopez",
+      "n": 56,
+      "raw_over_rate": 0.5179,
+      "shrunk_over_rate": 0.4908,
+      "offset": 0.0092
+    },
+    "139": {
+      "name": "Kris Dunn",
+      "n": 39,
+      "raw_over_rate": 0.2051,
+      "shrunk_over_rate": 0.2818,
+      "offset": 0.2182
+    },
+    "30": {
+      "name": "Harrison Barnes",
+      "n": 14,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.452,
+      "offset": 0.048
+    },
+    "666682": {
+      "name": "Keldon Johnson",
+      "n": 27,
+      "raw_over_rate": 0.1852,
+      "shrunk_over_rate": 0.2924,
+      "offset": 0.2076
+    },
+    "62": {
+      "name": "Miles Bridges",
+      "n": 19,
+      "raw_over_rate": 0.4737,
+      "shrunk_over_rate": 0.4566,
+      "offset": 0.0434
+    },
+    "17553994": {
+      "name": "Davion Mitchell",
+      "n": 7,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.4913,
+      "offset": 0.0087
+    },
+    "666633": {
+      "name": "Tyler Herro",
+      "n": 12,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.309,
+      "offset": 0.191
+    },
+    "3547239": {
+      "name": "LaMelo Ball",
+      "n": 31,
+      "raw_over_rate": 0.3548,
+      "shrunk_over_rate": 0.3648,
+      "offset": 0.1352
+    },
+    "1028036986": {
+      "name": "Pelle Larsson",
+      "n": 6,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.4438,
+      "offset": 0.0562
+    },
+    "38017725": {
+      "name": "Moussa Diabate",
+      "n": 16,
+      "raw_over_rate": 0.3125,
+      "shrunk_over_rate": 0.3773,
+      "offset": 0.1227
+    },
+    "1028029127": {
+      "name": "Kel'el Ware",
+      "n": 7,
+      "raw_over_rate": 0.1429,
+      "shrunk_over_rate": 0.3156,
+      "offset": 0.1844
+    },
+    "56677823": {
+      "name": "Brandon Miller",
+      "n": 21,
+      "raw_over_rate": 0.4286,
+      "shrunk_over_rate": 0.432,
+      "offset": 0.068
+    },
+    "1057263194": {
+      "name": "Kon Knueppel",
+      "n": 21,
+      "raw_over_rate": 0.5238,
+      "shrunk_over_rate": 0.4812,
+      "offset": 0.0188
+    },
+    "380": {
+      "name": "Norman Powell",
+      "n": 7,
+      "raw_over_rate": 0.1429,
+      "shrunk_over_rate": 0.3979,
+      "offset": 0.1021
+    },
+    "56677785": {
+      "name": "Jaime Jaquez Jr.",
+      "n": 6,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.2682,
+      "offset": 0.2318
+    },
+    "1057384362": {
+      "name": "Ryan Kalkbrenner",
+      "n": 8,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.3856,
+      "offset": 0.1144
+    },
+    "666956": {
+      "name": "Coby White",
+      "n": 14,
+      "raw_over_rate": 0.3571,
+      "shrunk_over_rate": 0.3909,
+      "offset": 0.1091
+    },
+    "17896039": {
+      "name": "Justin Champagnie",
+      "n": 8,
+      "raw_over_rate": 0.375,
+      "shrunk_over_rate": 0.4221,
+      "offset": 0.0779
+    },
+    "17896063": {
+      "name": "Jericho Sims",
+      "n": 14,
+      "raw_over_rate": 0.2143,
+      "shrunk_over_rate": 0.3106,
+      "offset": 0.1894
+    },
+    "17895983": {
+      "name": "Ayo Dosunmu",
+      "n": 17,
+      "raw_over_rate": 0.3529,
+      "shrunk_over_rate": 0.3834,
+      "offset": 0.1166
+    },
+    "667378": {
+      "name": "Naz Reid",
+      "n": 14,
+      "raw_over_rate": 0.2143,
+      "shrunk_over_rate": 0.3222,
+      "offset": 0.1778
+    },
+    "69": {
+      "name": "Bruce Brown",
+      "n": 18,
+      "raw_over_rate": 0.6111,
+      "shrunk_over_rate": 0.5159,
+      "offset": -0.0159
+    },
+    "666679": {
+      "name": "Cameron Johnson",
+      "n": 51,
+      "raw_over_rate": 0.451,
+      "shrunk_over_rate": 0.4415,
+      "offset": 0.0585
+    },
+    "38017709": {
+      "name": "Christian Braun",
+      "n": 49,
+      "raw_over_rate": 0.2653,
+      "shrunk_over_rate": 0.3095,
+      "offset": 0.1905
+    },
+    "17896058": {
+      "name": "Trendon Watford",
+      "n": 7,
+      "raw_over_rate": 0.5714,
+      "shrunk_over_rate": 0.5077,
+      "offset": -0.0077
+    },
+    "1028034846": {
+      "name": "Adem Bona",
+      "n": 11,
+      "raw_over_rate": 0.5455,
+      "shrunk_over_rate": 0.4885,
+      "offset": 0.0115
+    },
+    "246": {
+      "name": "Nikola Jokic",
+      "n": 71,
+      "raw_over_rate": 0.3944,
+      "shrunk_over_rate": 0.3945,
+      "offset": 0.1055
+    },
+    "177": {
+      "name": "Aaron Gordon",
+      "n": 43,
+      "raw_over_rate": 0.4884,
+      "shrunk_over_rate": 0.4675,
+      "offset": 0.0325
+    },
+    "191": {
+      "name": "Tim Hardaway Jr.",
+      "n": 23,
+      "raw_over_rate": 0.6522,
+      "shrunk_over_rate": 0.5502,
+      "offset": -0.0502
+    },
+    "335": {
+      "name": "Jamal Murray",
+      "n": 54,
+      "raw_over_rate": 0.2963,
+      "shrunk_over_rate": 0.3235,
+      "offset": 0.1765
+    },
+    "472": {
+      "name": "Russell Westbrook",
+      "n": 14,
+      "raw_over_rate": 0.2857,
+      "shrunk_over_rate": 0.3433,
+      "offset": 0.1567
+    },
+    "56677843": {
+      "name": "Noah Clowney",
+      "n": 10,
+      "raw_over_rate": 0.1,
+      "shrunk_over_rate": 0.3276,
+      "offset": 0.1724
+    },
+    "56677747": {
+      "name": "Scoot Henderson",
+      "n": 39,
+      "raw_over_rate": 0.359,
+      "shrunk_over_rate": 0.3776,
+      "offset": 0.1224
+    },
+    "476": {
+      "name": "Robert Williams III",
+      "n": 13,
+      "raw_over_rate": 0.6154,
+      "shrunk_over_rate": 0.4868,
+      "offset": 0.0132
+    },
+    "1028029111": {
+      "name": "Ja'Kobe Walter",
+      "n": 13,
+      "raw_over_rate": 0.3846,
+      "shrunk_over_rate": 0.4249,
+      "offset": 0.0751
+    },
+    "666703": {
+      "name": "John Konchar",
+      "n": 6,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.451,
+      "offset": 0.049
+    },
+    "1028035794": {
+      "name": "Kyle Filipowski",
+      "n": 16,
+      "raw_over_rate": 0.6875,
+      "shrunk_over_rate": 0.5343,
+      "offset": -0.0343
+    },
+    "1057260888": {
+      "name": "Airious Bailey",
+      "n": 19,
+      "raw_over_rate": 0.2632,
+      "shrunk_over_rate": 0.3463,
+      "offset": 0.1537
+    },
+    "274": {
+      "name": "Kawhi Leonard",
+      "n": 62,
+      "raw_over_rate": 0.2419,
+      "shrunk_over_rate": 0.2811,
+      "offset": 0.2189
+    },
+    "334": {
+      "name": "Dejounte Murray",
+      "n": 14,
+      "raw_over_rate": 0.3571,
+      "shrunk_over_rate": 0.3924,
+      "offset": 0.1076
+    },
+    "666577": {
+      "name": "Daniel Gafford",
+      "n": 6,
+      "raw_over_rate": 0.1667,
+      "shrunk_over_rate": 0.3856,
+      "offset": 0.1144
+    },
+    "17896062": {
+      "name": "Alperen Sengun",
+      "n": 52,
+      "raw_over_rate": 0.5192,
+      "shrunk_over_rate": 0.4781,
+      "offset": 0.0219
+    },
+    "254": {
+      "name": "Luke Kennard",
+      "n": 39,
+      "raw_over_rate": 0.4872,
+      "shrunk_over_rate": 0.4591,
+      "offset": 0.0409
+    },
+    "666609": {
+      "name": "Rui Hachimura",
+      "n": 44,
+      "raw_over_rate": 0.4545,
+      "shrunk_over_rate": 0.4388,
+      "offset": 0.0612
+    },
+    "1028240128": {
+      "name": "Daniss Jenkins",
+      "n": 32,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4544,
+      "offset": 0.0456
+    },
+    "4": {
+      "name": "Bam Adebayo",
+      "n": 9,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.4615,
+      "offset": 0.0385
+    },
+    "1028028993": {
+      "name": "Jaylon Tyson",
+      "n": 5,
+      "raw_over_rate": 0.4,
+      "shrunk_over_rate": 0.387,
+      "offset": 0.113
+    },
+    "56677856": {
+      "name": "Jordan Miller",
+      "n": 13,
+      "raw_over_rate": 0.3846,
+      "shrunk_over_rate": 0.4231,
+      "offset": 0.0769
+    },
+    "1057262518": {
+      "name": "Dylan Harper",
+      "n": 24,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4662,
+      "offset": 0.0338
+    },
+    "38017716": {
+      "name": "Ousmane Dieng",
+      "n": 32,
+      "raw_over_rate": 0.3438,
+      "shrunk_over_rate": 0.3548,
+      "offset": 0.1452
+    },
+    "383": {
+      "name": "Taurean Prince",
+      "n": 18,
+      "raw_over_rate": 0.3333,
+      "shrunk_over_rate": 0.3931,
+      "offset": 0.1069
+    },
+    "137": {
+      "name": "Andre Drummond",
+      "n": 16,
+      "raw_over_rate": 0.625,
+      "shrunk_over_rate": 0.5006,
+      "offset": -0.0006
+    },
+    "324": {
+      "name": "Malik Monk",
+      "n": 13,
+      "raw_over_rate": 0.3077,
+      "shrunk_over_rate": 0.3628,
+      "offset": 0.1372
+    },
+    "17896027": {
+      "name": "Ziaire Williams",
+      "n": 12,
+      "raw_over_rate": 0.75,
+      "shrunk_over_rate": 0.5734,
+      "offset": -0.0734
+    },
+    "17896059": {
+      "name": "Sandro Mamukelashvili",
+      "n": 16,
+      "raw_over_rate": 0.4375,
+      "shrunk_over_rate": 0.4301,
+      "offset": 0.0699
+    },
+    "1028038426": {
+      "name": "Jamal Shead",
+      "n": 20,
+      "raw_over_rate": 0.3,
+      "shrunk_over_rate": 0.3557,
+      "offset": 0.1443
+    },
+    "1028025723": {
+      "name": "Ryan Dunn",
+      "n": 13,
+      "raw_over_rate": 0.4615,
+      "shrunk_over_rate": 0.4307,
+      "offset": 0.0693
+    },
+    "1057383369": {
+      "name": "Rasheer Fleming",
+      "n": 8,
+      "raw_over_rate": 0.625,
+      "shrunk_over_rate": 0.4891,
+      "offset": 0.0109
+    },
+    "1016384149": {
+      "name": "Tristan Vukcevic",
+      "n": 10,
+      "raw_over_rate": 0.3,
+      "shrunk_over_rate": 0.3762,
+      "offset": 0.1238
+    },
+    "38017728": {
+      "name": "Jake LaRavia",
+      "n": 37,
+      "raw_over_rate": 0.2703,
+      "shrunk_over_rate": 0.3165,
+      "offset": 0.1835
+    },
+    "38017703": {
+      "name": "Jalen Williams",
+      "n": 7,
+      "raw_over_rate": 0.5714,
+      "shrunk_over_rate": 0.4496,
+      "offset": 0.0504
+    },
+    "33": {
+      "name": "Nicolas Batum",
+      "n": 5,
+      "raw_over_rate": 0.0,
+      "shrunk_over_rate": 0.3559,
+      "offset": 0.1441
+    },
+    "1057268513": {
+      "name": "Khaman Maluach",
+      "n": 7,
+      "raw_over_rate": 0.5714,
+      "shrunk_over_rate": 0.4478,
+      "offset": 0.0522
+    },
+    "1057268940": {
+      "name": "Collin Murray-Boyles",
+      "n": 5,
+      "raw_over_rate": 1.0,
+      "shrunk_over_rate": 0.5382,
+      "offset": -0.0382
+    },
+    "221": {
+      "name": "Kevin Huerter",
+      "n": 13,
+      "raw_over_rate": 0.6154,
+      "shrunk_over_rate": 0.4969,
+      "offset": 0.0031
+    },
+    "250": {
+      "name": "DeAndre Jordan",
+      "n": 6,
+      "raw_over_rate": 0.6667,
+      "shrunk_over_rate": 0.4546,
+      "offset": 0.0454
+    },
+    "1028025242": {
+      "name": "Devin Carter",
+      "n": 14,
+      "raw_over_rate": 0.2857,
+      "shrunk_over_rate": 0.3463,
+      "offset": 0.1537
+    },
+    "666626": {
+      "name": "Jaxson Hayes",
+      "n": 7,
+      "raw_over_rate": 0.8571,
+      "shrunk_over_rate": 0.5101,
+      "offset": -0.0101
+    },
+    "145": {
+      "name": "Joel Embiid",
+      "n": 6,
+      "raw_over_rate": 0.0,
+      "shrunk_over_rate": 0.2348,
+      "offset": 0.2652
+    },
+    "24489167": {
+      "name": "Brandon Williams",
+      "n": 5,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.3214,
+      "offset": 0.1786
+    },
+    "1057847894": {
+      "name": "Ryan Nembhard",
+      "n": 10,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4321,
+      "offset": 0.0679
+    },
+    "3547254": {
+      "name": "Tyrese Maxey",
+      "n": 22,
+      "raw_over_rate": 0.3636,
+      "shrunk_over_rate": 0.3662,
+      "offset": 0.1338
+    },
+    "261": {
+      "name": "Luke Kornet",
+      "n": 15,
+      "raw_over_rate": 0.7333,
+      "shrunk_over_rate": 0.5501,
+      "offset": -0.0501
+    },
+    "172": {
+      "name": "Paul George",
+      "n": 19,
+      "raw_over_rate": 0.4737,
+      "shrunk_over_rate": 0.4325,
+      "offset": 0.0675
+    },
+    "360": {
+      "name": "Kelly Oubre Jr.",
+      "n": 14,
+      "raw_over_rate": 0.0714,
+      "shrunk_over_rate": 0.2396,
+      "offset": 0.2604
+    },
+    "115": {
+      "name": "Stephen Curry",
+      "n": 14,
+      "raw_over_rate": 0.7857,
+      "shrunk_over_rate": 0.5692,
+      "offset": -0.0692
+    },
+    "666923": {
+      "name": "Matisse Thybulle",
+      "n": 6,
+      "raw_over_rate": 0.5,
+      "shrunk_over_rate": 0.4568,
+      "offset": 0.0432
+    },
+    "38017698": {
+      "name": "Mark Williams",
+      "n": 16,
+      "raw_over_rate": 0.375,
+      "shrunk_over_rate": 0.3861,
+      "offset": 0.1139
+    },
+    "66": {
+      "name": "Dillon Brooks",
+      "n": 24,
+      "raw_over_rate": 0.2917,
+      "shrunk_over_rate": 0.3435,
+      "offset": 0.1565
+    },
+    "9": {
+      "name": "Jarrett Allen",
+      "n": 8,
+      "raw_over_rate": 0.25,
+      "shrunk_over_rate": 0.3113,
+      "offset": 0.1887
+    },
+    "38017690": {
+      "name": "Shaedon Sharpe",
+      "n": 5,
+      "raw_over_rate": 0.0,
+      "shrunk_over_rate": 0.3485,
+      "offset": 0.1515
+    },
+    "17896026": {
+      "name": "Franz Wagner",
+      "n": 5,
+      "raw_over_rate": 0.2,
+      "shrunk_over_rate": 0.3214,
+      "offset": 0.1786
+    },
+    "1028028501": {
+      "name": "Terrence Shannon Jr.",
+      "n": 7,
+      "raw_over_rate": 0.5714,
+      "shrunk_over_rate": 0.4286,
+      "offset": 0.0714
+    },
+    "104": {
+      "name": "Mike Conley",
+      "n": 5,
+      "raw_over_rate": 0.8,
+      "shrunk_over_rate": 0.4997,
+      "offset": 0.0003
+    }
+  }
+}

@@ -285,6 +285,7 @@ class PropAnalysisService:
                 calibrated_over_probability=prediction.calibration_adjusted_probability,
                 calibrated_under_probability=calibrated_under,
                 market_key=market_key,
+                player_id=prediction.player_id,
             )
             if recommendation is None:
                 continue
@@ -522,15 +523,20 @@ def _quote_recommendation(
     calibrated_over_probability: float,
     calibrated_under_probability: float,
     market_key: str | None = None,
+    player_id: int | None = None,
 ) -> tuple[str, float, float] | None:
     if over_odds is None and under_odds is None:
         return None
-    # Apply model side-bias correction. 60-day BDL historical sample (5,289
-    # closing lines): overs hit 41.5% vs unders 58.5%. The calibrator is
-    # systematically bullish in nearly every market. Tilt the input
-    # over_probability down by the per-market offset (or global fallback);
-    # the under side is re-derived to preserve normalization.
+    # Apply model side-bias correction. Fallback chain (precedence high->low):
+    #   1. Per-player learned offset (Bayesian-shrunk from historical_grading.csv,
+    #      222 players in the 60-day sample; std 0.08, range -0.10 .. +0.27)
+    #   2. Per-market offset (10 markets with empirical defaults)
+    #   3. Global over_probability_bias_offset
+    # The chain is monotonic: a player-specific offset always overrides the
+    # market default, because per-player variance explained ~30x more than
+    # per-(archetype, market) cohorts in the 5,289-row backtest.
     from app.config.settings import get_settings
+    from app.services.player_bias import get_player_bias_offset
 
     settings = get_settings()
     offset = settings.over_probability_bias_offset
@@ -538,6 +544,9 @@ def _quote_recommendation(
         per_market = settings.per_market_bias_offsets.get(market_key.lower())
         if per_market is not None:
             offset = per_market
+    player_offset = get_player_bias_offset(player_id)
+    if player_offset is not None:
+        offset = player_offset
     corrected_over = max(0.001, min(0.999, float(calibrated_over_probability) - offset))
     corrected_under = max(0.001, min(0.999, float(calibrated_under_probability) + offset))
     decision = price_prop(
