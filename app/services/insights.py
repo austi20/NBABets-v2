@@ -528,6 +528,15 @@ def _quote_edge(quote: SportsbookQuote) -> float:
     return quote.hit_probability - implied_probability
 
 
+# Markets whose props are not allowed to reach Strong/Elite tiers regardless of
+# how high the underlying score climbs. Threes proved badly miscalibrated on
+# 2026-05-15 backtest (overconfident misses on Sam Merrill, Caris LeVert,
+# Evan Mobley); cap at one point below the Strong threshold (72) so the badge
+# tops out at "Solid".
+_HIGH_CONFIDENCE_MARKET_BLOCKLIST: frozenset[str] = frozenset({"threes"})
+_HIGH_CONFIDENCE_CAP: int = 71
+
+
 def _prop_confidence_score(
     *,
     opportunity: PropOpportunity,
@@ -559,6 +568,8 @@ def _prop_confidence_score(
         score -= 2
     if volatility is not None:
         score = int(score * volatility.confidence_multiplier)
+    if opportunity.market_key.lower() in _HIGH_CONFIDENCE_MARKET_BLOCKLIST:
+        score = min(score, _HIGH_CONFIDENCE_CAP)
     return max(1, min(score, 99))
 
 

@@ -98,3 +98,73 @@ def test_high_volatility_drops_score_proportionally() -> None:
 def test_no_volatility_omitted_means_no_change() -> None:
     baseline = _call(None)
     assert _call(None) == baseline
+
+
+def test_threes_market_capped_below_strong_tier() -> None:
+    """Threes proved badly miscalibrated on 2026-05-15; the score must never
+    reach 72 (Strong) regardless of how strong the underlying inputs are."""
+    # Pump every signal so the unconstrained score would clear 72.
+    quote = SportsbookQuote(
+        game_id=1,
+        sportsbook_key="dk",
+        sportsbook_name="DraftKings",
+        icon="",
+        market_key="threes",
+        line_value=1.5,
+        over_odds=-110,
+        under_odds=-110,
+        timestamp="2026-01-01T00:00:00",
+        is_live_quote=True,
+        verification_status="verified",
+        odds_source_provider="dk",
+        over_probability=0.95,
+        under_probability=0.05,
+        push_probability=0.0,
+        calibrated_over_probability=0.95,
+        calibrated_under_probability=0.05,
+        recommended_side="over",
+        hit_probability=0.95,
+        is_alternate_line=False,
+    )
+    pumped = PropOpportunity(
+        rank=1, game_id=1, player_id=1, player_name="Test", player_icon="",
+        market_key="threes", consensus_line=1.5, projected_mean=3.0,
+        recommended_side="over", hit_probability=0.95, likelihood_score=99,
+        calibrated_over_probability=0.95, sportsbooks_summary="x",
+        top_features=[], quotes=[quote] * 6, data_confidence_score=1.0,
+    )
+    score = _prop_confidence_score(
+        opportunity=pumped, best_quote=quote, edge=0.20,
+        latest_quote_at=None, uncertainty_ratio=0.10, injury=None, now=None,
+        volatility=None,
+    )
+    assert score <= 71, f"threes score {score} should be capped at Solid tier"
+
+
+def test_non_threes_market_not_capped() -> None:
+    """Sanity: capping only applies to the blocklisted market."""
+    quote = SportsbookQuote(
+        game_id=1,
+        sportsbook_key="dk", sportsbook_name="DraftKings", icon="",
+        market_key="points",
+        line_value=20.5, over_odds=-110, under_odds=-110,
+        timestamp="2026-01-01T00:00:00",
+        is_live_quote=True, verification_status="verified",
+        odds_source_provider="dk",
+        over_probability=0.95, under_probability=0.05, push_probability=0.0,
+        calibrated_over_probability=0.95, calibrated_under_probability=0.05,
+        recommended_side="over", hit_probability=0.95, is_alternate_line=False,
+    )
+    pumped = PropOpportunity(
+        rank=1, game_id=1, player_id=1, player_name="Test", player_icon="",
+        market_key="points", consensus_line=20.5, projected_mean=25.0,
+        recommended_side="over", hit_probability=0.95, likelihood_score=99,
+        calibrated_over_probability=0.95, sportsbooks_summary="x",
+        top_features=[], quotes=[quote] * 6, data_confidence_score=1.0,
+    )
+    score = _prop_confidence_score(
+        opportunity=pumped, best_quote=quote, edge=0.20,
+        latest_quote_at=None, uncertainty_ratio=0.10, injury=None, now=None,
+        volatility=None,
+    )
+    assert score >= 72, f"points score {score} should reach Strong tier"
