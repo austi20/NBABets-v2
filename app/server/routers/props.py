@@ -16,6 +16,7 @@ from app.server.schemas.props import (
 )
 from app.server.services.board_cache import BoardCacheEntry
 from app.services import rotation_audit
+from app.services.insights import PropInsight, build_prop_insight_for_quote
 from app.services.prop_analysis import PropOpportunity
 from app.services.volatility import build_feature_snapshot, compute_volatility
 
@@ -117,6 +118,42 @@ def _sort_opportunities(entry, opportunities: list[PropOpportunity], sort_choice
     )
 
 
+def _quote_matches_book(quote_name: str, book: str) -> bool:
+    return book == "All" or quote_name.lower() == book.lower()
+
+
+def _sort_flat_rows(
+    rows: list[tuple[PropOpportunity, PropInsight]],
+    sort_choice: str,
+) -> list[tuple[PropOpportunity, PropInsight]]:
+    if sort_choice == "Best EV":
+        return sorted(
+            rows,
+            key=lambda row: (row[1].expected_profit_per_unit, row[1].edge, row[0].hit_probability),
+            reverse=True,
+        )
+    if sort_choice == "Highest Hit Rate":
+        return sorted(
+            rows,
+            key=lambda row: (row[0].hit_probability, row[1].edge, row[0].projected_mean),
+            reverse=True,
+        )
+    if sort_choice == "Most Consensus":
+        return sorted(
+            rows,
+            key=lambda row: (row[1].market_width, -len(row[0].quotes), -row[1].edge),
+        )
+    if sort_choice == "Freshest":
+        return sorted(rows, key=lambda row: row[1].best_quote.timestamp, reverse=True)
+    if sort_choice == "Player A-Z":
+        return sorted(rows, key=lambda row: (row[0].player_name, row[0].market_key, -row[1].edge))
+    return sorted(
+        rows,
+        key=lambda row: (row[1].edge, row[1].expected_profit_per_unit, row[0].hit_probability),
+        reverse=True,
+    )
+
+
 @router.get("", response_model=PropListResponseModel)
 def list_props(
     request: Request,
@@ -127,6 +164,7 @@ def list_props(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     show_all: bool = Query(default=False),
+    flatten_by_book: bool = Query(default=False),
 ) -> PropListResponseModel:
     entry = board_cache_entry_or_503(request)
     settings = get_settings()
@@ -145,11 +183,41 @@ def list_props(
             continue
         if market != "All" and opportunity.market_key.lower() != market.lower():
             continue
-        if book != "All" and insight.best_quote.sportsbook_name.lower() != book.lower():
+        # Book filter is now membership-based: include the prop when the named
+        # book quotes it at all, not only when it has the best price.
+        if book != "All" and not any(
+            quote.sportsbook_name.lower() == book.lower() for quote in opportunity.quotes
+        ):
             continue
         if not show_all and not _passes_confidence_filter(insight.confidence_tier, confidence):
             continue
         filtered.append(opportunity)
+
+    flatten = flatten_by_book or book != "All"
+
+    if flatten:
+        flat_rows: list[tuple[PropOpportunity, PropInsight]] = []
+        for opportunity in filtered:
+            base_insight = entry.opportunity_insights[_opportunity_key(opportunity)]
+            for quote in opportunity.quotes:
+                if not _quote_matches_book(quote.sportsbook_name, book):
+                    continue
+                flat_rows.append(
+                    (opportunity, build_prop_insight_for_quote(opportunity, quote, base_insight))
+                )
+        ordered_rows = _sort_flat_rows(flat_rows, sort)
+        total = len(ordered_rows)
+        start = (page - 1) * page_size
+        end = start + page_size
+        selected_rows = ordered_rows[start:end]
+        items = [
+            PropWithInsightModel(
+                opportunity=PropOpportunityModel.from_dataclass(opportunity),
+                insight=PropInsightModel.from_dataclass(per_quote_insight),
+            )
+            for opportunity, per_quote_insight in selected_rows
+        ]
+        return PropListResponseModel(items=items, total=total, page=page, page_size=page_size)
 
     ordered = _sort_opportunities(entry, filtered, sort)
     total = len(ordered)

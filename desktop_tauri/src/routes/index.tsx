@@ -125,6 +125,7 @@ function DashboardPage() {
         page: 1,
         page_size: 200,
         show_all: filters.showAll ? true : undefined,
+        flatten_by_book: filters.book !== "All" || filters.showAll ? true : undefined,
       }),
     enabled: Boolean(startup.snapshot?.completed),
     staleTime: 30_000,

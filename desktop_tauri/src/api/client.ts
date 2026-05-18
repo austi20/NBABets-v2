@@ -401,6 +401,7 @@ export type PropsQuery = {
   page?: number;
   page_size?: number;
   show_all?: boolean;
+  flatten_by_book?: boolean;
 };
 
 export type ParlayLeg = {

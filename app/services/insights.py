@@ -358,6 +358,36 @@ def build_prop_insight(
     )
 
 
+def build_prop_insight_for_quote(
+    opportunity: PropOpportunity,
+    quote: SportsbookQuote,
+    base: PropInsight,
+) -> PropInsight:
+    """Return a PropInsight whose price-derived fields reflect ``quote``.
+
+    Model-confidence fields (tier, injury, warnings, reasons) are inherited
+    from ``base`` so per-book rows still carry the prop-level signal.
+    """
+    del opportunity
+    recommended_odds = _recommended_odds(quote)
+    return PropInsight(
+        best_quote=quote,
+        recommended_odds=recommended_odds,
+        implied_probability=american_implied_probability(recommended_odds),
+        fair_american_odds=fair_american_odds(quote.hit_probability),
+        edge=_quote_edge(quote),
+        expected_profit_per_unit=_quote_expected_profit(quote),
+        confidence_score=base.confidence_score,
+        confidence_tier=base.confidence_tier,
+        freshness_label=base.freshness_label,
+        market_width=base.market_width,
+        injury_label=base.injury_label,
+        injury_detail=base.injury_detail,
+        reason_lines=base.reason_lines,
+        warnings=base.warnings,
+    )
+
+
 def build_parlay_insight(parlay: ParlayRecommendation) -> ParlayInsight:
     score = 0
     score += min(int(parlay.average_leg_hit_probability * 45), 45)

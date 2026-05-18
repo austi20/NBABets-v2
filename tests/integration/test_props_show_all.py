@@ -25,6 +25,8 @@ def _make_quote(
     hit_probability: float,
     sportsbook_name: str = "Book A",
     sportsbook_key: str = "book-a",
+    over_odds: int = -110,
+    under_odds: int = -110,
 ) -> SportsbookQuote:
     now = datetime.now(UTC)
     return SportsbookQuote(
@@ -34,8 +36,8 @@ def _make_quote(
         icon="A",
         market_key=market,
         line_value=line,
-        over_odds=-110,
-        under_odds=-110,
+        over_odds=over_odds,
+        under_odds=under_odds,
         timestamp=now.isoformat(),
         is_live_quote=True,
         verification_status="provider_live",
@@ -265,6 +267,181 @@ def test_show_all_true_still_honors_market_filter() -> None:
             book_payload = book_response.json()
             assert book_payload["total"] == 1
             assert _player_names(book_payload) == {"Threes Player"}
+
+    asyncio.run(_run())
+
+
+class _MultiBookBoard:
+    """Single opportunity quoted by three different books at different prices.
+
+    Book A has the worst over price (-130), Book B the best (+105), Book C
+    middle (-110). All on points, line 24.5.
+    """
+
+    def __init__(self) -> None:
+        now = datetime.now(UTC)
+
+        quote_a = _make_quote(
+            market="points",
+            line=24.5,
+            hit_probability=0.58,
+            sportsbook_name="Book A",
+            sportsbook_key="book-a",
+            over_odds=-130,
+            under_odds=110,
+        )
+        quote_b = _make_quote(
+            market="points",
+            line=24.5,
+            hit_probability=0.58,
+            sportsbook_name="Book B",
+            sportsbook_key="book-b",
+            over_odds=105,
+            under_odds=-125,
+        )
+        quote_c = _make_quote(
+            market="points",
+            line=24.5,
+            hit_probability=0.58,
+            sportsbook_name="Book C",
+            sportsbook_key="book-c",
+            over_odds=-110,
+            under_odds=-110,
+        )
+
+        opportunity = _make_opportunity(
+            player_id=42,
+            player_name="Solid Player",
+            market="points",
+            line=24.5,
+            hit_probability=0.58,
+            quote=quote_b,
+        )
+        opportunity.quotes.clear()
+        opportunity.quotes.extend([quote_a, quote_b, quote_c])
+        insight = _make_insight(quote_b, confidence_tier="Strong")
+
+        self.entry = BoardCacheEntry(
+            board_date=date(2026, 5, 17),
+            board_availability=BoardAvailability(
+                board_date=date(2026, 5, 17),
+                scheduled_games=1,
+                live_games=0,
+                final_games=0,
+            ),
+            board_summary=BoardSummary(
+                board_date=date(2026, 5, 17),
+                game_count=1,
+                opportunity_count=1,
+                sportsbook_count=3,
+                quote_count=3,
+                live_quote_count=3,
+                alt_line_count=0,
+                same_game_parlay_count=0,
+                multi_game_parlay_count=0,
+                latest_quote_at=now,
+                latest_prediction_at=now,
+            ),
+            opportunities=[opportunity],
+            opportunity_insights={(1001, 42, "points", 24.5): insight},
+            same_game_sections_by_book={},
+            multi_game_sections_by_book={},
+            parlay_insights={},
+            provider_statuses=[],
+            injury_status_by_player_id={},
+            local_agent_status=None,
+        )
+
+    def get_or_build(self, target_date=None):  # noqa: ANN001
+        return self.entry
+
+
+def test_book_filter_includes_props_where_book_has_any_quote() -> None:
+    """Book filter is membership-based: even when a book doesn't have the best
+    price, the prop surfaces when that book quotes it."""
+
+    async def _run() -> None:
+        app = create_app(board_cache=_MultiBookBoard())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props?book=Book A")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["total"] == 1
+            assert _player_names(payload) == {"Solid Player"}
+            assert payload["items"][0]["insight"]["best_quote"]["sportsbook_name"] == "Book A"
+
+    asyncio.run(_run())
+
+
+def test_flatten_by_book_all_returns_one_row_per_quote() -> None:
+    """flatten_by_book=true + book=All emits one item per opportunity quote."""
+
+    async def _run() -> None:
+        app = create_app(board_cache=_MultiBookBoard())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props?flatten_by_book=true")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["total"] == 3
+            books = [item["insight"]["best_quote"]["sportsbook_name"] for item in payload["items"]]
+            assert set(books) == {"Book A", "Book B", "Book C"}
+
+    asyncio.run(_run())
+
+
+def test_flatten_by_book_specific_book_returns_that_books_row() -> None:
+    """Specific book filter returns one item carrying that book's quote."""
+
+    async def _run() -> None:
+        app = create_app(board_cache=_MultiBookBoard())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props?book=Book C")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["total"] == 1
+            assert payload["items"][0]["insight"]["best_quote"]["sportsbook_name"] == "Book C"
+            assert payload["items"][0]["insight"]["best_quote"]["over_odds"] == -110
+
+    asyncio.run(_run())
+
+
+def test_flatten_by_book_recomputes_edge_per_quote() -> None:
+    """Per-row edge reflects the row's actual odds, not the best book's."""
+
+    async def _run() -> None:
+        app = create_app(board_cache=_MultiBookBoard())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props?flatten_by_book=true&sort=Best Edge")
+            assert response.status_code == 200
+            payload = response.json()
+            by_book = {
+                item["insight"]["best_quote"]["sportsbook_name"]: item["insight"]
+                for item in payload["items"]
+            }
+            # Book A's -130 over has higher implied prob than Book B's +105 over,
+            # so Book A's edge must be strictly smaller than Book B's edge.
+            assert by_book["Book A"]["edge"] < by_book["Book B"]["edge"]
+            assert by_book["Book C"]["edge"] < by_book["Book B"]["edge"]
+
+    asyncio.run(_run())
+
+
+def test_default_unflattened_preserves_best_quote_behavior() -> None:
+    """flatten_by_book=false and book=All -> one item per prop using best quote."""
+
+    async def _run() -> None:
+        app = create_app(board_cache=_MultiBookBoard())
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/props")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["total"] == 1
+            assert payload["items"][0]["insight"]["best_quote"]["sportsbook_name"] == "Book B"
 
     asyncio.run(_run())
 
