@@ -20,6 +20,7 @@ from app.server.schemas.trading import (
     PnlPointModel,
     SystemDiagnosticsModel,
     TradingLiveSnapshotModel,
+    TradingQuoteModel,
 )
 from app.trading.allocation import AllocationPick, allocate_proportional_with_soft_cap
 from app.trading.selections import SelectionStore
@@ -82,6 +83,8 @@ class TradingLiveSnapshotBuilder:
             readiness=inputs.readiness,
             brain=inputs.brain_status,
         )
+        ledger_quotes = getattr(inputs.ledger_state, "quotes", None) or []
+        quotes = [TradingQuoteModel(**quote.__dict__) for quote in ledger_quotes]
         return TradingLiveSnapshotModel(
             observed_at=datetime.now(UTC),
             kpis=kpis,
@@ -90,7 +93,7 @@ class TradingLiveSnapshotBuilder:
             bet_slip=bet_slip,
             positions=inputs.positions,
             fills=inputs.fills,
-            quotes=[],
+            quotes=quotes,
             resting_orders=inputs.resting_orders,
             diagnostics=diagnostics,
             event_log=inputs.event_log,
