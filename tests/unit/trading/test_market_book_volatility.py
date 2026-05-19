@@ -92,13 +92,10 @@ async def test_none_yes_bid_does_not_enter_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_in_window_samples_returns_none() -> None:
-    # If only ancient samples exist (older than window), latest_ts itself is
-    # always in-window (cutoff = latest_ts - window). So construct a case via
-    # an explicit small window_seconds to make all samples older than cutoff
-    # except the latest -- which still falls in window. To actually exercise
-    # the empty-prices branch, we rely on the trimming logic: a tighter
-    # window keeps only the most recent sample.
+async def test_tight_window_keeps_only_latest_sample() -> None:
+    # The latest sample's own timestamp is always in-window (cutoff =
+    # latest_ts - window), so a tighter window than the inter-sample gap
+    # collapses the population to just the most recent price -> stdev 0.0.
     book = MarketBook()
     t0 = datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC)
     await book.update(_entry("X", 0.40, t0))

@@ -80,8 +80,8 @@ class MarketBook:
         latest_ts = samples[-1][0]
         cutoff = latest_ts - float(window_seconds)
         prices = [price for ts, price in samples if ts >= cutoff]
-        if not prices:
-            return None
+        # `prices` is always non-empty here: the latest sample's own timestamp
+        # satisfies ts >= latest_ts - window for any non-negative window.
         if len(prices) == 1:
             return 0.0
         return statistics.pstdev(prices) * 100.0
