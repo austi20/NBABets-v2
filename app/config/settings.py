@@ -338,7 +338,7 @@ class Settings(BaseSettings):
     simulation_target_margin: float = Field(default=0.01, alias="SIMULATION_TARGET_MARGIN")
     simulation_min_samples: int = Field(default=10000, alias="SIMULATION_MIN_SAMPLES")
     simulation_max_samples: int = Field(default=100000, alias="SIMULATION_MAX_SAMPLES")
-    simulation_batch_size: int = Field(default=10000, alias="SIMULATION_BATCH_SIZE")
+    simulation_batch_size: int = Field(default=25000, alias="SIMULATION_BATCH_SIZE")
     rotation_shock_enabled: bool = Field(default=True, alias="ROTATION_SHOCK_ENABLED")
     rotation_shock_shadow_mode: bool = Field(default=False, alias="ROTATION_SHOCK_SHADOW_MODE")
     rotation_shock_ablation_mode: str = Field(default="full", alias="ROTATION_SHOCK_ABLATION_MODE")
