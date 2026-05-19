@@ -3,5 +3,24 @@
   "per_market_cap": 0.50,
   "max_open_notional": 2.00,
   "daily_loss_cap": 2.00,
-  "reject_cooldown_seconds": 300
+  "reject_cooldown_seconds": 300,
+  "active_trader": {
+    "enabled": false,
+    "tp_pct": 0.50,
+    "sl_pct": 0.50,
+    "conviction_hold": 0.85,
+    "max_entry_price": 0.80,
+    "min_model_prob": 0.60,
+    "min_edge_bps": 100,
+    "spread_max_cents": 6,
+    "volatility_max_cents": 5,
+    "volatility_override": 0.80,
+    "max_open_positions": 50,
+    "settle_hold_minutes": 15,
+    "pace_threshold_pct": 0.75,
+    "pace_remaining_pct_min": 0.30,
+    "cooldown_after_exit_seconds": 30,
+    "live_stats_poll_seconds": 10,
+    "order_write_rps_cap": 5
+  }
 }
