@@ -419,6 +419,12 @@ class Settings(BaseSettings):
     )
     examiner_real_only_default: bool = Field(default=True, alias="EXAMINER_REAL_ONLY_DEFAULT")
 
+    feature_cache_enabled: bool = Field(default=True, alias="FEATURE_CACHE_ENABLED")
+    feature_cache_dir: Path = Field(
+        default_factory=lambda: _default_app_data_dir() / "cache" / "features",
+        alias="FEATURE_CACHE_DIR",
+    )
+
     release_policy_override_enabled: bool = Field(
         default=False,
         alias="RELEASE_POLICY_OVERRIDE_ENABLED",

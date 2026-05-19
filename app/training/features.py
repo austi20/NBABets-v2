@@ -165,6 +165,16 @@ class FeatureEngineer:
         *,
         fill_terminal_nan: float | None = 0.0,
     ) -> FeatureSet:
+        from app.training.feature_cache import cached_build
+
+        return cached_build(historical, self._build_training_frame_uncached, fill_terminal_nan=fill_terminal_nan)
+
+    def _build_training_frame_uncached(
+        self,
+        historical: pd.DataFrame,
+        *,
+        fill_terminal_nan: float | None = 0.0,
+    ) -> FeatureSet:
         frame = self._prepare_base_frame(historical)
         if frame.empty:
             return FeatureSet(frame=frame, feature_columns=[])
