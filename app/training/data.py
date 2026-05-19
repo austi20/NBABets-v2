@@ -244,7 +244,7 @@ class DatasetLoader:
         if not parquet_files:
             return pd.DataFrame()
         frame = pd.concat(
-            [pd.read_parquet(f, engine="pyarrow") for f in parquet_files],
+            [pd.read_parquet(f, engine="pyarrow", memory_map=True) for f in parquet_files],
             ignore_index=True,
         )
 

@@ -1,14 +1,36 @@
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config.settings import get_settings
 from app.db.discovery import DatabaseSelection, select_best_database
+
+
+# Apply performance pragmas to every SQLite connection at the driver level.
+# WAL allows concurrent readers + one writer without blocking each other.
+# synchronous=NORMAL is crash-safe while avoiding the full fsync on each commit.
+# cache_size=-262144 grants ~256 MB page cache per connection (negative = KiB).
+# mmap_size enables OS-level memory-mapping of the DB file for read-heavy paths.
+@event.listens_for(Engine, "connect")
+def _sqlite_pragmas(dbapi_conn: object, _connection_record: object) -> None:
+    if not isinstance(dbapi_conn, sqlite3.Connection):
+        return
+    cursor = dbapi_conn.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=-262144")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.execute("PRAGMA mmap_size=8589934592")
+    finally:
+        cursor.close()
+
 
 settings = get_settings()
 SessionLocal = sessionmaker(autoflush=False, autocommit=False, future=True)

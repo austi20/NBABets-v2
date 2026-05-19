@@ -17,6 +17,7 @@ from typing import Any, cast
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 from sqlalchemy import Table
 from sqlalchemy.engine import make_url
 
@@ -219,7 +220,12 @@ def create_app(
             await brain_resync.stop()
             await market_service.stop()
 
-    app = FastAPI(title="NBA Prop Probability Engine API", version=_app_version(), lifespan=lifespan)
+    app = FastAPI(
+        title="NBA Prop Probability Engine API",
+        version=_app_version(),
+        lifespan=lifespan,
+        default_response_class=ORJSONResponse,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(_ALLOWED_ORIGINS),
@@ -378,6 +384,13 @@ def cli() -> None:
     _configure_sidecar_logging()
     _install_exception_logging()
     logging.getLogger("nba.sidecar").info("Starting sidecar on %s:%s", args.host, args.port)
+
+    if sys.platform == "win32":
+        try:
+            import winloop
+            winloop.install()
+        except ImportError:
+            pass
 
     uvicorn.run(
         create_app(app_token=args.app_token),

@@ -165,6 +165,16 @@ class FeatureEngineer:
         *,
         fill_terminal_nan: float | None = 0.0,
     ) -> FeatureSet:
+        from app.training.feature_cache import cached_build
+
+        return cached_build(historical, self._build_training_frame_uncached, fill_terminal_nan=fill_terminal_nan)
+
+    def _build_training_frame_uncached(
+        self,
+        historical: pd.DataFrame,
+        *,
+        fill_terminal_nan: float | None = 0.0,
+    ) -> FeatureSet:
         frame = self._prepare_base_frame(historical)
         if frame.empty:
             return FeatureSet(frame=frame, feature_columns=[])
@@ -1094,28 +1104,108 @@ class FeatureEngineer:
         role_feature_priors = priors.get("role_feature_priors", {})
         global_feature_priors = priors.get("global_feature_priors", {})
 
-        for idx, row in result.iterrows():
-            tier = str(row.get(tier_col, "A"))
-            if tier not in {"C", "D"}:
-                continue
+        # Compute tier series once
+        if tier_col in result.columns:
+            tier_series = result[tier_col].astype(str)
+        else:
+            tier_series = pd.Series("A", index=result.index)
+        is_c = tier_series.eq("C")
+        is_d = tier_series.eq("D")
+        if not is_c.any() and not is_d.any():
+            return result
 
-            position_group = str(row.get("position_group", "UNK") or "UNK").upper()[:1] or "UNK"
-            position_values = position_feature_priors.get(position_group, {})
-            role_values = (
-                role_feature_priors.get(self._population_role_bucket_for_row(row, priors), {})
-                if tier == "D"
-                else {}
+        # Compute position letter per row (vectorized).
+        # Mirror scalar logic verbatim:
+        #   str(row.get("position_group", "UNK") or "UNK").upper()[:1] or "UNK"
+        # Python `or` treats None and "" as falsy but float NaN as truthy, so NaN
+        # passes through to str(NaN) = "nan" -> first char "N". None and "" become "UNK" -> "U".
+        if "position_group" in result.columns:
+            raw_pos = result["position_group"]
+        else:
+            raw_pos = pd.Series(["UNK"] * len(result), index=result.index, dtype=object)
+
+        def _resolve_pos(v: object) -> object:
+            if v is None:
+                return "UNK"
+            if isinstance(v, str) and v == "":
+                return "UNK"
+            return v  # float NaN is truthy in Python; preserved here to match str(NaN) -> "nan"
+
+        resolved = raw_pos.map(_resolve_pos)
+        position_letter = resolved.astype(str).str.upper().str[:1]
+        position_letter = position_letter.where(position_letter.str.len() > 0, "UNK")
+
+        # Compute role bucket per D row using a vectorized port of _population_role_bucket_for_row.
+        # Build unique (position_letter, starter_flag_value) -> bucket label cache to avoid per-row scalar calls.
+        role_bucket_series = pd.Series("", index=result.index, dtype=object)
+        if is_d.any():
+            d_idx = result.index[is_d]
+            projected_starter = pd.to_numeric(result.get("projected_starter_flag", pd.Series(np.nan, index=result.index)), errors="coerce")
+            line_value = pd.to_numeric(result.get("line_value", pd.Series(np.nan, index=result.index)), errors="coerce")
+            starter_flag = pd.to_numeric(result.get("starter_flag", pd.Series(np.nan, index=result.index)), errors="coerce")
+            market_key_series = (
+                result["market_key"].fillna("").astype(str).str.lower()
+                if "market_key" in result.columns
+                else pd.Series("", index=result.index)
             )
+            thresholds = priors.get("role_bucket_thresholds", {})
 
-            for column in available_columns:
-                if tier == "D":
-                    prior_value = role_values.get(column, position_values.get(column, global_feature_priors.get(column)))
-                    if prior_value is not None and pd.notna(prior_value):
-                        result.at[idx, column] = float(prior_value)
-                elif pd.isna(result.at[idx, column]):
-                    prior_value = position_values.get(column, global_feature_priors.get(column))
-                    if prior_value is not None and pd.notna(prior_value):
-                        result.at[idx, column] = float(prior_value)
+            # Vectorized bucket computation for D rows:
+            # Priority: projected_starter -> line >= threshold -> starter_flag
+            pos_d = position_letter.loc[d_idx]
+            proj_d = projected_starter.loc[d_idx]
+            line_d = line_value.loc[d_idx]
+            mkey_d = market_key_series.loc[d_idx]
+            sf_d = starter_flag.loc[d_idx]
+
+            # Map market_key -> threshold (scalar lookup per unique key; few unique values)
+            thresh_d = mkey_d.map(lambda k: float(thresholds.get(k, np.inf)))
+
+            # Determine effective starter value per row
+            eff_starter = pd.Series(np.nan, index=d_idx)
+            # Case 1: projected_starter present
+            has_proj = proj_d.notna()
+            eff_starter[has_proj] = proj_d[has_proj]
+            # Case 2: line >= threshold (and projected absent)
+            has_line = (~has_proj) & line_d.notna() & (line_d >= thresh_d)
+            eff_starter[has_line] = 1.0
+            # Case 3: starter_flag (fallback)
+            fallback = ~has_proj & ~has_line
+            eff_starter[fallback] = sf_d[fallback].fillna(0.0)
+
+            # Build role bucket string using vectorized string ops + lookup cache
+            unique_pairs = list({(p, v) for p, v in zip(pos_d, eff_starter, strict=True)})
+            pair_to_bucket = {(p, v): role_bucket_label(p, v) for p, v in unique_pairs}
+            for i in d_idx:
+                role_bucket_series.at[i] = pair_to_bucket[(position_letter.at[i], eff_starter.at[i])]
+
+        # Per-column vectorized fill
+        for column in available_columns:
+            # Build position prior Series: position_letter -> prior value for this column
+            pos_lookup = {letter: position_feature_priors.get(letter, {}).get(column) for letter in position_letter.unique()}
+            pos_prior = position_letter.map(pos_lookup)
+
+            # Global fallback scalar
+            global_val = global_feature_priors.get(column)
+
+            # Tier C: fill NaN cells with position -> global chain
+            if is_c.any():
+                c_prior = pos_prior.combine_first(pd.Series(global_val, index=result.index))
+                c_prior = pd.to_numeric(c_prior, errors="coerce")
+                mask_c = is_c & result[column].isna() & c_prior.notna()
+                if mask_c.any():
+                    result.loc[mask_c, column] = c_prior[mask_c].astype(float)
+
+            # Tier D: overwrite with role -> position -> global chain
+            if is_d.any():
+                role_lookup = {bucket: role_feature_priors.get(bucket, {}).get(column) for bucket in role_bucket_series[is_d].unique()}
+                role_prior = role_bucket_series.map(role_lookup)
+                d_prior = role_prior.combine_first(pos_prior).combine_first(pd.Series(global_val, index=result.index))
+                d_prior = pd.to_numeric(d_prior, errors="coerce")
+                mask_d = is_d & d_prior.notna()
+                if mask_d.any():
+                    result.loc[mask_d, column] = d_prior[mask_d].astype(float)
+
         return result
 
     def _population_role_bucket_for_row(self, row: pd.Series, priors: dict[str, Any]) -> str:

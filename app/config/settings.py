@@ -338,7 +338,7 @@ class Settings(BaseSettings):
     simulation_target_margin: float = Field(default=0.01, alias="SIMULATION_TARGET_MARGIN")
     simulation_min_samples: int = Field(default=10000, alias="SIMULATION_MIN_SAMPLES")
     simulation_max_samples: int = Field(default=100000, alias="SIMULATION_MAX_SAMPLES")
-    simulation_batch_size: int = Field(default=10000, alias="SIMULATION_BATCH_SIZE")
+    simulation_batch_size: int = Field(default=25000, alias="SIMULATION_BATCH_SIZE")
     rotation_shock_enabled: bool = Field(default=True, alias="ROTATION_SHOCK_ENABLED")
     rotation_shock_shadow_mode: bool = Field(default=False, alias="ROTATION_SHOCK_SHADOW_MODE")
     rotation_shock_ablation_mode: str = Field(default="full", alias="ROTATION_SHOCK_ABLATION_MODE")
@@ -418,6 +418,12 @@ class Settings(BaseSettings):
         default=0.75, ge=0.0, le=1.0, alias="EXAMINER_MIN_CONFIDENCE_FOR_RETRAIN"
     )
     examiner_real_only_default: bool = Field(default=True, alias="EXAMINER_REAL_ONLY_DEFAULT")
+
+    feature_cache_enabled: bool = Field(default=True, alias="FEATURE_CACHE_ENABLED")
+    feature_cache_dir: Path = Field(
+        default_factory=lambda: _default_app_data_dir() / "cache" / "features",
+        alias="FEATURE_CACHE_DIR",
+    )
 
     release_policy_override_enabled: bool = Field(
         default=False,
