@@ -279,6 +279,33 @@ def default_brain_status(settings: Settings) -> TradingBrainSyncResult:
     )
 
 
+def _existing_decisions_match_board_date(settings: Settings, board_date: date) -> bool:
+    """True iff `kalshi_decisions_path` already holds a synced pack for `board_date`.
+
+    Used to suppress write_blocked_decision_pack on transient sync errors (e.g.
+    Kalshi 429): if we still have a valid same-day pack on disk, prefer to keep
+    it visible to the UI rather than blank it out.
+    """
+    path = Path(settings.kalshi_decisions_path)
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if data.get("state") != "synced":
+        return False
+    decisions = data.get("decisions")
+    if not isinstance(decisions, list) or not decisions:
+        return False
+    first = decisions[0]
+    if not isinstance(first, dict):
+        return False
+    return str(first.get("game_date") or "") == board_date.isoformat()
+
+
 def write_blocked_decision_pack(
     *,
     settings: Settings,
@@ -768,13 +795,11 @@ def sync_decision_brain(
     state = "failed"
 
     try:
-        if build_pack:
-            write_blocked_decision_pack(
-                settings=settings,
-                board_date=sync_date,
-                mode=normalized_mode,
-                reason="decision brain sync started",
-            )
+        # NOTE: do not pre-blank the decisions pack here. A transient sync failure
+        # (Kalshi 429, network glitch) would leave the pack empty until the next
+        # successful resync, hiding live picks from the UI. Instead, write the
+        # real pack only on success path; on failure, the except branch decides
+        # whether to keep the existing same-day pack or replace with blocked.
         if not settings.kalshi_decision_brain_enabled:
             raise DecisionBrainError("KALSHI_DECISION_BRAIN_ENABLED is false")
         policy = load_policy(settings)
@@ -917,7 +942,13 @@ def sync_decision_brain(
         state = "synced" if arm_live else "observe_only"
         snapshot_dir = _write_snapshot(settings=settings, board_date=sync_date)
     except Exception as exc:  # noqa: BLE001 - the public sync surface must fail closed
-        if build_pack:
+        # On transient errors (Kalshi 429, network), prefer to keep an already-valid
+        # same-day decision pack rather than blank it out. Only DecisionBrainError /
+        # LivePackBuildError (deterministic failures of brain inputs/policy) force a
+        # reset to a blocked pack.
+        deterministic_failure = isinstance(exc, (DecisionBrainError, LivePackBuildError))
+        existing_pack_valid = _existing_decisions_match_board_date(settings, sync_date)
+        if build_pack and (deterministic_failure or not existing_pack_valid):
             try:
                 write_blocked_decision_pack(
                     settings=settings,
@@ -935,6 +966,15 @@ def sync_decision_brain(
                         detail=f"Could not clear stale decision pack: {pack_exc}",
                     )
                 )
+        elif build_pack and existing_pack_valid:
+            checks.append(
+                BrainCheck(
+                    key="resync_preserved",
+                    label="Resync soft-failed",
+                    status="warn",
+                    detail=f"transient: {exc}; kept existing same-day pack",
+                )
+            )
         checks.append(
             BrainCheck(
                 key="sync_failed",
@@ -943,7 +983,13 @@ def sync_decision_brain(
                 detail=str(exc),
             )
         )
-        state = "blocked" if isinstance(exc, (DecisionBrainError, LivePackBuildError)) else "failed"
+        if deterministic_failure:
+            state = "blocked"
+        elif existing_pack_valid:
+            # Same-day pack preserved on disk; report synced so callers don't bail.
+            state = "synced"
+        else:
+            state = "failed"
 
     result = TradingBrainSyncResult(
         state=state,
