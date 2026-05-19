@@ -94,8 +94,9 @@ class DecisionBrainPolicy:
     ranking_weight_liquidity: float
     ranking_weight_calibration: float
     ranking_weight_freshness: float
-    require_injury_refresh_minutes: int = 30
-    require_projection_refresh_minutes: int = 60
+    # Defaults sized for desktop interactive use; tighten in policy file for HFT.
+    require_injury_refresh_minutes: int = 240
+    require_projection_refresh_minutes: int = 180
     max_volatility_coefficient: float | None = None  # None disables the gate
 
 
@@ -356,8 +357,8 @@ def load_policy(settings: Settings) -> DecisionBrainPolicy:
         ranking_weight_liquidity=_float_or(fields.get("ranking_weight_liquidity"), 0.15),
         ranking_weight_calibration=_float_or(fields.get("ranking_weight_calibration"), 0.10),
         ranking_weight_freshness=_float_or(fields.get("ranking_weight_freshness"), 0.10),
-        require_injury_refresh_minutes=int(fields.get("require_injury_refresh_minutes") or 30),
-        require_projection_refresh_minutes=int(fields.get("require_projection_refresh_minutes") or 60),
+        require_injury_refresh_minutes=int(fields.get("require_injury_refresh_minutes") or 240),
+        require_projection_refresh_minutes=int(fields.get("require_projection_refresh_minutes") or 180),
         max_volatility_coefficient=_float_or_none(fields.get("max_volatility_coefficient")),
     )
 

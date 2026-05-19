@@ -157,5 +157,5 @@ def test_load_policy_refresh_minutes_default_when_absent() -> None:
     fields = {**_BASE_FIELDS}  # no refresh keys
     with patch("app.trading.decision_brain.decision_brain_root"),          patch("pathlib.Path.is_file", return_value=True),          patch("app.trading.decision_brain.parse_frontmatter_file", return_value=(fields, "raw")):
         policy = load_policy(MagicMock())
-    assert policy.require_injury_refresh_minutes == 30
-    assert policy.require_projection_refresh_minutes == 60
+    assert policy.require_injury_refresh_minutes == 240
+    assert policy.require_projection_refresh_minutes == 180
