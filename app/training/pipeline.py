@@ -15,6 +15,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+from threadpoolctl import threadpool_limits
 
 from app.config.settings import get_settings
 from app.core.resources import get_runtime_budget
@@ -1013,73 +1014,45 @@ class TrainingPipeline:
                 f"Calibration setup complete ({fold_count} folds)",
             )
 
-        for split_index, (train_idx, valid_idx) in enumerate(splits, start=1):
-            train_frame = ordered.iloc[train_idx].copy()
-            valid_frame = ordered.iloc[valid_idx].copy()
-            if train_frame.empty or valid_frame.empty:
-                continue
+        budget = get_runtime_budget()
+        # Balance fold-level parallelism against per-fold XGBoost/BLAS threads so total
+        # OS threads stay near hardware thread count (avoids oversubscription).
+        if fold_count > 1:
+            fold_workers = max(1, min(4, max(budget.cpu_count // 4, 1)))
+        else:
+            fold_workers = 1
+        inner_threads = max(1, budget.cpu_count // fold_workers)
+
+        def run_one_fold(args: tuple[int, tuple[np.ndarray, np.ndarray]]) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray | None]] | None:
+            split_index, (train_idx, valid_idx) = args
             if progress_callback is not None:
                 progress_callback(
                     progress_state[0],
                     progress_state[1],
-                    f"Calibration fold {split_index}/{len(splits)}: fitting models",
+                    f"Calibration fold {split_index}/{fold_count}: fitting models",
                 )
-
-            minutes_model = MinutesModel(self._settings.training_seed)
-            minutes_model.fit(train_frame, minutes_feature_columns)
-            train_predicted_minutes = minutes_model.predict(train_frame)
-            train_predicted_minutes_std = minutes_model.predict_uncertainty(train_frame)
-            train_frame = _with_minutes_predictions(
-                train_frame,
-                train_predicted_minutes,
-                train_predicted_minutes_std,
+            return self._run_calibration_fold(
+                train_idx=train_idx,
+                valid_idx=valid_idx,
+                ordered=ordered,
+                minutes_feature_columns=minutes_feature_columns,
+                stat_feature_columns=stat_feature_columns,
             )
-            valid_predicted_minutes = minutes_model.predict(valid_frame)
-            valid_predicted_minutes_std = minutes_model.predict_uncertainty(valid_frame)
-            valid_frame = _with_minutes_predictions(
-                valid_frame,
-                valid_predicted_minutes,
-                valid_predicted_minutes_std,
-            )
-            train_frame = self._features.apply_post_minutes_features(train_frame, minutes_column="predicted_minutes")
-            valid_frame = self._features.apply_post_minutes_features(valid_frame, minutes_column="predicted_minutes")
-            train_frame = self._apply_rotation_treatment_mode(train_frame, write_audit=False)
-            valid_frame = self._apply_rotation_treatment_mode(valid_frame, write_audit=False)
-            train_frame = _apply_feature_defaults(train_frame, stat_feature_columns)
-            valid_frame = _apply_feature_defaults(valid_frame, stat_feature_columns)
 
-            stat_models = StatModelSuite(self._settings.training_seed, l1_alpha=self._l1_alpha)
-            stat_models.fit(train_frame, stat_feature_columns, l1_alpha=self._l1_alpha)
+        fold_args = list(enumerate(splits, start=1))
+        with threadpool_limits(limits=inner_threads):
+            if fold_workers > 1 and len(fold_args) > 1:
+                with ThreadPoolExecutor(max_workers=fold_workers) as executor:
+                    fold_results = list(executor.map(run_one_fold, fold_args))
+            else:
+                fold_results = [run_one_fold(arg) for arg in fold_args]
 
-            for market_key, target_column in MARKET_TARGETS.items():
-                if progress_callback is not None:
-                    progress_callback(
-                        progress_state[0],
-                        progress_state[1],
-                        f"Calibration fold {split_index}/{len(splits)}: {market_key.upper()}",
-                    )
-                valid_market = valid_frame.copy()
-                if valid_market.empty or target_column not in valid_market.columns:
-                    continue
-                means, variances = stat_models.models[market_key].predict(valid_market)
-                market_lines = valid_market.get(
-                    f"line_{market_key}",
-                    pd.Series(means, index=valid_market.index, dtype=float),
-                ).fillna(pd.Series(means, index=valid_market.index, dtype=float))
-                raw_probabilities = self._parallel_market_probabilities(
-                    records=valid_market.to_dict("records"),
-                    means=means,
-                    variances=variances,
-                    lines=market_lines.to_numpy(),
-                    market_key=market_key,
-                    progress_callback=None,
-                    progress_state=(0, 0),
-                    detail_prefix=f"Calibrating {market_key.upper()}",
-                )
-                labels = (valid_market[target_column].to_numpy() > market_lines.to_numpy()).astype(int)
+        for result in fold_results:
+            if not result:
+                continue
+            for market_key, (raw_probabilities, labels, priors) in result.items():
                 oof_raw[market_key].append(raw_probabilities)
                 oof_labels[market_key].append(labels)
-                priors = self._market_prior(valid_market, market_key)
                 if priors is None:
                     priors_complete[market_key] = False
                 else:
@@ -1235,11 +1208,75 @@ class TrainingPipeline:
         calibrator.fit(raw_probabilities, labels, market_priors=self._market_prior(frame, market_key))
         return calibrator
 
+    def _run_calibration_fold(
+        self,
+        *,
+        train_idx: np.ndarray,
+        valid_idx: np.ndarray,
+        ordered: pd.DataFrame,
+        minutes_feature_columns: list[str],
+        stat_feature_columns: list[str],
+    ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray | None]] | None:
+        train_frame = ordered.iloc[train_idx].copy()
+        valid_frame = ordered.iloc[valid_idx].copy()
+        if train_frame.empty or valid_frame.empty:
+            return None
+
+        minutes_model = MinutesModel(self._settings.training_seed)
+        minutes_model.fit(train_frame, minutes_feature_columns)
+        train_predicted_minutes = minutes_model.predict(train_frame)
+        train_predicted_minutes_std = minutes_model.predict_uncertainty(train_frame)
+        train_frame = _with_minutes_predictions(
+            train_frame,
+            train_predicted_minutes,
+            train_predicted_minutes_std,
+        )
+        valid_predicted_minutes = minutes_model.predict(valid_frame)
+        valid_predicted_minutes_std = minutes_model.predict_uncertainty(valid_frame)
+        valid_frame = _with_minutes_predictions(
+            valid_frame,
+            valid_predicted_minutes,
+            valid_predicted_minutes_std,
+        )
+        train_frame = self._features.apply_post_minutes_features(train_frame, minutes_column="predicted_minutes")
+        valid_frame = self._features.apply_post_minutes_features(valid_frame, minutes_column="predicted_minutes")
+        train_frame = self._apply_rotation_treatment_mode(train_frame, write_audit=False)
+        valid_frame = self._apply_rotation_treatment_mode(valid_frame, write_audit=False)
+        train_frame = _apply_feature_defaults(train_frame, stat_feature_columns)
+        valid_frame = _apply_feature_defaults(valid_frame, stat_feature_columns)
+
+        stat_models = StatModelSuite(self._settings.training_seed, l1_alpha=self._l1_alpha)
+        stat_models.fit(train_frame, stat_feature_columns, l1_alpha=self._l1_alpha)
+
+        results: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray | None]] = {}
+        for market_key, target_column in MARKET_TARGETS.items():
+            if valid_frame.empty or target_column not in valid_frame.columns:
+                continue
+            means, variances = stat_models.models[market_key].predict(valid_frame)
+            market_lines = valid_frame.get(
+                f"line_{market_key}",
+                pd.Series(means, index=valid_frame.index, dtype=float),
+            ).fillna(pd.Series(means, index=valid_frame.index, dtype=float))
+            raw_probabilities = self._parallel_market_probabilities(
+                records=valid_frame.to_dict("records"),
+                means=means,
+                variances=variances,
+                lines=market_lines.to_numpy(),
+                market_key=market_key,
+                progress_callback=None,
+                progress_state=(0, 0),
+                detail_prefix=f"Calibrating {market_key.upper()}",
+            )
+            labels = (valid_frame[target_column].to_numpy() > market_lines.to_numpy()).astype(int)
+            priors = self._market_prior(valid_frame, market_key)
+            results[market_key] = (raw_probabilities, labels, priors)
+        return results
+
     def _calibration_splits(self, frame: pd.DataFrame) -> list[tuple[np.ndarray, np.ndarray]]:
         if len(frame) < 120:
             return []
         purge_days = self._settings.calibration_purge_days
-        splitter = TimeSeriesSplit(n_splits=min(200, max(8, max(2, len(frame) // 120))))
+        splitter = TimeSeriesSplit(n_splits=min(120, max(8, max(2, len(frame) // 120))))
         splits: list[tuple[np.ndarray, np.ndarray]] = []
         dates = pd.to_datetime(frame["game_date"]).dt.normalize()
         for train_idx, valid_idx in splitter.split(frame):
