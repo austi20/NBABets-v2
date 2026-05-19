@@ -41,11 +41,11 @@ class _FakeRouter:
         self.buys.append(_PlacedOrder(h, qty, limit_price_cents))
         return h
 
-    async def place_sell_at_bid(
-        self, ticker: str, qty: int, bid_price_cents: int
+    async def place_sell(
+        self, ticker: str, qty: int, limit_price_cents: int
     ) -> OrderHandle:
         h = OrderHandle(order_id=self._next_id("s"), ticker=ticker, side="sell")
-        self.sells.append(_PlacedOrder(h, qty, bid_price_cents))
+        self.sells.append(_PlacedOrder(h, qty, limit_price_cents))
         return h
 
     async def cancel(self, handle: OrderHandle) -> None:

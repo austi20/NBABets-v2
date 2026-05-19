@@ -49,8 +49,8 @@ class OrderRouter(Protocol):
         self, ticker: str, qty: int, limit_price_cents: int
     ) -> OrderHandle: ...
 
-    async def place_sell_at_bid(
-        self, ticker: str, qty: int, bid_price_cents: int
+    async def place_sell(
+        self, ticker: str, qty: int, limit_price_cents: int
     ) -> OrderHandle: ...
 
     async def cancel(self, handle: OrderHandle) -> None: ...
@@ -130,66 +130,68 @@ class PortfolioManager:
         line_value: float | None = None,
         market_close_at: datetime | None = None,
     ) -> bool:
-        existing = self._positions.get(ticker)
-        if existing is not None:
-            if existing.state in (FSMState.BUY_PENDING, FSMState.HOLDING, FSMState.SELL_PENDING):
-                return False
-            if existing.state == FSMState.CLOSED and self.is_in_cooldown(ticker):
-                return False
-        handle = await self._router.place_buy(ticker, qty, limit_price_cents)
-        now = self._clock()
-        tp, sl = _bracket_prices(limit_price_cents, self._config.tp_pct, self._config.sl_pct)
-        self._positions[ticker] = PositionState(
-            ticker=ticker,
-            state=FSMState.BUY_PENDING,
-            qty=0,
-            requested_qty=qty,
-            entry_price_cents=limit_price_cents,
-            tp_price_cents=tp,
-            sl_price_cents=sl,
-            model_prob=model_prob,
-            line_value=line_value,
-            market_close_at=market_close_at,
-            opened_at=now,
-            buy_handle=handle,
-        )
-        return True
+        async with self._lock:
+            existing = self._positions.get(ticker)
+            if existing is not None:
+                if existing.state in (FSMState.BUY_PENDING, FSMState.HOLDING, FSMState.SELL_PENDING):
+                    return False
+                if existing.state == FSMState.CLOSED and self.is_in_cooldown(ticker):
+                    return False
+            handle = await self._router.place_buy(ticker, qty, limit_price_cents)
+            now = self._clock()
+            tp, sl = _bracket_prices(limit_price_cents, self._config.tp_pct, self._config.sl_pct)
+            self._positions[ticker] = PositionState(
+                ticker=ticker,
+                state=FSMState.BUY_PENDING,
+                qty=0,
+                requested_qty=qty,
+                entry_price_cents=limit_price_cents,
+                tp_price_cents=tp,
+                sl_price_cents=sl,
+                model_prob=model_prob,
+                line_value=line_value,
+                market_close_at=market_close_at,
+                opened_at=now,
+                buy_handle=handle,
+            )
+            return True
 
     # ------------------------------------------------------------------ quotes
     async def on_quote(self, ticker: str, yes_bid_cents: int, yes_ask_cents: int) -> None:
-        pos = self._positions.get(ticker)
-        if pos is None:
-            return
-        now = self._clock()
-        pos = replace(pos, last_bid_cents=yes_bid_cents)
-        self._positions[ticker] = pos
-        # Cancel-remainder deadline for partial buys.
-        if (
-            pos.state == FSMState.BUY_PENDING
-            and pos.buy_partial_cancel_at is not None
-            and now >= pos.buy_partial_cancel_at
-        ):
-            await self._finalize_partial_buy(pos)
-            pos = self._positions[ticker]
-        if pos.state != FSMState.HOLDING:
-            return
-        high_conviction = pos.model_prob >= self._config.conviction_hold
-        # Settle-window check first - it can flatten conviction holds via on_pace=False.
-        if self._settle_window_active(pos, now):
-            decision = self._evaluate_on_pace(pos)
-            if decision is False:
+        async with self._lock:
+            pos = self._positions.get(ticker)
+            if pos is None:
+                return
+            now = self._clock()
+            pos = replace(pos, last_bid_cents=yes_bid_cents)
+            self._positions[ticker] = pos
+            # Cancel-remainder deadline for partial buys.
+            if (
+                pos.state == FSMState.BUY_PENDING
+                and pos.buy_partial_cancel_at is not None
+                and now >= pos.buy_partial_cancel_at
+            ):
+                await self._finalize_partial_buy(pos)
+                pos = self._positions[ticker]
+            if pos.state != FSMState.HOLDING:
+                return
+            high_conviction = pos.model_prob >= self._config.conviction_hold
+            # Settle-window check first - it can flatten conviction holds via on_pace=False.
+            if self._settle_window_active(pos, now):
+                decision = self._evaluate_on_pace(pos)
+                if decision is False:
+                    await self._enqueue_sell_at_bid(ticker, yes_bid_cents)
+                    return
+                # decision True or None -> hold.
+                return
+            if high_conviction:
+                return
+            if yes_bid_cents >= pos.tp_price_cents:
                 await self._enqueue_sell_at_bid(ticker, yes_bid_cents)
                 return
-            # decision True or None -> hold.
-            return
-        if high_conviction:
-            return
-        if yes_bid_cents >= pos.tp_price_cents:
-            await self._enqueue_sell_at_bid(ticker, yes_bid_cents)
-            return
-        if yes_bid_cents <= pos.sl_price_cents:
-            await self._enqueue_sell_at_bid(ticker, yes_bid_cents)
-            return
+            if yes_bid_cents <= pos.sl_price_cents:
+                await self._enqueue_sell_at_bid(ticker, yes_bid_cents)
+                return
 
     def _settle_window_active(self, pos: PositionState, now: datetime) -> bool:
         if pos.market_close_at is None:
@@ -210,13 +212,14 @@ class PortfolioManager:
     async def on_fill(
         self, handle: OrderHandle, filled_qty: int, avg_price_cents: int
     ) -> None:
-        pos = self._positions.get(handle.ticker)
-        if pos is None:
-            return
-        if handle.side == "buy":
-            await self._handle_buy_fill(pos, filled_qty, avg_price_cents)
-        elif handle.side == "sell":
-            await self._handle_sell_fill(pos, filled_qty)
+        async with self._lock:
+            pos = self._positions.get(handle.ticker)
+            if pos is None:
+                return
+            if handle.side == "buy":
+                await self._handle_buy_fill(pos, filled_qty, avg_price_cents)
+            elif handle.side == "sell":
+                await self._handle_sell_fill(pos, filled_qty)
 
     async def _handle_buy_fill(
         self, pos: PositionState, filled_qty: int, avg_price_cents: int
@@ -294,7 +297,7 @@ class PortfolioManager:
             self._mark_closed(pos.ticker, residual_qty=remaining)
             return
         bid = pos.last_bid_cents or 1
-        handle = await self._router.place_sell_at_bid(pos.ticker, remaining, bid)
+        handle = await self._router.place_sell(pos.ticker, remaining, bid)
         self._positions[pos.ticker] = replace(
             pos,
             sell_remaining_qty=remaining,
@@ -308,7 +311,7 @@ class PortfolioManager:
         pos = self._positions.get(ticker)
         if pos is None or pos.state != FSMState.HOLDING:
             return
-        handle = await self._router.place_sell_at_bid(ticker, pos.qty, bid_cents)
+        handle = await self._router.place_sell(ticker, pos.qty, bid_cents)
         now = self._clock()
         self._positions[ticker] = replace(
             pos,
@@ -321,14 +324,22 @@ class PortfolioManager:
 
     async def flatten_all(self) -> int:
         """Sell every HOLDING position at last-known bid. Returns count issued."""
-        issued = 0
-        for ticker, pos in list(self._positions.items()):
-            if pos.state != FSMState.HOLDING:
-                continue
-            bid = pos.last_bid_cents if pos.last_bid_cents is not None else 1
-            await self._enqueue_sell_at_bid(ticker, bid)
-            issued += 1
-        return issued
+        async with self._lock:
+            issued = 0
+            for ticker, pos in list(self._positions.items()):
+                if pos.state != FSMState.HOLDING:
+                    continue
+                if pos.last_bid_cents is None:
+                    logger.warning(
+                        "flatten_all: no bid observed for %s, falling back to 1c",
+                        ticker,
+                    )
+                    bid = 1
+                else:
+                    bid = pos.last_bid_cents
+                await self._enqueue_sell_at_bid(ticker, bid)
+                issued += 1
+            return issued
 
     def _mark_closed(self, ticker: str, *, residual_qty: int) -> None:
         pos = self._positions.get(ticker)
