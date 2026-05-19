@@ -120,6 +120,9 @@ _ACTIVE_TRADER_INT_FIELDS: frozenset[str] = frozenset(
 )
 
 
+_ACTIVE_TRADER_BOOL_FIELDS: frozenset[str] = frozenset({"enabled"})
+
+
 def _validate_active_trader_bool(name: str, value: object) -> bool:
     if not isinstance(value, bool):
         raise LimitsConfigError(f"active_trader field {name} must be a boolean")
@@ -172,7 +175,7 @@ def load_active_trader_config(path: Path | str) -> ActiveTraderConfig:
             kwargs[name] = getattr(ACTIVE_TRADER_DEFAULTS, name)
             continue
         raw = block[name]
-        if field.type is bool or name == "enabled":
+        if name in _ACTIVE_TRADER_BOOL_FIELDS:
             kwargs[name] = _validate_active_trader_bool(name, raw)
         else:
             integer = name in _ACTIVE_TRADER_INT_FIELDS
