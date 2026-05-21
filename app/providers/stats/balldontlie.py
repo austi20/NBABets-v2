@@ -256,6 +256,20 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             )
         return result, logs
 
+    async def fetch_live_player_stats(
+        self,
+        player_ids: list[int],
+        season: int,
+    ) -> ProviderFetchResult:
+        return await self._get_paginated(
+            "/stats",
+            params={
+                "player_ids[]": sorted(player_ids),
+                "seasons[]": [season],
+                "per_page": 100,
+            },
+        )
+
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self._api_key:
