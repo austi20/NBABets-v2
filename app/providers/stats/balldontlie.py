@@ -5,7 +5,7 @@ import logging
 from collections import deque
 from datetime import UTC, date, datetime
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from dateutil.parser import isoparse
@@ -261,14 +261,14 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
         player_ids: list[int],
         season: int,
     ) -> ProviderFetchResult:
-        return await self._get_paginated(
+        return cast(ProviderFetchResult, await self._get_paginated(
             "/stats",
             params={
                 "player_ids[]": sorted(player_ids),
                 "seasons[]": [season],
                 "per_page": 100,
             },
-        )
+        ))
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}

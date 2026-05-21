@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -13,7 +14,7 @@ from app.trading.live_stats_poller import parse_live_stats
 # Fixtures
 # ---------------------------------------------------------------------------
 
-_LIVE_PAYLOAD: dict = {
+_LIVE_PAYLOAD: dict[str, Any] = {
     "data": [
         {
             "player": {"id": 1, "first_name": "LeBron", "last_name": "James"},
@@ -221,6 +222,28 @@ def test_parse_live_stats_row_missing_player_id_is_skipped() -> None:
 def test_parse_live_stats_empty_data() -> None:
     assert parse_live_stats({"data": []}) == []
     assert parse_live_stats({}) == []
+
+
+def test_parse_live_stats_dnp_min_yields_zero() -> None:
+    """BDL returns "DNP" / "N/A" for did-not-play rows; must not raise."""
+    for dnp_value in ("DNP", "N/A", "DNP-CD"):
+        payload: dict[str, Any] = {
+            "data": [
+                {
+                    "player": {"id": 77},
+                    "game": {"period": 1, "time": "12:00"},
+                    "pts": 0,
+                    "reb": 0,
+                    "ast": 0,
+                    "fg3m": 0,
+                    "turnover": 0,
+                    "min": dnp_value,
+                }
+            ]
+        }
+        result = parse_live_stats(payload)
+        assert len(result) == 1, f"expected 1 row for min={dnp_value!r}"
+        assert result[0].minutes_played == 0.0, f"expected 0.0 for min={dnp_value!r}"
 
 
 # ---------------------------------------------------------------------------

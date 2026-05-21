@@ -29,7 +29,10 @@ def _parse_minutes(raw: Any) -> float:
     if not raw:
         return 0.0
     if ":" not in raw:
-        return float(raw)
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.0
     minutes, seconds = raw.split(":", 1)
     return float(minutes) + float(seconds) / 60.0
 
