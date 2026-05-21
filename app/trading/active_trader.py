@@ -126,7 +126,14 @@ class ActiveTrader:
             return
         cands = await self._candidates.candidates()
         for cand in cands:
-            await self._consider(cand)
+            try:
+                await self._consider(cand)
+            except Exception as exc:  # noqa: BLE001 - isolate one bad candidate
+                logger.warning(
+                    "active-trader: candidate %s raised during consideration: %s",
+                    cand.ticker, exc,
+                )
+                continue
 
     async def _consider(self, cand: ActiveCandidate) -> None:
         cfg = self._config
@@ -187,6 +194,8 @@ class ActiveTrader:
         return total
 
     def _risk_ok(self, cand: ActiveCandidate) -> bool:
+        # daily_loss_cap and reject_cooldown_seconds are intentionally not
+        # enforced here: the upcoming live wiring (ExposureRiskEngine) owns those.
         stake = cand.stake_cents / 100
         if stake > self._risk.per_order_cap:
             logger.debug("skip %s: per-order cap %.2f exceeded", cand.ticker, self._risk.per_order_cap)
@@ -201,7 +210,15 @@ class ActiveTrader:
 
     async def _place(self, cand: ActiveCandidate, yes_ask: float) -> None:
         limit_price_cents = int(round(yes_ask * 100))
-        qty = max(1, cand.stake_cents // limit_price_cents)
+        # Gate 11 (affordability): if the sized stake can't buy a single share at
+        # the limit price, skip rather than over-spend the risk-approved stake.
+        qty = cand.stake_cents // limit_price_cents
+        if qty < 1:
+            logger.debug(
+                "skip %s: stake %dc cannot afford 1 share at %dc",
+                cand.ticker, cand.stake_cents, limit_price_cents,
+            )
+            return
         ok = await self._portfolio.open_position(
             cand.ticker,
             qty,

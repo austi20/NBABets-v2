@@ -339,6 +339,41 @@ async def test_stop_terminates_loop_quickly() -> None:
 
 
 @pytest.mark.asyncio
+async def test_skip_when_stake_cannot_afford_one_share() -> None:
+    # stake 50c cannot afford a single share at 80c (yes_ask 0.80).
+    trader, book, pm, router, clock, _ = _build(candidates=[_cand(stake_cents=50)])
+    task = asyncio.create_task(trader.run())
+    await _pump(book, _entry("KX-A", 0.79, 0.80, clock))
+    assert router.buys == []
+    assert pm.position("KX-A") is None
+    await trader.stop()
+    await task
+
+
+@pytest.mark.asyncio
+async def test_one_bad_candidate_does_not_block_others() -> None:
+    # First candidate (KX-BAD) raises during consideration; second (KX-A) is good.
+    trader, book, pm, router, clock, _ = _build(
+        candidates=[_cand("KX-BAD"), _cand("KX-A")]
+    )
+    real_stdev = book.stdev_cents
+
+    def _boom(ticker: str, window_seconds: float = 60.0) -> float | None:
+        if ticker == "KX-BAD":
+            raise RuntimeError("synthetic stdev failure")
+        return real_stdev(ticker, window_seconds)
+
+    book.stdev_cents = _boom  # type: ignore[method-assign]
+    task = asyncio.create_task(trader.run())
+    await _pump(book, _entry("KX-BAD", 0.48, 0.50, clock))
+    await _pump(book, _entry("KX-A", 0.48, 0.50, clock))
+    assert len(_buys_for(router, "KX-A")) == 1  # good candidate still opened
+    assert _buys_for(router, "KX-BAD") == []  # bad candidate isolated
+    await trader.stop()
+    await task
+
+
+@pytest.mark.asyncio
 async def test_stop_is_idempotent() -> None:
     trader, _, _, _, _, _ = _build(candidates=[])
     task = asyncio.create_task(trader.run())
