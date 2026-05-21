@@ -10,7 +10,17 @@ from app.trading.live_limits import (
     ActiveTraderConfig,
     LimitsConfigError,
     load_active_trader_config,
+    load_live_limits,
 )
+from app.trading.risk import RiskLimits
+
+VALID_LIMITS: dict[str, object] = {
+    "per_order_cap": 0.25,
+    "per_market_cap": 0.50,
+    "max_open_notional": 2.00,
+    "daily_loss_cap": 2.00,
+    "reject_cooldown_seconds": 300,
+}
 
 VALID_BLOCK: dict[str, object] = {
     "enabled": True,
@@ -144,3 +154,47 @@ def test_active_trader_block_not_a_dict_rejected(tmp_path: Path) -> None:
     path = _write(tmp_path, {"active_trader": [1, 2, 3]})
     with pytest.raises(LimitsConfigError, match="active_trader block"):
         load_active_trader_config(path)
+
+
+def test_partial_block_fills_missing_keys_from_defaults(tmp_path: Path) -> None:
+    path = _write(tmp_path, {"active_trader": {"enabled": True}})
+    cfg = load_active_trader_config(path)
+    assert cfg.enabled is True
+    # Every key not supplied falls back to the module defaults.
+    assert cfg.tp_pct == ACTIVE_TRADER_DEFAULTS.tp_pct
+    assert cfg.max_open_positions == ACTIVE_TRADER_DEFAULTS.max_open_positions
+
+
+def test_active_trader_malformed_json_raises(tmp_path: Path) -> None:
+    path = tmp_path / "trading_limits.json"
+    path.write_text("{not valid json", encoding="utf-8")
+    with pytest.raises(LimitsConfigError, match="malformed"):
+        load_active_trader_config(path)
+
+
+def test_active_trader_top_level_not_a_dict_raises(tmp_path: Path) -> None:
+    path = tmp_path / "trading_limits.json"
+    path.write_text("[1, 2, 3]", encoding="utf-8")
+    with pytest.raises(LimitsConfigError, match="JSON object"):
+        load_active_trader_config(path)
+
+
+def test_load_live_limits_success(tmp_path: Path) -> None:
+    path = _write(tmp_path, VALID_LIMITS)
+    limits = load_live_limits(path)
+    assert isinstance(limits, RiskLimits)
+    assert limits.per_order_cap == 0.25
+    assert limits.reject_cooldown_seconds == 300
+
+
+def test_load_live_limits_missing_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(LimitsConfigError, match="not found"):
+        load_live_limits(tmp_path / "absent.json")
+
+
+def test_load_live_limits_negative_value_raises(tmp_path: Path) -> None:
+    bad = dict(VALID_LIMITS)
+    bad["per_order_cap"] = -1.0
+    path = _write(tmp_path, bad)
+    with pytest.raises(LimitsConfigError, match="must be >= 0"):
+        load_live_limits(path)
