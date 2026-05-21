@@ -4,6 +4,7 @@ import json
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
 
 from app.trading.risk import RiskLimits
 
@@ -167,7 +168,7 @@ def load_active_trader_config(path: Path | str) -> ActiveTraderConfig:
     if not isinstance(block, dict):
         raise LimitsConfigError("active_trader block must be a JSON object")
 
-    kwargs: dict[str, object] = {}
+    kwargs: dict[str, Any] = {}
     for field in fields(ActiveTraderConfig):
         name = field.name
         if name not in block:
