@@ -695,11 +695,23 @@ def _sample_generic_count_batch(
     return _draw_count_batch(adjusted_mean, means, variances, is_poisson, rng)
 
 
-def _classify_poisson_batch(means: np.ndarray, variances: np.ndarray) -> np.ndarray:
-    """Per-row poisson-vs-NB decision matching :func:`fit_count_distribution`/_sample_generic_count."""
+def _classify_poisson_batch(
+    means: np.ndarray, variances: np.ndarray, *, low_mean_poisson: bool = True
+) -> np.ndarray:
+    """Per-row poisson-vs-NB decision matching :func:`fit_count_distribution`.
+
+    The generic path (:func:`_sample_generic_count`) treats ``mean < 0.5`` as
+    Poisson, so ``low_mean_poisson`` defaults to ``True``. The per-market scalar
+    path (:func:`_draw_count`) decides family purely via
+    :func:`fit_count_distribution` with no low-mean shortcut, so those callers
+    pass ``low_mean_poisson=False``.
+    """
     bounded_means = np.maximum(means, 1e-6)
     bounded_vars = np.maximum(variances, bounded_means + 1e-6)
-    return (bounded_vars <= bounded_means * 1.05) | (means < 0.5)
+    is_poisson = bounded_vars <= bounded_means * 1.05
+    if low_mean_poisson:
+        is_poisson = is_poisson | (means < 0.5)
+    return is_poisson
 
 
 def _draw_count_batch(
@@ -759,6 +771,7 @@ def _sample_rebounds_batch(
     # Generic drawn first so its RNG state is unaffected when all rows fall back.
     generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
     if np.all(fallback_mask):
+        # All-fallback: skip the market draw entirely so the RNG stream matches a pure-generic batch.
         return generic_samples
 
     # Sanitize so NaN never reaches rng even on fallback rows.
@@ -777,7 +790,7 @@ def _sample_rebounds_batch(
     chance_mean = np.clip(base_chance_mean * scaling[:, None] * rebound_noise, 0.0, None)
 
     row_means_adj = chance_mean.mean(axis=1)
-    is_poisson = _classify_poisson_batch(row_means_adj, variances)
+    is_poisson = _classify_poisson_batch(row_means_adj, variances, low_mean_poisson=False)
     market_samples = _draw_count_batch(chance_mean, row_means_adj, variances, is_poisson, rng)
     market_samples = rng.binomial(market_samples.astype(int), conversion[:, None]).astype(float)
 
@@ -806,6 +819,7 @@ def _sample_assists_batch(
     # Generic drawn first so its RNG state is unaffected when all rows fall back.
     generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
     if np.all(fallback_mask):
+        # All-fallback: skip the market draw entirely so the RNG stream matches a pure-generic batch.
         return generic_samples
 
     opp_rate = np.where(fallback_mask, 0.03, np.maximum(opp_rate_raw, 0.03))
@@ -828,7 +842,7 @@ def _sample_assists_batch(
     opportunity_mean = np.clip(base_opportunity_mean * scaling[:, None], 0.0, None)
 
     row_means_adj = opportunity_mean.mean(axis=1)
-    is_poisson = _classify_poisson_batch(row_means_adj, variances)
+    is_poisson = _classify_poisson_batch(row_means_adj, variances, low_mean_poisson=False)
     market_samples = _draw_count_batch(opportunity_mean, row_means_adj, variances, is_poisson, rng)
     market_samples = rng.binomial(market_samples.astype(int), conversion[:, None]).astype(float)
 
@@ -875,7 +889,7 @@ def _sample_turnovers_batch(
         event_mean = np.clip(base_event_mean * scaling[:, None], 0.0, None)
 
         row_means_adj = event_mean.mean(axis=1)
-        is_poisson = _classify_poisson_batch(row_means_adj, variances * 1.25)
+        is_poisson = _classify_poisson_batch(row_means_adj, variances * 1.25, low_mean_poisson=False)
         market_samples = _draw_count_batch(event_mean, row_means_adj, variances * 1.25, is_poisson, rng)
         market_samples = rng.binomial(market_samples.astype(int), turnover_ratio[:, None]).astype(float)
         base_samples = np.where(fallback_mask[:, None], generic_samples, market_samples)
