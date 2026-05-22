@@ -87,6 +87,38 @@ def parse_live_stats(payload: dict[str, Any]) -> list[LivePlayerStats]:
     return results
 
 
+# market_key -> the LivePlayerStats field(s) summed to form the live stat.
+# Mirrors app/training/constants.py MARKET_TARGETS (pra = points+rebounds+assists).
+_STAT_FIELDS: dict[str, tuple[str, ...]] = {
+    "points": ("points",),
+    "rebounds": ("rebounds",),
+    "assists": ("assists",),
+    "threes": ("threes",),
+    "turnovers": ("turnovers",),
+    "pra": ("points", "rebounds", "assists"),
+}
+
+_QUARTER_MINUTES = 12.0
+_REGULATION_PERIODS = 4
+_REGULATION_MINUTES = _QUARTER_MINUTES * _REGULATION_PERIODS  # 48.0
+
+
+def _remaining_minutes(stat: LivePlayerStats) -> float:
+    """Game minutes left, linear projection horizon.
+
+    Regulation quarters after the current one are assumed full; in the 4th
+    period or any overtime only the current clock counts (no assumed extra OT).
+    Period 0/unknown is treated as a full regulation game.
+    """
+    clock_minutes = max(0.0, stat.clock_seconds_remaining / 60.0)
+    period = stat.period
+    if period <= 0:
+        return _REGULATION_MINUTES
+    if period < _REGULATION_PERIODS:
+        return clock_minutes + (_REGULATION_PERIODS - period) * _QUARTER_MINUTES
+    return clock_minutes
+
+
 _FINAL_MARKER = "final"
 
 
@@ -157,3 +189,56 @@ class LiveStatsPoller:
         for stat in parse_live_stats(payload):
             self._view[stat.player_id] = stat
         self._final |= _final_player_ids(payload)
+
+    # ------------------------------------------------------------------ pace
+    def current_stat(self, player_id: int, market_key: str) -> float | None:
+        """Live value of ``market_key`` for the player, or None if no data."""
+        stat = self._view.get(player_id)
+        if stat is None:
+            return None
+        fields = _STAT_FIELDS.get(market_key.lower())
+        if fields is None:
+            return None
+        return float(sum(getattr(stat, name) for name in fields))
+
+    def on_pace_to_hit(
+        self,
+        player_id: int,
+        market_key: str,
+        line_value: float,
+        side: str = "over",
+    ) -> bool:
+        """Linear projection of the live stat to game end vs the line.
+
+        ``projected = current + remaining_minutes * (current / minutes_played)``.
+        For YES-OVER, on pace means ``projected >= line``; for under, ``<=``.
+        Returns False when there is no live data — callers that need BDL-outage
+        "hold" semantics must check ``current_stat() is None`` first (the FSM
+        adapter raises in that case so the position holds).
+        """
+        current = self.current_stat(player_id, market_key)
+        if current is None:
+            return False
+        stat = self._view[player_id]
+        rate = current / stat.minutes_played if stat.minutes_played > 0 else 0.0
+        projected = current + _remaining_minutes(stat) * rate
+        if side.lower() == "under":
+            return projected <= line_value
+        return projected >= line_value
+
+    def is_signaling_entry(
+        self, player_id: int, market_key: str, line_value: float
+    ) -> bool:
+        """True when the live stat is on track to clear the line early.
+
+        ``current >= line * pace_threshold_pct`` AND at least
+        ``pace_remaining_pct_min`` of a regulation game still remains.
+        """
+        current = self.current_stat(player_id, market_key)
+        if current is None:
+            return False
+        if current < line_value * self._config.pace_threshold_pct:
+            return False
+        stat = self._view[player_id]
+        remaining_fraction = _remaining_minutes(stat) / _REGULATION_MINUTES
+        return remaining_fraction >= self._config.pace_remaining_pct_min

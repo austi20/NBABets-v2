@@ -9,7 +9,11 @@ import pytest
 from app.providers.stats.balldontlie import BallDontLieStatsProvider
 from app.schemas.domain import ProviderFetchResult
 from app.trading.live_limits import ACTIVE_TRADER_DEFAULTS
-from app.trading.live_stats_poller import LiveStatsPoller, parse_live_stats
+from app.trading.live_stats_poller import (
+    LivePlayerStats,
+    LiveStatsPoller,
+    parse_live_stats,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -419,3 +423,143 @@ def test_poller_run_stops_promptly_on_cancel() -> None:
             await task
 
     asyncio.run(asyncio.wait_for(scenario(), timeout=2))
+
+
+# ---------------------------------------------------------------------------
+# LiveStatsPoller — pace methods (P2.3)
+# ---------------------------------------------------------------------------
+
+
+def _stat(
+    *,
+    player_id: int = 1,
+    points: int = 0,
+    rebounds: int = 0,
+    assists: int = 0,
+    threes: int = 0,
+    turnovers: int = 0,
+    minutes_played: float = 0.0,
+    period: int = 1,
+    clock_seconds_remaining: float = 0.0,
+) -> LivePlayerStats:
+    return LivePlayerStats(
+        player_id=player_id,
+        points=points,
+        rebounds=rebounds,
+        assists=assists,
+        threes=threes,
+        turnovers=turnovers,
+        minutes_played=minutes_played,
+        period=period,
+        clock_seconds_remaining=clock_seconds_remaining,
+        last_updated=datetime.now(UTC),
+    )
+
+
+def _seeded_poller(*stats: LivePlayerStats) -> LiveStatsPoller:
+    async def fetch(ids: list[int]) -> dict[str, Any]:
+        return {"data": []}
+
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=set,
+        fetch=fetch,
+    )
+    for stat in stats:
+        poller._view[stat.player_id] = stat
+    return poller
+
+
+def test_current_stat_single_field() -> None:
+    poller = _seeded_poller(_stat(player_id=1, points=22))
+    assert poller.current_stat(1, "points") == 22.0
+
+
+def test_current_stat_pra_combo() -> None:
+    poller = _seeded_poller(_stat(player_id=1, points=10, rebounds=5, assists=4))
+    assert poller.current_stat(1, "pra") == 19.0
+
+
+def test_current_stat_none_when_no_data() -> None:
+    poller = _seeded_poller()
+    assert poller.current_stat(99, "points") is None
+
+
+def test_current_stat_none_for_unknown_market() -> None:
+    poller = _seeded_poller(_stat(player_id=1, points=22))
+    assert poller.current_stat(1, "steals") is None
+
+
+def test_on_pace_to_hit_true_when_projected_clears() -> None:
+    # 22 pts in 28.75 min, 5:30 left in Q3 -> ~17.5 min left, projects ~35 > 25.5
+    poller = _seeded_poller(
+        _stat(player_id=1, points=22, minutes_played=28.75, period=3, clock_seconds_remaining=330)
+    )
+    assert poller.on_pace_to_hit(1, "points", 25.5) is True
+
+
+def test_on_pace_to_hit_false_when_off_pace() -> None:
+    # 8 pts in 28.75 min, 2:00 left in Q4 -> ~2 min left, projects ~8.6 < 25.5
+    poller = _seeded_poller(
+        _stat(player_id=1, points=8, minutes_played=28.75, period=4, clock_seconds_remaining=120)
+    )
+    assert poller.on_pace_to_hit(1, "points", 25.5) is False
+
+
+def test_on_pace_to_hit_false_when_no_data() -> None:
+    poller = _seeded_poller()
+    assert poller.on_pace_to_hit(99, "points", 10.0) is False
+
+
+def test_on_pace_to_hit_zero_minutes_projects_current_only() -> None:
+    # minutes_played=0 -> rate 0 -> projected == current (10)
+    poller = _seeded_poller(_stat(player_id=1, points=10, minutes_played=0.0))
+    assert poller.on_pace_to_hit(1, "points", 10.0) is True
+    assert poller.on_pace_to_hit(1, "points", 10.5) is False
+
+
+def test_on_pace_to_hit_under_side() -> None:
+    # 5 pts in 30 min, 1:00 left in Q4 -> projects ~5.17; under 8 -> True, over 8 -> False
+    poller = _seeded_poller(
+        _stat(player_id=1, points=5, minutes_played=30.0, period=4, clock_seconds_remaining=60)
+    )
+    assert poller.on_pace_to_hit(1, "points", 8.0, side="under") is True
+    assert poller.on_pace_to_hit(1, "points", 8.0, side="over") is False
+
+
+def test_on_pace_to_hit_end_of_game_uses_current() -> None:
+    # Q4, no time left -> remaining 0 -> projected == current (26) >= 25.5
+    poller = _seeded_poller(
+        _stat(player_id=1, points=26, minutes_played=40.0, period=4, clock_seconds_remaining=0)
+    )
+    assert poller.on_pace_to_hit(1, "points", 25.5) is True
+
+
+def test_is_signaling_entry_true_exactly_at_thresholds() -> None:
+    # line 20 * 0.75 = 15.0 stat threshold; remaining 14.4 min = 30% of 48
+    # Q3 with 2.4 min left -> 2.4 + 12 = 14.4 remaining
+    poller = _seeded_poller(
+        _stat(player_id=1, points=15, minutes_played=20.0, period=3, clock_seconds_remaining=144)
+    )
+    assert poller.is_signaling_entry(1, "points", 20.0) is True
+
+
+def test_is_signaling_entry_false_below_stat_threshold() -> None:
+    # 14 < 15 stat threshold even though plenty of time remains
+    poller = _seeded_poller(
+        _stat(player_id=1, points=14, minutes_played=20.0, period=2, clock_seconds_remaining=600)
+    )
+    assert poller.is_signaling_entry(1, "points", 20.0) is False
+
+
+def test_is_signaling_entry_false_when_little_time_left() -> None:
+    # meets stat threshold (15) but only 2 min left -> fraction < 0.30
+    poller = _seeded_poller(
+        _stat(player_id=1, points=15, minutes_played=30.0, period=4, clock_seconds_remaining=120)
+    )
+    assert poller.is_signaling_entry(1, "points", 20.0) is False
+
+
+def test_is_signaling_entry_false_when_no_data() -> None:
+    poller = _seeded_poller()
+    assert poller.is_signaling_entry(99, "points", 20.0) is False
