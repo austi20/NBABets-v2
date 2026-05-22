@@ -428,6 +428,43 @@ def test_count_aware_parity() -> None:
     assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
 
 
+def test_partial_context_fallback() -> None:
+    """Half the rows are missing the market's required context keys, forcing the
+    batch sampler's per-row mask fallback to generic for those rows while the
+    other half take the populated rebounds path. The batched result must match
+    the scalar per-row reference (which applies the same per-row fallback)."""
+    n = 50
+    rng = np.random.default_rng(207)
+    means = rng.uniform(2.0, 12.0, size=n)
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-2.0, 2.0, size=n)
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+
+    full = _rebound_contexts(n, rng)
+    # Even rows keep full context; odd rows drop required keys -> generic fallback.
+    contexts: list[dict[str, float] | None] = [
+        full[i] if i % 2 == 0 else {} for i in range(n)
+    ]
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="rebounds",
+        contexts=contexts,
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "rebounds", PARITY_SAMPLE_SIZE
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
 def test_posterior_form() -> None:
     means = np.array([10.0], dtype=float)
     variances = np.array([10.0], dtype=float)  # poisson regime (var ~= mean)
