@@ -45,6 +45,45 @@ class CandidateProvider(Protocol):
     async def candidates(self) -> Iterable[ActiveCandidate]: ...
 
 
+class MergingCandidateProvider:
+    """Merge decision-pack candidates with pre-emptive live-pace signals.
+
+    Base (decision-pack) candidates always pass through. A pre-emptive candidate
+    from ``preemptive_source`` is added only when it is not already present (dedup
+    by ticker) and the live poller reports ``is_signaling_entry``. All merged
+    candidates still flow through ``ActiveTrader._consider``, so the entry gates
+    remain the single chokepoint ("pounce before the market reprices").
+
+    Spec: docs/plans/specs/profit-machine-design.md §1 (live-stats edge, use 2).
+    """
+
+    def __init__(
+        self,
+        *,
+        base: CandidateProvider,
+        poller: LiveStatsPoller,
+        preemptive_source: Callable[[], Iterable[ActiveCandidate]],
+    ) -> None:
+        self._base = base
+        self._poller = poller
+        self._preemptive_source = preemptive_source
+
+    async def candidates(self) -> list[ActiveCandidate]:
+        merged = list(await self._base.candidates())
+        seen = {cand.ticker for cand in merged}
+        for cand in self._preemptive_source():
+            if cand.ticker in seen:
+                continue
+            if cand.player_id is None or cand.stat_type is None:
+                continue
+            if self._poller.is_signaling_entry(
+                cand.player_id, cand.stat_type, cand.line_value
+            ):
+                merged.append(cand)
+                seen.add(cand.ticker)
+        return merged
+
+
 def make_on_pace_callable(
     poller: LiveStatsPoller,
 ) -> Callable[[PositionState], bool]:
