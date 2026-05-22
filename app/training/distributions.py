@@ -913,8 +913,6 @@ def _sample_threes_batch(
     Poisson attempts -> binomial makes. Falls back to generic when attempt_rate
     or make_rate is non-positive/non-finite (per-row mask).
     """
-    n, s = minutes.shape
-
     attempt_rate_raw = _stack_scalar_contexts(
         contexts, "estimated_three_point_attempts_per_minute", np.nan
     )
