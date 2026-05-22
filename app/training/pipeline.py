@@ -1598,6 +1598,8 @@ class TrainingPipeline:
         progress_state: tuple[int, int],
         detail_prefix: str,
     ) -> np.ndarray:
+        """Per-row fallback path. PRA routes here (its combo path is not batched),
+        and this is the reference the batched fast path is parity-tested against."""
         tasks = list(enumerate(zip(records, means, variances, lines, strict=False)))
 
         def summarize_task(task: tuple[int, tuple[dict[str, Any], float, float, float]]) -> tuple[int, float]:
