@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from threadpoolctl import threadpool_limits
 
 from app.config.settings import get_settings
-from app.core.resources import get_runtime_budget
+from app.core.resources import get_effective_worker_count, get_runtime_budget, set_worker_override
 from app.models.all import ModelRun, Prediction, PropMarket, RawPayload
 from app.schemas.domain import PropPrediction
 from app.services.rotation_audit import dataclass_records, write_game_audit
@@ -1042,8 +1042,15 @@ class TrainingPipeline:
         fold_args = list(enumerate(splits, start=1))
         with threadpool_limits(limits=inner_threads):
             if fold_workers > 1 and len(fold_args) > 1:
-                with ThreadPoolExecutor(max_workers=fold_workers) as executor:
-                    fold_results = list(executor.map(run_one_fold, fold_args))
+                # Cap XGBoost/MC threads inside each fold to inner_threads so the
+                # total stays near hardware threads (fold_workers * inner_threads)
+                # instead of fold_workers * full_worker_count (oversubscription).
+                set_worker_override(inner_threads)
+                try:
+                    with ThreadPoolExecutor(max_workers=fold_workers) as executor:
+                        fold_results = list(executor.map(run_one_fold, fold_args))
+                finally:
+                    set_worker_override(None)
             else:
                 fold_results = [run_one_fold(arg) for arg in fold_args]
 
@@ -1276,7 +1283,9 @@ class TrainingPipeline:
         if len(frame) < 120:
             return []
         purge_days = self._settings.calibration_purge_days
-        splitter = TimeSeriesSplit(n_splits=min(120, max(8, max(2, len(frame) // 120))))
+        splitter = TimeSeriesSplit(
+            n_splits=min(self._settings.calibration_max_folds, max(5, len(frame) // 5000))
+        )
         splits: list[tuple[np.ndarray, np.ndarray]] = []
         dates = pd.to_datetime(frame["game_date"]).dt.normalize()
         for train_idx, valid_idx in splitter.split(frame):
@@ -1554,6 +1563,7 @@ class TrainingPipeline:
                 mean,
                 variance,
                 float(line),
+                simulations=self._settings.calibration_simulation_samples,
                 minutes_mean=minutes_mean,
                 minutes_std=minutes_std,
                 market_key=market_key,
@@ -1585,7 +1595,7 @@ class TrainingPipeline:
         if not tasks:
             return []
         results: list[Any] = [None] * len(tasks)
-        worker_count = min(get_runtime_budget().worker_count, len(tasks))
+        worker_count = min(get_effective_worker_count(), len(tasks))
         if worker_count <= 1:
             for completed_count, task in enumerate(tasks, start=1):
                 result_index, result_value = worker(task)

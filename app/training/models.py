@@ -10,7 +10,7 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 
-from app.core.resources import get_runtime_budget
+from app.core.resources import get_effective_worker_count
 from app.training.constants import MARKET_TARGETS
 from app.training.features import clip_non_negative, role_bucket_label, role_prior_flag_series
 
@@ -187,7 +187,7 @@ RAW_MODEL_EXCLUDE_TOKENS = ("consensus_prob", "line_movement_", "book_count", "m
 
 
 def _make_regressor(random_state: int, *, reg_alpha: float = 0.0) -> Any:
-    worker_count = get_runtime_budget().worker_count
+    worker_count = get_effective_worker_count()
     if XGBRegressor is not None:
         return XGBRegressor(
             n_estimators=220,
