@@ -610,12 +610,7 @@ def _sample_market_distribution_batch(
     zero_minutes_rows = minutes.max(axis=1) <= 0.0
 
     if dist_family == "count_aware":
-        # TEMPORARY placeholder: routing to the generic count path produces
-        # DIFFERENT statistical output than the scalar _sample_count_aware_distribution
-        # (it ignores the count-aware context entirely). Task 4 replaces this with the
-        # real count-aware batch sampler before any caller (pipeline integration,
-        # Task 5) routes through the batch entry point. Do not wire callers here yet.
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_count_aware_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "threes":
         samples = _sample_threes_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "rebounds":
@@ -742,6 +737,42 @@ def _draw_count_batch(
     p = np.clip(size[:, None] / (size[:, None] + adjusted_mean), 1e-6, 1.0 - 1e-6)
     nb_samples = rng.negative_binomial(n=size[:, None], p=p).astype(float)
     nb_samples = np.where(nb_degenerate[:, None], poisson_samples, nb_samples)
+
+    return np.where(is_poisson[:, None], poisson_samples, nb_samples).astype(float)
+
+
+def _sample_count_aware_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_count_aware_distribution`. Returns ``(N, S)``.
+
+    Same adjusted-mean shaping as the generic count path, but the NB size comes
+    from ``fit_count_distribution``'s ``n`` (= bounded_mean**2/(bounded_var-bounded_mean))
+    directly rather than from the dispersion shortcut, and there is no
+    ``mean < 0.5`` Poisson fallback (Poisson is chosen purely by the variance test).
+    """
+    base_minutes = np.maximum(minutes.mean(axis=1), 1.0)
+    shared_latent = _stack_scalar_contexts(contexts, "shared_latent", 1.0)
+    adjusted_mean = np.clip(
+        means[:, None] * (minutes / base_minutes[:, None]) * shared_latent[:, None], 1e-6, None
+    )
+
+    # Mirror fit_count_distribution's internal bounding (means already >= 1e-6 here).
+    bounded_means = np.maximum(means, 1e-6)
+    bounded_vars = np.maximum(variances, bounded_means + 1e-6)
+    is_poisson = bounded_vars <= bounded_means * 1.05
+
+    poisson_samples = rng.poisson(lam=adjusted_mean).astype(float)
+
+    # NB size from params["n"]; clamp denominator away from zero (Poisson rows are
+    # overwritten anyway, so their bogus size never reaches the draw output).
+    size = np.maximum(bounded_means**2 / np.maximum(bounded_vars - bounded_means, 1e-6), 1e-3)
+    p = np.clip(size[:, None] / (size[:, None] + adjusted_mean), 1e-6, 1.0 - 1e-6)
+    nb_samples = rng.negative_binomial(n=size[:, None], p=p).astype(float)
 
     return np.where(is_poisson[:, None], poisson_samples, nb_samples).astype(float)
 

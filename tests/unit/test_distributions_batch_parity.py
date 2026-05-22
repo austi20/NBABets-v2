@@ -369,6 +369,65 @@ def test_points_parity() -> None:
     assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
 
 
+def test_count_aware_parity() -> None:
+    """count_aware family parity. Spans overdispersed ranges so both Poisson
+    (var ~= mean) and NB (var >> mean) rows occur, including low-mean NB rows
+    where count_aware diverges from the generic path (generic shortcuts
+    mean < 0.5 to Poisson; count_aware always uses fit_count_distribution's n)."""
+    n = 50
+    rng = np.random.default_rng(206)
+    # 15 low-mean strongly-overdispersed rows: exercise the count-aware-only NB
+    # branch for mean < 0.5 (the generic path would Poisson-shortcut these).
+    low_means = rng.uniform(0.15, 0.49, size=15)
+    low_vars = low_means + rng.uniform(1.0, 4.0, size=15) * low_means
+    # 35 normal rows mixing near-Poisson (var ~= mean) and overdispersed (var >> mean).
+    hi_means = rng.uniform(0.6, 25.0, size=35)
+    hi_extra = np.where(
+        np.arange(35) % 2 == 0,
+        rng.uniform(0.01, 0.04, size=35) * hi_means,  # var <= mean*1.05 -> poisson
+        rng.uniform(0.5, 2.0, size=35) * hi_means,  # var >> mean -> NB
+    )
+    hi_vars = hi_means + hi_extra
+    means = np.concatenate([low_means, hi_means])
+    variances = np.concatenate([low_vars, hi_vars])
+    # Lines near each mean (and at 0.5 for low rows) so the over-prob is sensitive.
+    lines = np.concatenate([np.full(15, 0.5), hi_means + rng.uniform(-3.0, 3.0, size=35)])
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts: list[dict[str, float] | None] = [{} for _ in range(n)]
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="rebounds",  # ignored: count_aware routes before market_key dispatch
+        contexts=contexts,
+        dist_family="count_aware",
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    # Reference uses the scalar count-aware path via summarize_line_probability,
+    # which accepts dist_family and routes count_aware before the market_key dispatch.
+    p_old = np.empty(n, dtype=float)
+    for i in range(n):
+        summary = summarize_line_probability(
+            float(means[i]),
+            float(variances[i]),
+            float(lines[i]),
+            PARITY_SAMPLE_SIZE,
+            minutes_mean=float(minutes_means[i]),
+            minutes_std=float(minutes_stds[i]),
+            market_key="rebounds",
+            context=contexts[i],
+            dist_family="count_aware",
+        )
+        p_old[i] = summary.over_probability
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
 def test_posterior_form() -> None:
     means = np.array([10.0], dtype=float)
     variances = np.array([10.0], dtype=float)  # poisson regime (var ~= mean)
