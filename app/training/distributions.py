@@ -552,6 +552,190 @@ def _draw_count(mean: np.ndarray, variance: float, sample_size: int, rng: np.ran
     return nbinom(n=size, p=probability).rvs(size=sample_size, random_state=rng).astype(float)
 
 
+def simulate_line_probabilities_batch(
+    *,
+    means: np.ndarray,
+    variances: np.ndarray,
+    lines: np.ndarray,
+    minutes_means: np.ndarray,
+    minutes_stds: np.ndarray,
+    market_key: str,
+    contexts: list[dict[str, float] | None],
+    dist_family: DistFamily = "legacy",
+    sample_size: int | None = None,
+    seed: int = 42,
+) -> np.ndarray:
+    """Vectorized over-probability for ``N`` rows of a single market.
+
+    Mirrors :func:`summarize_line_probability` row-by-row but draws all samples
+    in one batched numpy call. Returns ``(N,)`` over-probabilities.
+    """
+    means = np.asarray(means, dtype=float)
+    n = means.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=float)
+    sample_count = sample_size if sample_size is not None else get_settings().simulation_min_samples
+    rng = np.random.default_rng(seed)
+    samples = _sample_market_distribution_batch(
+        means=means,
+        variances=np.asarray(variances, dtype=float),
+        sample_size=sample_count,
+        rng=rng,
+        minutes_means=np.asarray(minutes_means, dtype=float),
+        minutes_stds=np.asarray(minutes_stds, dtype=float),
+        market_key=market_key,
+        contexts=contexts,
+        dist_family=dist_family,
+    )
+    over_counts = np.sum(samples > np.asarray(lines, dtype=float)[:, None], axis=1)
+    return (over_counts + 0.5) / (sample_count + 1.0)
+
+
+def _sample_market_distribution_batch(
+    *,
+    means: np.ndarray,
+    variances: np.ndarray,
+    sample_size: int,
+    rng: np.random.Generator,
+    minutes_means: np.ndarray,
+    minutes_stds: np.ndarray,
+    market_key: str | None,
+    contexts: list[dict[str, float] | None],
+    dist_family: DistFamily = "legacy",
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_market_distribution`. Returns ``(N, S)``."""
+    bounded_means = np.maximum(means, 1e-6)
+    bounded_vars = np.maximum(variances, bounded_means + 1e-6)
+    minutes = _sample_minutes_batch(minutes_means, minutes_stds, sample_size, rng)
+    zero_minutes_rows = minutes.max(axis=1) <= 0.0
+
+    if dist_family == "count_aware":
+        # Count-aware path routes to generic for now; a later task implements
+        # the real count-aware batch sampler (mirror _sample_count_aware_distribution).
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    elif market_key == "threes":
+        # Later task replaces with _sample_threes_batch (falls back to generic on missing ctx).
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    elif market_key == "rebounds":
+        # Later task replaces with _sample_rebounds_batch.
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    elif market_key == "assists":
+        # Later task replaces with _sample_assists_batch.
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    elif market_key == "turnovers":
+        # Later task replaces with _sample_turnovers_batch.
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    elif market_key == "points":
+        # Later task replaces with _sample_points_batch.
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+    else:
+        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+
+    if np.any(zero_minutes_rows):
+        samples[zero_minutes_rows] = 0.0
+    return samples
+
+
+def _sample_minutes_batch(
+    minutes_means: np.ndarray,
+    minutes_stds: np.ndarray,
+    sample_size: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_minutes`. Returns ``(N, S)``.
+
+    Sanitize -> compute-all-rows -> overwrite-masked-rows so NaN params never
+    reach the rng draw.
+    """
+    n = minutes_means.shape[0]
+    nan_rows = ~np.isfinite(minutes_means)
+    nonpos_rows = (~nan_rows) & (minutes_means <= 0.0)
+
+    safe_mean = np.where(nan_rows | nonpos_rows, 1.0, np.maximum(minutes_means, 1.0))
+    fallback_std = np.sqrt(safe_mean) * 0.5
+    std_source = np.where(np.isfinite(minutes_stds), minutes_stds, fallback_std)
+    safe_std = np.maximum(std_source, 1.0)
+
+    z = rng.standard_normal((n, sample_size))
+    draws = np.clip(safe_mean[:, None] + safe_std[:, None] * z, 6.0, 48.0)
+
+    if np.any(nan_rows):
+        draws[nan_rows] = 30.0
+    if np.any(nonpos_rows):
+        draws[nonpos_rows] = 0.0
+    return draws
+
+
+def _stack_scalar_contexts(
+    contexts: list[dict[str, float] | None],
+    key: str,
+    fallback: float,
+) -> np.ndarray:
+    """Pull a scalar context value per row into a ``(N,)`` array (fallback if absent)."""
+    out = np.empty(len(contexts), dtype=float)
+    for i, ctx in enumerate(contexts):
+        out[i] = _context_value(ctx, key, fallback)
+    return out
+
+
+def _sample_generic_count_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_generic_count`. Returns ``(N, S)``."""
+    base_minutes = np.maximum(minutes.mean(axis=1), 1.0)
+    shared_latent = _stack_scalar_contexts(contexts, "shared_latent", 1.0)
+    adjusted_mean = np.clip(
+        means[:, None] * (minutes / base_minutes[:, None]) * shared_latent[:, None], 1e-6, None
+    )
+    is_poisson = _classify_poisson_batch(means, variances)
+    return _draw_count_batch(adjusted_mean, means, variances, is_poisson, rng)
+
+
+def _classify_poisson_batch(means: np.ndarray, variances: np.ndarray) -> np.ndarray:
+    """Per-row poisson-vs-NB decision matching :func:`fit_count_distribution`/_sample_generic_count."""
+    bounded_means = np.maximum(means, 1e-6)
+    bounded_vars = np.maximum(variances, bounded_means + 1e-6)
+    return (bounded_vars <= bounded_means * 1.05) | (means < 0.5)
+
+
+def _draw_count_batch(
+    adjusted_mean: np.ndarray,
+    row_means: np.ndarray,
+    row_variances: np.ndarray,
+    is_poisson: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Batched Poisson/NB draw. Returns ``(N, S)``.
+
+    ``adjusted_mean`` is the ``(N, S)`` per-sample rate. ``row_means`` /
+    ``row_variances`` are the ``(N,)`` scalars driving the NB dispersion. The
+    family decision is supplied by the caller as ``is_poisson`` because the two
+    callers differ: the generic sampler keys off the model mean/variance (and
+    treats ``mean < 0.5`` as Poisson), while per-market callers mirroring scalar
+    :func:`_draw_count` should pass ``row_means = adjusted_mean.mean(axis=1)``
+    with ``is_poisson`` derived from those per-row means via
+    :func:`fit_count_distribution`. Used by the generic sampler now and by the
+    rebounds/assists/turnovers batch samplers in later tasks.
+    """
+    poisson_samples = rng.poisson(lam=adjusted_mean).astype(float)
+
+    dispersion = np.maximum(
+        (row_variances - row_means) / np.maximum(row_means**2, 1e-6), 0.0
+    )
+    # NB rows with negligible dispersion fall back to poisson.
+    nb_degenerate = dispersion <= 1e-6
+    size = np.maximum(1.0 / np.where(dispersion <= 1e-6, np.inf, dispersion), 1e-3)
+    p = np.clip(size[:, None] / (size[:, None] + adjusted_mean), 1e-6, 1.0 - 1e-6)
+    nb_samples = rng.negative_binomial(n=size[:, None], p=p).astype(float)
+    nb_samples = np.where(nb_degenerate[:, None], poisson_samples, nb_samples)
+
+    return np.where(is_poisson[:, None], poisson_samples, nb_samples).astype(float)
+
+
 def _context_value(context: dict[str, float] | None, key: str, fallback: float) -> float:
     if context is None:
         return float(fallback)
