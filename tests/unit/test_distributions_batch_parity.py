@@ -23,7 +23,8 @@ SAMPLE_SIZE = get_settings().simulation_min_samples
 # parity is statistical, not bitwise. The 0.01 tolerance is below the max-row
 # MC noise floor at the default sample count, so the cross-stream parity tests
 # draw enough samples for the noise floor to sit under tolerance (error ~ 1/sqrt(S)).
-PARITY_SAMPLE_SIZE = max(SAMPLE_SIZE, 40000)
+_MIN_PARITY_SAMPLES = 40_000  # noise ~1/sqrt(S) ~= 0.005 < tolerance at this count
+PARITY_SAMPLE_SIZE = max(SAMPLE_SIZE, _MIN_PARITY_SAMPLES)
 
 
 def representative_rows(market_key: str, n: int) -> dict[str, np.ndarray | list]:
@@ -134,6 +135,9 @@ def test_minutes_edge_cases() -> None:
     )
 
     assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+    # Row 1 has minutes_mean <= 0 -> minutes clamp to zero -> ~0 production ->
+    # over-prob for a positive line collapses to ~0. Self-documents the edge case.
+    assert p_new[1] < 0.01
 
 
 def test_empty_input() -> None:

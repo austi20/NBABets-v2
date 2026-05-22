@@ -610,8 +610,11 @@ def _sample_market_distribution_batch(
     zero_minutes_rows = minutes.max(axis=1) <= 0.0
 
     if dist_family == "count_aware":
-        # Count-aware path routes to generic for now; a later task implements
-        # the real count-aware batch sampler (mirror _sample_count_aware_distribution).
+        # TEMPORARY placeholder: routing to the generic count path produces
+        # DIFFERENT statistical output than the scalar _sample_count_aware_distribution
+        # (it ignores the count-aware context entirely). Task 4 replaces this with the
+        # real count-aware batch sampler before any caller (pipeline integration,
+        # Task 5) routes through the batch entry point. Do not wire callers here yet.
         samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "threes":
         # Later task replaces with _sample_threes_batch (falls back to generic on missing ctx).
