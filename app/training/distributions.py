@@ -620,14 +620,11 @@ def _sample_market_distribution_batch(
         # Later task replaces with _sample_threes_batch (falls back to generic on missing ctx).
         samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "rebounds":
-        # Later task replaces with _sample_rebounds_batch.
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_rebounds_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "assists":
-        # Later task replaces with _sample_assists_batch.
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_assists_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "turnovers":
-        # Later task replaces with _sample_turnovers_batch.
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_turnovers_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "points":
         # Later task replaces with _sample_points_batch.
         samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
@@ -737,6 +734,159 @@ def _draw_count_batch(
     nb_samples = np.where(nb_degenerate[:, None], poisson_samples, nb_samples)
 
     return np.where(is_poisson[:, None], poisson_samples, nb_samples).astype(float)
+
+
+def _sample_rebounds_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_rebounds`. Returns ``(N, S)``.
+
+    Falls back to generic when chances_rate or conversion non-positive (per-row mask).
+    Sanitize-compute-all-overwrite: NaN never reaches rng.
+    """
+    n, s = minutes.shape
+
+    chances_rate_raw = _stack_scalar_contexts(contexts, "rebound_chances_total_per_minute", np.nan)
+    conversion_raw = _stack_scalar_contexts(contexts, "rebound_conversion_rate", np.nan)
+    fallback_mask = ~(np.isfinite(chances_rate_raw) & (chances_rate_raw > 0.0)) | ~(
+        np.isfinite(conversion_raw) & (conversion_raw > 0.0)
+    )
+
+    # Generic drawn first so its RNG state is unaffected when all rows fall back.
+    generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
+    if np.all(fallback_mask):
+        return generic_samples
+
+    # Sanitize so NaN never reaches rng even on fallback rows.
+    chances_rate = np.where(fallback_mask, 0.05, np.maximum(chances_rate_raw, 0.05))
+    conversion = np.clip(np.where(fallback_mask, 0.5, conversion_raw), 0.05, 0.95)
+    shared_latent = np.maximum(_stack_scalar_contexts(contexts, "shared_latent", 1.0), 0.5)
+    volatility = np.clip(_stack_scalar_contexts(contexts, "rebounds_std_10", 0.0), 0.0, 8.0)
+    sigma_arr = np.minimum(0.30, 0.08 + 0.02 * volatility)
+
+    rebound_noise = rng.lognormal(mean=0.0, sigma=sigma_arr[:, None] * np.ones((1, s)), size=(n, s))
+    base_chance_mean = np.clip(minutes * chances_rate[:, None] * shared_latent[:, None], 0.0, None)
+    expected_rebounds = base_chance_mean * conversion[:, None]
+    # _mean_anchor_multiplier is scalar per row; compute vectorized equivalent.
+    observed_mean = np.maximum(expected_rebounds.mean(axis=1), 1e-6)
+    scaling = np.clip(np.maximum(means, 1e-6) / observed_mean, 0.25, 4.0)
+    chance_mean = np.clip(base_chance_mean * scaling[:, None] * rebound_noise, 0.0, None)
+
+    row_means_adj = chance_mean.mean(axis=1)
+    is_poisson = _classify_poisson_batch(row_means_adj, variances)
+    market_samples = _draw_count_batch(chance_mean, row_means_adj, variances, is_poisson, rng)
+    market_samples = rng.binomial(market_samples.astype(int), conversion[:, None]).astype(float)
+
+    return np.where(fallback_mask[:, None], generic_samples, market_samples)
+
+
+def _sample_assists_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_assists`. Returns ``(N, S)``.
+
+    Falls back to generic when creation rate or conversion non-positive (per-row mask).
+    """
+    n, s = minutes.shape
+
+    opp_rate_raw = _stack_scalar_contexts(contexts, "assist_creation_proxy_per_minute", np.nan)
+    conversion_raw = _stack_scalar_contexts(contexts, "assist_conversion_rate", np.nan)
+    fallback_mask = ~(np.isfinite(opp_rate_raw) & (opp_rate_raw > 0.0)) | ~(
+        np.isfinite(conversion_raw) & (conversion_raw > 0.0)
+    )
+
+    # Generic drawn first so its RNG state is unaffected when all rows fall back.
+    generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
+    if np.all(fallback_mask):
+        return generic_samples
+
+    opp_rate = np.where(fallback_mask, 0.03, np.maximum(opp_rate_raw, 0.03))
+    conversion = np.clip(np.where(fallback_mask, 0.3, conversion_raw), 0.08, 0.65)
+    passes_rate_raw = _stack_scalar_contexts(contexts, "passes_per_minute", np.nan)
+    default_passes = opp_rate * 6.0
+    passes_rate = np.maximum(
+        np.where(np.isfinite(passes_rate_raw), passes_rate_raw, default_passes), 0.5
+    )
+    shared_latent = np.maximum(_stack_scalar_contexts(contexts, "shared_latent", 1.0), 0.55)
+
+    base_opportunity_mean = np.clip(
+        minutes * (0.55 * opp_rate[:, None] + 0.45 * passes_rate[:, None] / 8.0) * shared_latent[:, None],
+        0.0,
+        None,
+    )
+    expected_assists = base_opportunity_mean * conversion[:, None]
+    observed_mean = np.maximum(expected_assists.mean(axis=1), 1e-6)
+    scaling = np.clip(np.maximum(means, 1e-6) / observed_mean, 0.25, 4.0)
+    opportunity_mean = np.clip(base_opportunity_mean * scaling[:, None], 0.0, None)
+
+    row_means_adj = opportunity_mean.mean(axis=1)
+    is_poisson = _classify_poisson_batch(row_means_adj, variances)
+    market_samples = _draw_count_batch(opportunity_mean, row_means_adj, variances, is_poisson, rng)
+    market_samples = rng.binomial(market_samples.astype(int), conversion[:, None]).astype(float)
+
+    return np.where(fallback_mask[:, None], generic_samples, market_samples)
+
+
+def _sample_turnovers_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_turnovers`. Returns ``(N, S)``.
+
+    Falls back to generic when touches_rate or turnover_ratio non-positive (per-row mask).
+    Zero-inflation applied to all rows (generic path included) matching the scalar.
+    """
+    n, s = minutes.shape
+
+    touches_rate_raw = _stack_scalar_contexts(contexts, "touches_per_minute", np.nan)
+    turnover_ratio_raw = _stack_scalar_contexts(contexts, "turnover_ratio", np.nan)
+    fallback_mask = ~(np.isfinite(touches_rate_raw) & (touches_rate_raw > 0.0)) | ~(
+        np.isfinite(turnover_ratio_raw) & (turnover_ratio_raw > 0.0)
+    )
+
+    # Generic drawn first so its RNG state is unaffected when all rows fall back.
+    generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
+
+    if not np.all(fallback_mask):
+        touches_rate = np.where(fallback_mask, 0.5, np.maximum(touches_rate_raw, 0.5))
+        turnover_ratio = np.clip(np.where(fallback_mask, 0.1, turnover_ratio_raw), 0.02, 0.35)
+        usage_rate = np.clip(_stack_scalar_contexts(contexts, "usage_rate", 0.22), 0.08, 0.45)
+        shared_latent = np.maximum(_stack_scalar_contexts(contexts, "shared_latent", 1.0), 0.6)
+
+        base_event_mean = np.clip(
+            minutes * touches_rate[:, None] * shared_latent[:, None] * (0.45 + usage_rate[:, None]),
+            0.0,
+            None,
+        )
+        expected_turnovers = base_event_mean * turnover_ratio[:, None]
+        observed_mean = np.maximum(expected_turnovers.mean(axis=1), 1e-6)
+        scaling = np.clip(np.maximum(means, 1e-6) / observed_mean, 0.25, 4.0)
+        event_mean = np.clip(base_event_mean * scaling[:, None], 0.0, None)
+
+        row_means_adj = event_mean.mean(axis=1)
+        is_poisson = _classify_poisson_batch(row_means_adj, variances * 1.25)
+        market_samples = _draw_count_batch(event_mean, row_means_adj, variances * 1.25, is_poisson, rng)
+        market_samples = rng.binomial(market_samples.astype(int), turnover_ratio[:, None]).astype(float)
+        base_samples = np.where(fallback_mask[:, None], generic_samples, market_samples)
+    else:
+        base_samples = generic_samples
+
+    # Zero-inflation: per-row p_zero = exp(-clamp(mean, 0.1, 5.0)).
+    clamped_means = np.clip(means, 0.1, 5.0)
+    p_zero_arr = np.exp(-clamped_means)
+    zero_mask = rng.random((n, s)) < p_zero_arr[:, None]
+    return np.where(zero_mask, 0.0, base_samples)
 
 
 def _context_value(context: dict[str, float] | None, key: str, fallback: float) -> float:

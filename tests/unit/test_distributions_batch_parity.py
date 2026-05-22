@@ -155,6 +155,128 @@ def test_empty_input() -> None:
     np.testing.assert_array_equal(result, np.zeros(0, dtype=float))
 
 
+def _rebound_contexts(n: int, rng: np.random.Generator) -> list[dict[str, float]]:
+    return [
+        {
+            "rebound_chances_total_per_minute": float(rng.uniform(0.3, 1.2)),
+            "rebound_conversion_rate": float(rng.uniform(0.1, 0.5)),
+            "rebounds_std_10": float(rng.uniform(0.5, 4.0)),
+            "shared_latent": float(rng.uniform(0.7, 1.3)),
+        }
+        for _ in range(n)
+    ]
+
+
+def _assist_contexts(n: int, rng: np.random.Generator) -> list[dict[str, float]]:
+    return [
+        {
+            "assist_creation_proxy_per_minute": float(rng.uniform(0.05, 0.4)),
+            "assist_conversion_rate": float(rng.uniform(0.1, 0.6)),
+            "passes_per_minute": float(rng.uniform(2.0, 8.0)),
+            "shared_latent": float(rng.uniform(0.7, 1.3)),
+        }
+        for _ in range(n)
+    ]
+
+
+def _turnover_contexts(n: int, rng: np.random.Generator) -> list[dict[str, float]]:
+    return [
+        {
+            "touches_per_minute": float(rng.uniform(0.5, 3.0)),
+            "turnover_ratio": float(rng.uniform(0.03, 0.25)),
+            "usage_rate": float(rng.uniform(0.10, 0.35)),
+            "shared_latent": float(rng.uniform(0.7, 1.3)),
+        }
+        for _ in range(n)
+    ]
+
+
+def test_rebounds_parity() -> None:
+    n = 50
+    rng = np.random.default_rng(201)
+    means = rng.uniform(2.0, 12.0, size=n)
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-2.0, 2.0, size=n)
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts = _rebound_contexts(n, rng)
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="rebounds",
+        contexts=contexts,
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "rebounds", PARITY_SAMPLE_SIZE
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
+def test_assists_parity() -> None:
+    n = 50
+    rng = np.random.default_rng(202)
+    means = rng.uniform(1.0, 10.0, size=n)
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-2.0, 2.0, size=n)
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts = _assist_contexts(n, rng)
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="assists",
+        contexts=contexts,
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "assists", PARITY_SAMPLE_SIZE
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
+def test_turnovers_parity() -> None:
+    """Includes low-mean rows to exercise the zero-inflation path."""
+    n = 50
+    rng = np.random.default_rng(203)
+    # Mix of low-mean (heavy zero-inflation) and normal rows.
+    means = np.concatenate([rng.uniform(0.3, 1.0, size=15), rng.uniform(1.0, 6.0, size=35)])
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-1.0, 1.0, size=n)
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts = _turnover_contexts(n, rng)
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="turnovers",
+        contexts=contexts,
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "turnovers", PARITY_SAMPLE_SIZE
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
 def test_posterior_form() -> None:
     means = np.array([10.0], dtype=float)
     variances = np.array([10.0], dtype=float)  # poisson regime (var ~= mean)
