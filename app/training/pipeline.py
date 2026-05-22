@@ -37,7 +37,6 @@ from app.training.data_sufficiency import annotate_tiers
 from app.training.distributions import (
     DistributionSummary,
     simulate_joint_combo_probability,
-    simulate_line_probabilities_batch,
     simulate_line_probability,
     summarize_line_probability,
 )
@@ -1541,65 +1540,6 @@ class TrainingPipeline:
         progress_state: tuple[int, int],
         detail_prefix: str,
     ) -> np.ndarray:
-        n = len(records)
-        if n == 0:
-            return np.zeros(0, dtype=float)
-
-        # PRA keeps the legacy per-row path (legacy combo handling, not yet batched).
-        if market_key == "pra":
-            return self._parallel_market_probabilities_legacy(
-                records=records,
-                means=means,
-                variances=variances,
-                lines=lines,
-                market_key=market_key,
-                progress_callback=progress_callback,
-                progress_state=progress_state,
-                detail_prefix=detail_prefix,
-            )
-
-        minutes_means = np.array(
-            [
-                _row_optional_float(r, ("adjusted_projected_minutes", "predicted_minutes", "minutes_avg_10"))
-                for r in records
-            ],
-            dtype=float,
-        )
-        minutes_stds = np.array(
-            [_row_optional_float(r, ("predicted_minutes_std", "minutes_volatility")) for r in records],
-            dtype=float,
-        )
-        contexts: list[dict[str, float] | None] = [self._simulation_context(r, market_key) for r in records]
-
-        probabilities = simulate_line_probabilities_batch(
-            means=np.asarray(means, dtype=float),
-            variances=np.asarray(variances, dtype=float),
-            lines=np.asarray(lines, dtype=float),
-            minutes_means=minutes_means,
-            minutes_stds=minutes_stds,
-            market_key=market_key,
-            contexts=contexts,
-            dist_family=self._dist_family_for_market(market_key),
-        )
-
-        if progress_callback is not None and progress_state[1] > 0:
-            progress_callback(progress_state[0] + n, progress_state[1], f"{detail_prefix}: batch x{n}")
-        return probabilities
-
-    def _parallel_market_probabilities_legacy(
-        self,
-        *,
-        records: list[dict[str, Any]],
-        means: np.ndarray,
-        variances: np.ndarray,
-        lines: np.ndarray,
-        market_key: str,
-        progress_callback: ProgressCallback | None,
-        progress_state: tuple[int, int],
-        detail_prefix: str,
-    ) -> np.ndarray:
-        """Per-row fallback path. PRA routes here (its combo path is not batched),
-        and this is the reference the batched fast path is parity-tested against."""
         tasks = list(enumerate(zip(records, means, variances, lines, strict=False)))
 
         def summarize_task(task: tuple[int, tuple[dict[str, Any], float, float, float]]) -> tuple[int, float]:
