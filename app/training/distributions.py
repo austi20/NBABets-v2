@@ -617,8 +617,7 @@ def _sample_market_distribution_batch(
         # Task 5) routes through the batch entry point. Do not wire callers here yet.
         samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "threes":
-        # Later task replaces with _sample_threes_batch (falls back to generic on missing ctx).
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_threes_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "rebounds":
         samples = _sample_rebounds_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "assists":
@@ -626,8 +625,7 @@ def _sample_market_distribution_batch(
     elif market_key == "turnovers":
         samples = _sample_turnovers_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     elif market_key == "points":
-        # Later task replaces with _sample_points_batch.
-        samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
+        samples = _sample_points_batch(bounded_means, bounded_vars, minutes, rng, contexts)
     else:
         samples = _sample_generic_count_batch(bounded_means, bounded_vars, minutes, rng, contexts)
 
@@ -901,6 +899,135 @@ def _sample_turnovers_batch(
     p_zero_arr = np.exp(-clamped_means)
     zero_mask = rng.random((n, s)) < p_zero_arr[:, None]
     return np.where(zero_mask, 0.0, base_samples)
+
+
+def _sample_threes_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_threes`. Returns ``(N, S)``.
+
+    Poisson attempts -> binomial makes. Falls back to generic when attempt_rate
+    or make_rate is non-positive/non-finite (per-row mask).
+    """
+    n, s = minutes.shape
+
+    attempt_rate_raw = _stack_scalar_contexts(
+        contexts, "estimated_three_point_attempts_per_minute", np.nan
+    )
+    make_rate_raw = _stack_scalar_contexts(contexts, "three_point_make_rate", np.nan)
+    fallback_mask = ~(np.isfinite(attempt_rate_raw) & (attempt_rate_raw > 0.0)) | ~(
+        np.isfinite(make_rate_raw) & (make_rate_raw > 0.0)
+    )
+
+    # Generic drawn first so its RNG state is unaffected when all rows fall back.
+    # Scalar fallback uses variance = mean + max(mean*0.75, 1.0); mirror that here.
+    generic_vars = means + np.maximum(means * 0.75, 1.0)
+    generic_samples = _sample_generic_count_batch(means, generic_vars, minutes, rng, contexts)
+    if np.all(fallback_mask):
+        # All-fallback: skip the market draw entirely so the RNG stream matches a pure-generic batch.
+        return generic_samples
+
+    # Sanitize so NaN never reaches rng even on fallback rows.
+    attempt_rate = np.where(fallback_mask, 0.02, np.maximum(attempt_rate_raw, 0.02))
+    make_rate = np.clip(np.where(fallback_mask, 0.36, make_rate_raw), 0.12, 0.65)
+    three_share = np.clip(
+        _stack_scalar_contexts(contexts, "percentage_field_goals_attempted_3pt", 0.35), 0.05, 0.85
+    )
+    shared_latent = np.maximum(_stack_scalar_contexts(contexts, "shared_latent", 1.0), 0.6)
+
+    base_attempt_mean = np.clip(
+        minutes
+        * attempt_rate[:, None]
+        * shared_latent[:, None]
+        * (0.75 + 0.5 * three_share[:, None]),
+        0.0,
+        None,
+    )
+    expected_makes = base_attempt_mean * make_rate[:, None]
+    # _mean_anchor_multiplier is scalar per row; compute vectorized equivalent.
+    observed_mean = np.maximum(expected_makes.mean(axis=1), 1e-6)
+    scaling = np.clip(np.maximum(means, 1e-6) / observed_mean, 0.25, 4.0)
+    attempts_mean = np.clip(base_attempt_mean * scaling[:, None], 0.0, None)
+    attempts = rng.poisson(lam=attempts_mean)
+    market_samples = rng.binomial(attempts, make_rate[:, None]).astype(float)
+
+    return np.where(fallback_mask[:, None], generic_samples, market_samples)
+
+
+def _sample_points_batch(
+    means: np.ndarray,
+    variances: np.ndarray,
+    minutes: np.ndarray,
+    rng: np.random.Generator,
+    contexts: list[dict[str, float] | None],
+) -> np.ndarray:
+    """Batched mirror of :func:`_sample_points`. Returns ``(N, S)``.
+
+    Poisson attempts (twos/threes/FTs) -> binomial makes -> weighted point sum.
+    Fallback to generic has TWO sources: the context-based mask (any of
+    shot/three/FT rate non-positive/non-finite) AND rows whose simulated point
+    mean collapses to <= 0. Both are combined before the final overwrite.
+    """
+    n, s = minutes.shape
+
+    shot_rate_raw = _stack_scalar_contexts(contexts, "field_goal_attempts_per_minute", np.nan)
+    three_rate_raw = _stack_scalar_contexts(
+        contexts, "estimated_three_point_attempts_per_minute", np.nan
+    )
+    ft_rate_raw = _stack_scalar_contexts(contexts, "free_throw_attempts_per_minute", np.nan)
+    ctx_fallback_mask = (
+        ~(np.isfinite(shot_rate_raw) & (shot_rate_raw > 0.0))
+        | ~(np.isfinite(three_rate_raw) & (three_rate_raw > 0.0))
+        | ~(np.isfinite(ft_rate_raw) & (ft_rate_raw > 0.0))
+    )
+
+    # Generic drawn first so its RNG state is unaffected when all rows fall back.
+    generic_samples = _sample_generic_count_batch(means, variances, minutes, rng, contexts)
+    if np.all(ctx_fallback_mask):
+        # All-fallback: skip the market draw entirely so the RNG stream matches a pure-generic batch.
+        return generic_samples
+
+    # Sanitize so NaN never reaches rng even on fallback rows.
+    shot_rate = np.where(ctx_fallback_mask, 0.08, np.maximum(shot_rate_raw, 0.08))
+    three_rate = np.where(ctx_fallback_mask, 0.01, np.maximum(three_rate_raw, 0.01))
+    ft_rate = np.where(ctx_fallback_mask, 0.02, np.maximum(ft_rate_raw, 0.02))
+    two_point_rate = np.maximum(shot_rate - three_rate, 0.02)
+    usage_rate = np.clip(_stack_scalar_contexts(contexts, "usage_rate", 0.22), 0.08, 0.45)
+    true_shooting = np.clip(
+        _stack_scalar_contexts(contexts, "true_shooting_percentage", 0.58), 0.35, 0.80
+    )
+    three_make = np.clip(_stack_scalar_contexts(contexts, "three_point_make_rate", 0.36), 0.18, 0.60)
+    two_make = np.clip((true_shooting * 2.0) - 0.45, 0.35, 0.72)
+    ft_make = np.clip(_stack_scalar_contexts(contexts, "free_throw_make_rate", 0.78), 0.55, 0.95)
+    pace_exposure = np.clip(_stack_scalar_contexts(contexts, "points_pace_exposure", 0.0), 0.0, 120.0)
+    threes_variance = np.clip(_stack_scalar_contexts(contexts, "points_3pt_variance", 0.0), 0.0, 16.0)
+    pace_factor = np.clip(0.92 + (pace_exposure / 220.0), 0.85, 1.25)
+    volatility_sigma = np.clip(0.08 + 0.015 * threes_variance, 0.08, 0.35)
+    shared_latent = np.maximum(_stack_scalar_contexts(contexts, "shared_latent", 1.0), 0.6)
+
+    pace_noise = rng.lognormal(mean=0.0, sigma=volatility_sigma[:, None] * np.ones((1, s)))
+    multiplier = shared_latent[:, None] * (0.70 + usage_rate[:, None]) * pace_factor[:, None] * pace_noise
+    two_attempts = rng.poisson(lam=np.clip(minutes * two_point_rate[:, None] * multiplier, 0.0, None))
+    three_attempts = rng.poisson(lam=np.clip(minutes * three_rate[:, None] * multiplier, 0.0, None))
+    free_throws = rng.poisson(lam=np.clip(minutes * ft_rate[:, None] * multiplier, 0.0, None))
+    made_twos = rng.binomial(two_attempts, two_make[:, None])
+    made_threes = rng.binomial(three_attempts, three_make[:, None])
+    made_free_throws = rng.binomial(free_throws, ft_make[:, None])
+    points = (2 * made_twos) + (3 * made_threes) + made_free_throws
+
+    # Per-row scale anchored to model mean (+-5%). Rows with non-positive sim mean
+    # fall back to generic, matching the scalar's `if sim_mean <= 0` branch.
+    sim_mean_per_row = points.mean(axis=1)
+    zero_sim_mask = sim_mean_per_row <= 0.0
+    scale = np.clip(np.maximum(means, 1e-6) / np.maximum(sim_mean_per_row, 1e-6), 0.95, 1.05)
+    market_samples = np.round(points.astype(float) * scale[:, None], 0)
+
+    fallback_mask = ctx_fallback_mask | zero_sim_mask
+    return np.where(fallback_mask[:, None], generic_samples, market_samples)
 
 
 def _context_value(context: dict[str, float] | None, key: str, fallback: float) -> float:

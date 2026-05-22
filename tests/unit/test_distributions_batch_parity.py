@@ -277,6 +277,98 @@ def test_turnovers_parity() -> None:
     assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
 
 
+def _threes_contexts(n: int, rng: np.random.Generator) -> list[dict[str, float]]:
+    return [
+        {
+            "estimated_three_point_attempts_per_minute": float(rng.uniform(0.05, 0.30)),
+            "three_point_make_rate": float(rng.uniform(0.30, 0.45)),
+            "percentage_field_goals_attempted_3pt": float(rng.uniform(0.20, 0.70)),
+            "shared_latent": float(rng.uniform(0.7, 1.3)),
+        }
+        for _ in range(n)
+    ]
+
+
+def _points_contexts(n: int, rng: np.random.Generator) -> list[dict[str, float]]:
+    return [
+        {
+            "field_goal_attempts_per_minute": float(rng.uniform(0.30, 0.70)),
+            "estimated_three_point_attempts_per_minute": float(rng.uniform(0.05, 0.30)),
+            "free_throw_attempts_per_minute": float(rng.uniform(0.05, 0.30)),
+            "usage_rate": float(rng.uniform(0.15, 0.40)),
+            "true_shooting_percentage": float(rng.uniform(0.50, 0.65)),
+            "three_point_make_rate": float(rng.uniform(0.30, 0.45)),
+            "free_throw_make_rate": float(rng.uniform(0.65, 0.90)),
+            "points_pace_exposure": float(rng.uniform(95.0, 115.0)),
+            "points_3pt_variance": float(rng.uniform(0.0, 6.0)),
+            "shared_latent": float(rng.uniform(0.7, 1.3)),
+        }
+        for _ in range(n)
+    ]
+
+
+def test_threes_parity() -> None:
+    n = 50
+    rng = np.random.default_rng(204)
+    means = rng.uniform(0.8, 5.0, size=n)
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-1.5, 1.5, size=n)
+    minutes_means = rng.uniform(18.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts = _threes_contexts(n, rng)
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="threes",
+        contexts=contexts,
+        sample_size=PARITY_SAMPLE_SIZE,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "threes", PARITY_SAMPLE_SIZE
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
+def test_points_parity() -> None:
+    n = 50
+    rng = np.random.default_rng(205)
+    means = rng.uniform(8.0, 30.0, size=n)
+    variances = means + rng.uniform(0.5, 1.0, size=n) * means
+    lines = means + rng.uniform(-3.0, 3.0, size=n)
+    minutes_means = rng.uniform(20.0, 36.0, size=n)
+    minutes_stds = rng.uniform(3.0, 7.0, size=n)
+    contexts = _points_contexts(n, rng)
+
+    # Points is the highest-variance market (compounded poisson attempts ->
+    # binomial makes across three shot types plus lognormal pace noise), so its
+    # cross-stream MC noise floor sits above 0.01 at PARITY_SAMPLE_SIZE. Draw 4x
+    # more samples (noise ~ 1/sqrt(S)) so the floor drops well under tolerance.
+    points_sample_size = max(PARITY_SAMPLE_SIZE, 4 * _MIN_PARITY_SAMPLES)
+
+    p_new = simulate_line_probabilities_batch(
+        means=means,
+        variances=variances,
+        lines=lines,
+        minutes_means=minutes_means,
+        minutes_stds=minutes_stds,
+        market_key="points",
+        contexts=contexts,
+        sample_size=points_sample_size,
+    )
+    p_old = _scalar_reference(
+        means, variances, lines, minutes_means, minutes_stds, contexts, "points", points_sample_size
+    )
+
+    assert p_new.shape == (n,)
+    assert np.max(np.abs(p_old - p_new)) <= PARITY_TOL
+
+
 def test_posterior_form() -> None:
     means = np.array([10.0], dtype=float)
     variances = np.array([10.0], dtype=float)  # poisson regime (var ~= mean)
