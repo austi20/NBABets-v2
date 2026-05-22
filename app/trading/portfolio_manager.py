@@ -67,6 +67,8 @@ class PositionState:
     sl_price_cents: int = 0
     model_prob: float = 0.0
     line_value: float | None = None
+    player_id: int | None = None
+    stat_type: str | None = None
     market_close_at: datetime | None = None
     last_bid_cents: int | None = None
     opened_at: datetime | None = None
@@ -129,6 +131,8 @@ class PortfolioManager:
         model_prob: float,
         line_value: float | None = None,
         market_close_at: datetime | None = None,
+        player_id: int | None = None,
+        stat_type: str | None = None,
     ) -> bool:
         async with self._lock:
             existing = self._positions.get(ticker)
@@ -150,6 +154,8 @@ class PortfolioManager:
                 sl_price_cents=sl,
                 model_prob=model_prob,
                 line_value=line_value,
+                player_id=player_id,
+                stat_type=stat_type,
                 market_close_at=market_close_at,
                 opened_at=now,
                 buy_handle=handle,
