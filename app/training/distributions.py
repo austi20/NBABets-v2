@@ -761,10 +761,11 @@ def _sample_count_aware_batch(
         means[:, None] * (minutes / base_minutes[:, None]) * shared_latent[:, None], 1e-6, None
     )
 
-    # Mirror fit_count_distribution's internal bounding (means already >= 1e-6 here).
+    # Bounds for the NB size/denominator, mirroring fit_count_distribution.
     bounded_means = np.maximum(means, 1e-6)
     bounded_vars = np.maximum(variances, bounded_means + 1e-6)
-    is_poisson = bounded_vars <= bounded_means * 1.05
+    # Pure variance test, no mean<0.5 Poisson shortcut (count-aware semantics).
+    is_poisson = _classify_poisson_batch(means, variances, low_mean_poisson=False)
 
     poisson_samples = rng.poisson(lam=adjusted_mean).astype(float)
 
