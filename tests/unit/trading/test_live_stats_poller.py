@@ -8,7 +8,8 @@ import pytest
 
 from app.providers.stats.balldontlie import BallDontLieStatsProvider
 from app.schemas.domain import ProviderFetchResult
-from app.trading.live_stats_poller import parse_live_stats
+from app.trading.live_limits import ACTIVE_TRADER_DEFAULTS
+from app.trading.live_stats_poller import LiveStatsPoller, parse_live_stats
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -294,3 +295,127 @@ def test_fetch_live_player_stats_returns_provider_fetch_result(monkeypatch: pyte
 
     assert isinstance(result, ProviderFetchResult)
     assert result is fake
+
+
+# ---------------------------------------------------------------------------
+# LiveStatsPoller
+# ---------------------------------------------------------------------------
+
+
+class _StopAfter:
+    """Fake sleep that records durations and stops its poller after n calls."""
+
+    def __init__(self, n: int) -> None:
+        self._n = n
+        self.sleeps: list[float] = []
+        self.poller: LiveStatsPoller | None = None
+
+    async def __call__(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        if len(self.sleeps) >= self._n:
+            assert self.poller is not None
+            self.poller.stop()
+
+
+def test_poller_updates_view_from_fetch() -> None:
+    async def fetch(ids: list[int]) -> dict[str, Any]:
+        return _LIVE_PAYLOAD
+
+    sleeper = _StopAfter(1)
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=lambda: {1, 2, 3},
+        fetch=fetch,
+        sleep=sleeper,
+    )
+    sleeper.poller = poller
+    asyncio.run(poller.run())
+
+    lebron = poller.stats(1)
+    assert lebron is not None
+    assert lebron.points == 22
+    assert poller.snapshot().keys() == {1, 2, 3}
+
+
+def test_poller_stops_polling_final_games() -> None:
+    calls: list[list[int]] = []
+
+    async def fetch(ids: list[int]) -> dict[str, Any]:
+        calls.append(ids)
+        return _LIVE_PAYLOAD  # player 3's game is "Final"
+
+    sleeper = _StopAfter(2)
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=lambda: {1, 2, 3},
+        fetch=fetch,
+        sleep=sleeper,
+    )
+    sleeper.poller = poller
+    asyncio.run(poller.run())
+
+    assert calls[0] == [1, 2, 3]
+    assert calls[1] == [1, 2]  # final player dropped from the poll set
+    assert poller.stats(3) is not None  # last stats retained in the view
+
+
+def test_poller_cadence_one_fetch_per_tick() -> None:
+    calls: list[list[int]] = []
+
+    async def fetch(ids: list[int]) -> dict[str, Any]:
+        calls.append(ids)
+        return {"data": []}
+
+    sleeper = _StopAfter(3)
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=lambda: {7},
+        fetch=fetch,
+        sleep=sleeper,
+    )
+    sleeper.poller = poller
+    asyncio.run(poller.run())
+
+    assert len(calls) == 3
+    assert sleeper.sleeps == [ACTIVE_TRADER_DEFAULTS.live_stats_poll_seconds] * 3
+
+
+def test_poller_empty_watched_set_skips_fetch() -> None:
+    calls: list[list[int]] = []
+
+    async def fetch(ids: list[int]) -> dict[str, Any]:
+        calls.append(ids)
+        return {"data": []}
+
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=lambda: set(),
+        fetch=fetch,
+    )
+    asyncio.run(poller._poll_once())
+
+    assert calls == []
+
+
+def test_poller_run_stops_promptly_on_cancel() -> None:
+    async def fetch(ids: list[int]) -> dict:
+        return {"data": []}
+
+    async def blocking_sleep(seconds: float) -> None:
+        await asyncio.Event().wait()  # never returns; only cancellation ends it
+
+    poller = LiveStatsPoller(
+        config=ACTIVE_TRADER_DEFAULTS,
+        player_ids_source=lambda: {1},
+        fetch=fetch,
+        sleep=blocking_sleep,
+    )
+
+    async def scenario() -> None:
+        task = asyncio.create_task(poller.run())
+        await asyncio.sleep(0)  # let the loop reach blocking_sleep
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=2))
