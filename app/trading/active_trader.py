@@ -18,8 +18,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.trading.live_limits import ActiveTraderConfig
+from app.trading.live_stats_poller import LiveStatsPoller
 from app.trading.market_book import MarketBook
-from app.trading.portfolio_manager import FSMState, PortfolioManager
+from app.trading.portfolio_manager import FSMState, PortfolioManager, PositionState
 from app.trading.risk import RiskLimits
 
 logger = logging.getLogger(__name__)
@@ -35,10 +36,72 @@ class ActiveCandidate:
     line_value: float
     market_close_at: datetime | None
     stake_cents: int  # already sized upstream
+    # Live-pace inputs (Phase 2); None for candidates without a live mapping.
+    player_id: int | None = None
+    stat_type: str | None = None
 
 
 class CandidateProvider(Protocol):
     async def candidates(self) -> Iterable[ActiveCandidate]: ...
+
+
+class MergingCandidateProvider:
+    """Merge decision-pack candidates with pre-emptive live-pace signals.
+
+    Base (decision-pack) candidates always pass through. A pre-emptive candidate
+    from ``preemptive_source`` is added only when it is not already present (dedup
+    by ticker) and the live poller reports ``is_signaling_entry``. All merged
+    candidates still flow through ``ActiveTrader._consider``, so the entry gates
+    remain the single chokepoint ("pounce before the market reprices").
+
+    Spec: docs/plans/specs/profit-machine-design.md §1 (live-stats edge, use 2).
+    """
+
+    def __init__(
+        self,
+        *,
+        base: CandidateProvider,
+        poller: LiveStatsPoller,
+        preemptive_source: Callable[[], Iterable[ActiveCandidate]],
+    ) -> None:
+        self._base = base
+        self._poller = poller
+        self._preemptive_source = preemptive_source
+
+    async def candidates(self) -> list[ActiveCandidate]:
+        merged = list(await self._base.candidates())
+        seen = {cand.ticker for cand in merged}
+        for cand in self._preemptive_source():
+            if cand.ticker in seen:
+                continue
+            if cand.player_id is None or cand.stat_type is None:
+                continue
+            if self._poller.is_signaling_entry(
+                cand.player_id, cand.stat_type, cand.line_value
+            ):
+                merged.append(cand)
+                seen.add(cand.ticker)
+        return merged
+
+
+def make_on_pace_callable(
+    poller: LiveStatsPoller,
+) -> Callable[[PositionState], bool]:
+    """Adapt a PositionState to ``poller.on_pace_to_hit`` for the FSM settle window.
+
+    Raises when pace inputs are missing or live stats are unavailable (BDL
+    outage). ``PortfolioManager`` swallows the exception and holds the position,
+    which is the desired default at the 15-minute settle lockout.
+    """
+
+    def on_pace(pos: PositionState) -> bool:
+        if pos.player_id is None or pos.stat_type is None or pos.line_value is None:
+            raise ValueError(f"position {pos.ticker} missing pace inputs")
+        if poller.current_stat(pos.player_id, pos.stat_type) is None:
+            raise LookupError(f"no live stats for player {pos.player_id}")
+        return poller.on_pace_to_hit(pos.player_id, pos.stat_type, pos.line_value)
+
+    return on_pace
 
 
 def _to_cents(price: float | None) -> int:
@@ -225,6 +288,8 @@ class ActiveTrader:
             cand.model_prob,
             line_value=cand.line_value,
             market_close_at=cand.market_close_at,
+            player_id=cand.player_id,
+            stat_type=cand.stat_type,
         )
         if ok:
             logger.info(
