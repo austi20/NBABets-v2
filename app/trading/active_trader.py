@@ -16,16 +16,48 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
+from uuid import uuid4
 
 from app.trading.live_limits import ActiveTraderConfig
 from app.trading.live_stats_poller import LiveStatsPoller
 from app.trading.market_book import MarketBook
 from app.trading.portfolio_manager import FSMState, PortfolioManager, PositionState
+from app.trading.protocols import PortfolioLedger, RiskEngine
 from app.trading.risk import RiskLimits
+from app.trading.types import ExecutionIntent, MarketRef, Signal
 
 logger = logging.getLogger(__name__)
 
 _ACTIVE_STATES = (FSMState.BUY_PENDING, FSMState.HOLDING, FSMState.SELL_PENDING)
+
+
+def _candidate_to_intent(cand: ActiveCandidate) -> ExecutionIntent:
+    """Build a minimal ExecutionIntent from an ActiveCandidate for risk evaluation."""
+    now = datetime.now(UTC)
+    signal = Signal(
+        signal_id=str(uuid4()),
+        created_at=now,
+        market_key=cand.ticker,
+        side="yes",
+        confidence="high",
+        edge=cand.edge_bps / 10_000,
+        model_probability=cand.model_prob,
+        line_value=cand.line_value,
+    )
+    market = MarketRef(
+        exchange="kalshi",
+        symbol=cand.ticker,
+        market_key=cand.ticker,
+        side="yes",
+        line_value=cand.line_value,
+    )
+    return ExecutionIntent(
+        intent_id=str(uuid4()),
+        signal=signal,
+        market=market,
+        side="buy",
+        stake=cand.stake_cents / 100,
+    )
 
 
 @dataclass(frozen=True)
@@ -121,6 +153,8 @@ class ActiveTrader:
         candidates_source: CandidateProvider,
         kill_switch: Callable[[], bool] = lambda: False,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        risk_engine: RiskEngine | None = None,
+        ledger: PortfolioLedger | None = None,
     ) -> None:
         self._config = config
         self._risk = risk_limits
@@ -129,6 +163,8 @@ class ActiveTrader:
         self._candidates = candidates_source
         self._kill_switch = kill_switch
         self._clock = clock
+        self._risk_engine = risk_engine
+        self._ledger = ledger
         self._stopping = False
         self._stop_event = asyncio.Event()
 
@@ -256,8 +292,13 @@ class ActiveTrader:
         return total
 
     def _risk_ok(self, cand: ActiveCandidate) -> bool:
-        # daily_loss_cap and reject_cooldown_seconds are intentionally not
-        # enforced here: the upcoming live wiring (ExposureRiskEngine) owns those.
+        if self._risk_engine is not None and self._ledger is not None:
+            intent = _candidate_to_intent(cand)
+            ok, reason = self._risk_engine.evaluate(intent, self._ledger)
+            if not ok:
+                logger.debug("skip %s: risk engine rejected: %s", cand.ticker, reason)
+            return ok
+        # Fallback: manual cap checks (no engine injected).
         stake = cand.stake_cents / 100
         if stake > self._risk.per_order_cap:
             logger.debug("skip %s: per-order cap %.2f exceeded", cand.ticker, self._risk.per_order_cap)
