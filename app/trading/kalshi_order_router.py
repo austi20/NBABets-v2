@@ -1,57 +1,89 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import Any
+import logging
+import random
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any, TypeVar
 from uuid import uuid4
 
 from app.providers.exchanges.kalshi_client import KalshiClient
+from app.providers.exchanges.kalshi_errors import KalshiRateLimited, KalshiServerError
 from app.trading.portfolio_manager import OrderHandle
+
+_log = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+_MAX_RETRIES = 3
+_BACKOFF_BASE_SECONDS = 1.0
+_BACKOFF_CAP_SECONDS = 30.0
+
+
+class SellExhaustedError(RuntimeError):
+    """Raised when a sell order exhausts all rate-limit retries.
+
+    Sells are critical — a position that cannot be exited must be escalated
+    immediately rather than silently dropped.
+    """
 
 
 class KalshiOrderRouter:
     """Async OrderRouter wrapping the synchronous KalshiClient.
 
     Blocking client calls are dispatched via asyncio.to_thread so the event
-    loop is never stalled.
+    loop is never stalled. All write operations share an RPS semaphore and
+    are wrapped in retry logic for 429 and 5xx responses.
     """
 
     def __init__(
         self,
         client: KalshiClient,
         *,
+        rps_cap: int = 5,
         fill_poll_attempts: int = 5,
         fill_poll_interval_seconds: float = 0.5,
     ) -> None:
         self._client = client
+        self._rps_sem = asyncio.Semaphore(max(1, int(rps_cap)))
         self._fill_poll_attempts = int(fill_poll_attempts)
         self._fill_poll_interval = float(fill_poll_interval_seconds)
 
+    # ------------------------------------------------------------------ write ops
+
     async def place_buy(self, ticker: str, qty: int, limit_price_cents: int) -> OrderHandle:
-        resp = await asyncio.to_thread(
-            self._client.create_order,
-            ticker=ticker,
-            side="bid",
-            count=qty,
-            price_dollars=limit_price_cents / 100,
-            client_order_id=str(uuid4()),
-            time_in_force="immediate_or_cancel",
-        )
+        async def _call() -> dict[str, Any]:
+            return await asyncio.to_thread(
+                self._client.create_order,
+                ticker=ticker,
+                side="bid",
+                count=qty,
+                price_dollars=limit_price_cents / 100,
+                client_order_id=str(uuid4()),
+                time_in_force="immediate_or_cancel",
+            )
+
+        resp = await self._guarded(_call, is_sell=False)
         return OrderHandle(order_id=_extract_order_id(resp), ticker=ticker, side="buy")
 
     async def place_sell(self, ticker: str, qty: int, limit_price_cents: int) -> OrderHandle:
-        resp = await asyncio.to_thread(
-            self._client.create_exit_order,
-            ticker=ticker,
-            held_side="yes",
-            count=qty,
-            exit_price_dollars=limit_price_cents / 100,
-            client_order_id=str(uuid4()),
-        )
+        async def _call() -> dict[str, Any]:
+            return await asyncio.to_thread(
+                self._client.create_exit_order,
+                ticker=ticker,
+                held_side="yes",
+                count=qty,
+                exit_price_dollars=limit_price_cents / 100,
+                client_order_id=str(uuid4()),
+            )
+
+        resp = await self._guarded(_call, is_sell=True)
         return OrderHandle(order_id=_extract_order_id(resp), ticker=ticker, side="sell")
 
     async def cancel(self, handle: OrderHandle) -> None:
         await asyncio.to_thread(self._client.cancel_order, handle.order_id)
+
+    # ------------------------------------------------------------------ fills
 
     async def deliver_fills(
         self,
@@ -76,6 +108,43 @@ class KalshiOrderRouter:
                     continue
                 avg_price_cents = round(float(fill.get("price", 0)) * 100)
                 await on_fill(handle, filled_qty, avg_price_cents)
+
+    # ------------------------------------------------------------------ internals
+
+    async def _guarded(
+        self,
+        call: Callable[[], Coroutine[Any, Any, _T]],
+        *,
+        is_sell: bool,
+    ) -> _T:
+        """Acquire RPS token, call, retry on 429/5xx up to _MAX_RETRIES times."""
+        await self._rps_sem.acquire()
+        asyncio.get_event_loop().call_later(1.0, self._rps_sem.release)
+
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return await call()
+            except KalshiRateLimited as exc:
+                last_exc = exc
+                if attempt >= _MAX_RETRIES:
+                    break
+                wait = max(float(exc.retry_after), 0.0)
+                _log.warning("rate limited (attempt %d/%d), sleeping %.1fs", attempt + 1, _MAX_RETRIES, wait)
+                await asyncio.sleep(wait)
+            except KalshiServerError as exc:
+                last_exc = exc
+                if attempt >= _MAX_RETRIES:
+                    break
+                wait = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**attempt) * (0.5 + random.random()))
+                _log.warning("5xx error (attempt %d/%d), backoff %.1fs", attempt + 1, _MAX_RETRIES, wait)
+                await asyncio.sleep(wait)
+
+        assert last_exc is not None
+        if is_sell:
+            _log.error("sell order exhausted retries: %s", last_exc)
+            raise SellExhaustedError(f"sell exhausted after {_MAX_RETRIES} retries") from last_exc
+        raise last_exc
 
 
 def _extract_order_id(resp: dict[str, Any]) -> str:
