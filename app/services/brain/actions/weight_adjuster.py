@@ -37,7 +37,7 @@ def execute_weight_adjustment(
 
     for feature in target_features:
         current_scale = market_overrides.get(feature, 1.0)
-        new_scale = max(SCALE_FLOOR, current_scale * (1.0 - reduce_pct))
+        new_scale = min(SCALE_CEILING, max(SCALE_FLOOR, current_scale * (1.0 - reduce_pct)))
         params_before[feature] = current_scale
         params_after[feature] = new_scale
         brain.set_weight_override(

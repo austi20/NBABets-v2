@@ -254,7 +254,7 @@ class TradingIntentResponseModel(BaseModel):
     message: str
 
 
-# ---- Live snapshot models (Phase 2) ----
+# ---- Live snapshot models ----
 
 class KpiPnlModel(BaseModel):
     daily_pnl: float
@@ -379,7 +379,7 @@ class TradingLiveSnapshotModel(BaseModel):
     stream_cursor: int
 
 
-# ---- Limits + wallet request models (Phase 3) ----
+# ---- Limits + wallet request models ----
 
 class LimitsUpdateRequestModel(BaseModel):
     max_open_notional: float | None = Field(default=None, gt=0.0, le=1_000_000.0)

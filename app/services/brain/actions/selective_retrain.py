@@ -22,10 +22,9 @@ def execute_selective_retrain(
 ) -> CorrectionRecord:
     """Trigger a retrain for specific markets only.
 
-    This creates a CorrectionRecord but delegates actual retraining
-    to the training pipeline via ``TrainingPipeline.retrain_markets()``.
-    The caller (correction executor) is responsible for invoking the
-    pipeline and comparing pre/post ECE.
+    This records a retrain request for the correction executor. The
+    executor/orchestrator owns the actual retrain run and pre/post ECE
+    comparison.
     """
     market = correction.market
     params = correction.parameters
@@ -51,12 +50,15 @@ def execute_selective_retrain(
 def build_retrain_market_list(
     signals: list[dict[str, Any]],
     ece_threshold: float = 0.10,
+    market_floors: dict[str, float] | None = None,
 ) -> list[str]:
     """Determine which markets need retraining from overfit signals."""
+    floors = market_floors or {}
     markets: list[str] = []
     for sig in signals:
         market = sig.get("market")
         ece = sig.get("ece", 0.0)
-        if market and ece > ece_threshold:
+        threshold = float(floors.get(market, ece_threshold)) if market else ece_threshold
+        if market and ece > threshold:
             markets.append(market)
     return sorted(set(markets))

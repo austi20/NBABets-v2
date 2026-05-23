@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -49,28 +47,24 @@ def _paths(root: Path) -> SimpleNamespace:
     )
 
 
-def test_training_decide_rejects_incomplete_artifacts(monkeypatch) -> None:
+def test_training_decide_rejects_incomplete_artifacts(monkeypatch, tmp_path: Path) -> None:
     session = _FakeSession()
     service = StartupComputationCacheService(session)
-    temp_root = Path(tempfile.mkdtemp(prefix="startup-cache-test-", dir="."))
-    try:
-        artifact_paths = _paths(temp_root)
-        artifact_paths.metadata.write_text("placeholder", encoding="utf-8")
+    artifact_paths = _paths(tmp_path)
+    artifact_paths.metadata.write_text("placeholder", encoding="utf-8")
 
-        monkeypatch.setattr(startup_cache_module, "artifact_paths", lambda *_args, **_kwargs: artifact_paths)
-        monkeypatch.setattr(startup_cache_module, "artifact_exists", lambda path: path == artifact_paths.metadata)
+    monkeypatch.setattr(startup_cache_module, "artifact_paths", lambda *_args, **_kwargs: artifact_paths)
+    monkeypatch.setattr(startup_cache_module, "artifact_exists", lambda path: path == artifact_paths.metadata)
 
-        decision = service.training_decide()
+    decision = service.training_decide()
 
-        assert decision.use_cached_result is False
-        assert "Incomplete cached model artifacts" in decision.reason
-        assert decision.metrics["artifacts_found"] == 1
-        assert decision.metrics["artifacts_expected"] == 4
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
+    assert decision.use_cached_result is False
+    assert "Incomplete cached model artifacts" in decision.reason
+    assert decision.metrics["artifacts_found"] == 1
+    assert decision.metrics["artifacts_expected"] == 4
 
 
-def test_predictions_decide_scopes_to_current_model_run(monkeypatch) -> None:
+def test_predictions_decide_scopes_to_current_model_run(monkeypatch, tmp_path: Path) -> None:
     today = date.today()
     session = _FakeSession(
         rows=[
@@ -84,19 +78,15 @@ def test_predictions_decide_scopes_to_current_model_run(monkeypatch) -> None:
         ]
     )
     service = StartupComputationCacheService(session)
-    temp_root = Path(tempfile.mkdtemp(prefix="startup-cache-test-", dir="."))
-    try:
-        artifact_paths = _paths(temp_root)
+    artifact_paths = _paths(tmp_path)
 
-        monkeypatch.setattr(startup_cache_module, "artifact_paths", lambda *_args, **_kwargs: artifact_paths)
-        monkeypatch.setattr(startup_cache_module, "load_artifact", lambda _path: {"model_run_id": 99})
-        monkeypatch.setattr(service, "_expected_prediction_rows", lambda _target_date: 1)
+    monkeypatch.setattr(startup_cache_module, "artifact_paths", lambda *_args, **_kwargs: artifact_paths)
+    monkeypatch.setattr(startup_cache_module, "load_artifact", lambda _path: {"model_run_id": 99})
+    monkeypatch.setattr(service, "_expected_prediction_rows", lambda _target_date: 1)
 
-        decision = service.predictions_decide(today)
+    decision = service.predictions_decide(today)
 
-        assert decision.use_cached_result is True
-        assert decision.metrics["model_run_id"] == 99
-        assert "model_run_id" in str(session.last_statement)
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
+    assert decision.use_cached_result is True
+    assert decision.metrics["model_run_id"] == 99
+    assert "model_run_id" in str(session.last_statement)
 

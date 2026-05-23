@@ -49,7 +49,10 @@ def test_skips_when_same_day_init_already_done(limits_path: Path) -> None:
 
 
 def test_reinitializes_when_yesterday(limits_path: Path) -> None:
-    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    today = date(2026, 5, 12)
+    yesterday = (
+        datetime(today.year, today.month, today.day, tzinfo=UTC) - timedelta(days=1)
+    ).isoformat()
     limits_path.write_text(
         json.dumps(
             {
@@ -63,7 +66,7 @@ def test_reinitializes_when_yesterday(limits_path: Path) -> None:
     )
     client = MagicMock()
     client.get_balance.return_value = 20.00
-    init_budget_from_wallet(client=client, path=limits_path)
+    init_budget_from_wallet(client=client, path=limits_path, today=today)
     data = json.loads(limits_path.read_text())
     assert data["max_open_notional"] == 20.00
 

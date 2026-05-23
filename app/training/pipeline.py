@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from threadpoolctl import threadpool_limits
 
 from app.config.settings import get_settings
-from app.core.resources import get_runtime_budget
+from app.core.resources import get_effective_worker_count, get_runtime_budget, set_worker_override
 from app.models.all import ModelRun, Prediction, PropMarket, RawPayload
 from app.schemas.domain import PropPrediction
 from app.services.rotation_audit import dataclass_records, write_game_audit
@@ -31,6 +31,7 @@ from app.training.artifacts import (
 )
 from app.training.baseline import RecencyBaseline
 from app.training.calibration import ProbabilityCalibrator
+from app.training.calibration_ece import dump_calibration_oof, market_ece_gate
 from app.training.constants import MARKET_TARGETS
 from app.training.data import DatasetLoader
 from app.training.data_sufficiency import annotate_tiers
@@ -1042,8 +1043,15 @@ class TrainingPipeline:
         fold_args = list(enumerate(splits, start=1))
         with threadpool_limits(limits=inner_threads):
             if fold_workers > 1 and len(fold_args) > 1:
-                with ThreadPoolExecutor(max_workers=fold_workers) as executor:
-                    fold_results = list(executor.map(run_one_fold, fold_args))
+                # Cap XGBoost/MC threads inside each fold to inner_threads so the
+                # total stays near hardware threads (fold_workers * inner_threads)
+                # instead of fold_workers * full_worker_count (oversubscription).
+                set_worker_override(inner_threads)
+                try:
+                    with ThreadPoolExecutor(max_workers=fold_workers) as executor:
+                        fold_results = list(executor.map(run_one_fold, fold_args))
+                finally:
+                    set_worker_override(None)
             else:
                 fold_results = [run_one_fold(arg) for arg in fold_args]
 
@@ -1084,21 +1092,11 @@ class TrainingPipeline:
                 progress_state=progress_state,
             )
 
-        # v1.2.2 Step 4: Per-market ECE threshold monitoring.
-        # After all calibrators are fit we compute a lightweight ECE over the
-        # concatenated OOF predictions and log a WARNING for any market whose
-        # ECE exceeds the 0.05 threshold. This surfaces calibration regressions
-        # at training time rather than only in post-hoc backtests. The alert
-        # names the market, the ECE value, and the acceptable ceiling so it is
-        # immediately actionable in logs.
-        _DEFAULT_ECE_THRESHOLD = 0.05
-        _MARKET_ECE_THRESHOLDS = {
-            "points": 0.07,
-            "rebounds": 0.06,
-        }
+        # Per-market ECE monitoring against the finite-sample null floor for this run's OOF.
         _N_BINS = 10
         import logging as _logging
         _calib_logger = _logging.getLogger(__name__)
+        _ece_rng = np.random.default_rng(self._settings.training_seed)
         diagnostics: dict[str, Any] = {}
         for market_key in MARKET_TARGETS:
             raw_chunks = oof_raw[market_key]
@@ -1109,40 +1107,40 @@ class TrainingPipeline:
             lbls = np.concatenate(label_chunks)
             if probs.size < _N_BINS * 2:
                 continue
-            bin_edges = np.linspace(0.0, 1.0, _N_BINS + 1)
-            bin_indices = np.digitize(probs, bin_edges, right=True).clip(1, _N_BINS) - 1
-            ece = 0.0
-            for b in range(_N_BINS):
-                mask = bin_indices == b
-                if not mask.any():
-                    continue
-                bin_conf = float(probs[mask].mean())
-                bin_acc = float(lbls[mask].mean())
-                ece += mask.sum() * abs(bin_conf - bin_acc)
-            ece /= max(probs.size, 1)
+            gate = market_ece_gate(
+                probs,
+                lbls,
+                percentile=self._settings.calibration_ece_percentile,
+                n_bins=_N_BINS,
+                n_boot=self._settings.calibration_ece_n_boot,
+                rng=_ece_rng,
+            )
             diagnostics[market_key] = {
-                "ece": round(float(ece), 6),
-                "sample_count": int(probs.size),
+                **gate,
                 "fold_count": int(fold_count),
                 "training_row_count": int(len(ordered)),
                 "edge_bucket_diagnostics": _edge_bucket_diagnostics(probs, lbls),
                 "high_confidence_gap": _high_confidence_gap(probs, lbls),
             }
-            market_threshold = float(_MARKET_ECE_THRESHOLDS.get(market_key, _DEFAULT_ECE_THRESHOLD))
-            if ece > market_threshold:
+            ece = float(gate["ece"])
+            if not gate["passed"]:
                 _calib_logger.warning(
-                    "[v1.2.2 ECE ALERT] %s calibration ECE=%.4f exceeds threshold %.2f — "
+                    "[ECE GATE] %s ECE=%.4f exceeds null floor p%.0f=%.4f (n=%d) - "
                     "review distribution model or add more training data for this market.",
                     market_key.upper(),
                     ece,
-                    market_threshold,
+                    self._settings.calibration_ece_percentile,
+                    gate["null_floor"],
+                    gate["sample_count"],
                 )
             else:
                 _calib_logger.info(
-                    "[v1.2.2 ECE] %s ECE=%.4f (OK, threshold %.2f)",
+                    "[ECE GATE] %s ECE=%.4f within null floor p%.0f=%.4f (n=%d) - OK.",
                     market_key.upper(),
                     ece,
-                    market_threshold,
+                    self._settings.calibration_ece_percentile,
+                    gate["null_floor"],
+                    gate["sample_count"],
                 )
 
         diagnostics["_summary"] = {
@@ -1170,6 +1168,12 @@ class TrainingPipeline:
             ),
             "purge_days": int(self._settings.calibration_purge_days),
         }
+        if self._settings.calibration_dump_oof:
+            dump_calibration_oof(
+                oof_raw,
+                oof_labels,
+                Path("data/artifacts/calibration_oof_dump.json"),
+            )
         return calibrators, diagnostics
 
     def _fit_direct_calibrator(
@@ -1276,7 +1280,11 @@ class TrainingPipeline:
         if len(frame) < 120:
             return []
         purge_days = self._settings.calibration_purge_days
-        splitter = TimeSeriesSplit(n_splits=min(120, max(8, max(2, len(frame) // 120))))
+        if self._settings.calibration_dump_oof:
+            n_splits = self._settings.calibration_oof_max_folds
+        else:
+            n_splits = min(self._settings.calibration_max_folds, max(5, len(frame) // 5000))
+        splitter = TimeSeriesSplit(n_splits=max(2, min(int(n_splits), len(frame) - 1)))
         splits: list[tuple[np.ndarray, np.ndarray]] = []
         dates = pd.to_datetime(frame["game_date"]).dt.normalize()
         for train_idx, valid_idx in splitter.split(frame):
@@ -1554,6 +1562,7 @@ class TrainingPipeline:
                 mean,
                 variance,
                 float(line),
+                simulations=self._settings.calibration_simulation_samples,
                 minutes_mean=minutes_mean,
                 minutes_std=minutes_std,
                 market_key=market_key,
@@ -1585,7 +1594,7 @@ class TrainingPipeline:
         if not tasks:
             return []
         results: list[Any] = [None] * len(tasks)
-        worker_count = min(get_runtime_budget().worker_count, len(tasks))
+        worker_count = min(get_effective_worker_count(), len(tasks))
         if worker_count <= 1:
             for completed_count, task in enumerate(tasks, start=1):
                 result_index, result_value = worker(task)

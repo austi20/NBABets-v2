@@ -21,7 +21,7 @@ function DevComponentsPage() {
   return (
     <div className="dev-components-page">
       <h1>Component Playground</h1>
-      <p className="dev-note">Hidden route for primitive visual checks. Remove in T7.</p>
+      <p className="dev-note">Hidden route for primitive visual checks during desktop UI work.</p>
 
       <section className="dev-block">
         <h2>EdgeBadge + ConfidenceBar + Injury/Freshness</h2>

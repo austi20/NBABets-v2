@@ -250,7 +250,6 @@ fn main() {
                 .max_file_size(5 * 1024 * 1024)
                 .build(),
         )
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(sidecar_state)
         .invoke_handler(tauri::generate_handler![
             get_sidecar_config,

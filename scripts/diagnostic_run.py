@@ -7,7 +7,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -86,7 +85,6 @@ def stage1_training_data(settings) -> int:
 def stage2_artifacts(settings) -> None:
     _section("STAGE 2: Model Artifact Status")
     from app.training.artifacts import artifact_paths, artifact_exists, resolve_artifact_namespace
-    from app.db.session import session_scope
     import sqlite3
 
     import datetime as dt
@@ -158,12 +156,12 @@ def stage3_predict(settings) -> None:
 def stage4_brain_candidates(settings) -> list:
     _section("STAGE 4: Decision Brain Candidate Trace")
     from app.trading.decision_brain import (
-        load_policy, candidates_from_board, load_manual_candidates, merge_candidates,
-        _candidate_policy_blockers, _stale_context_blockers,
+        load_policy,
+        _stale_context_blockers,
     )
     from pathlib import Path
     import json
-    from collections import Counter, defaultdict
+    from collections import Counter
 
     try:
         policy = load_policy(settings)

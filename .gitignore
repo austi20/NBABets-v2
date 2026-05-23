@@ -33,6 +33,7 @@ htmlcov/
 .claude/logs/
 .claude/worktrees/
 .claude/skillpacks.local.json
+.claude/*.lock
 .claude/cache/skillpacks/
 .claude/generated/staging/
 .superpowers/
@@ -65,6 +66,11 @@ llm_train/outputs/
 
 # Local scratch and one-off artifacts
 _desktop_smoke_pid.txt
+.tmp_actuals_*.pkl
+grading_*.csv
+historical_grading.csv
+historical_props.json
+uv.lock
 *.bak
 *.spec.spec
 

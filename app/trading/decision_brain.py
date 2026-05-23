@@ -1588,19 +1588,6 @@ def _confidence_from_opportunity(opportunity: Any, insight: Any | None) -> float
     return raw
 
 
-def _date_from_game_start(value: Any) -> date | None:
-    if value in (None, ""):
-        return None
-    text = str(value)
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
-    except ValueError:
-        try:
-            return date.fromisoformat(text[:10])
-        except ValueError:
-            return None
-
-
 def _recommendation_from_side(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     if raw in {"over", "yes", "buy_yes"}:

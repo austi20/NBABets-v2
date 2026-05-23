@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
-
 import numpy as np
 import pandas as pd
 
@@ -166,8 +164,3 @@ def summarize_weight_learning(observations: pd.DataFrame, weights: pd.DataFrame)
         fallback_cell_count=int(len(fallback_rows)),
     )
 
-
-def to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
-    if frame.empty:
-        return []
-    return frame.to_dict("records")

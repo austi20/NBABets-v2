@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import statistics
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+
+_VOL_WINDOW_MAXLEN = 2048
 
 
 @dataclass(frozen=True)
@@ -31,11 +35,18 @@ class MarketBook:
         self._entries: dict[str, MarketEntry] = {}
         self._subscribers: list[asyncio.Queue[BookUpdate]] = []
         self._queue_size = max(1, int(subscriber_queue_size))
+        self._vol_windows: dict[str, deque[tuple[float, float]]] = {}
 
     async def update(self, entry: MarketEntry) -> BookUpdate:
         async with self._lock:
             before = self._entries.get(entry.ticker)
             self._entries[entry.ticker] = entry
+            if entry.yes_bid is not None:
+                window = self._vol_windows.get(entry.ticker)
+                if window is None:
+                    window = deque(maxlen=_VOL_WINDOW_MAXLEN)
+                    self._vol_windows[entry.ticker] = window
+                window.append((entry.updated_at.timestamp(), float(entry.yes_bid)))
             update = BookUpdate(ticker=entry.ticker, before=before, after=entry)
             subs = list(self._subscribers)
             for queue in subs:
@@ -47,6 +58,33 @@ class MarketBook:
 
     def snapshot(self) -> dict[str, MarketEntry]:
         return dict(self._entries)
+
+    def stdev_cents(self, ticker: str, window_seconds: float = 60.0) -> float | None:
+        """Population stdev (in cents) of yes_bid samples within the last
+        `window_seconds`.
+
+        Returns None if there are no samples in the window. Returns 0.0 for a
+        single sample or all-identical samples.
+
+        Sync (not async) for parity with `get`/`snapshot`. Deque append +
+        iteration are GIL-safe in CPython, and this read is advisory (used by
+        the vol-veto), so a torn read missing the very latest sample is fine.
+        """
+        window = self._vol_windows.get(ticker)
+        if not window:
+            return None
+        # Snapshot to a local list so concurrent appends do not perturb iteration.
+        samples = list(window)
+        if not samples:
+            return None
+        latest_ts = samples[-1][0]
+        cutoff = latest_ts - float(window_seconds)
+        prices = [price for ts, price in samples if ts >= cutoff]
+        # `prices` is always non-empty here: the latest sample's own timestamp
+        # satisfies ts >= latest_ts - window for any non-negative window.
+        if len(prices) == 1:
+            return 0.0
+        return statistics.pstdev(prices) * 100.0
 
     def subscribe(self) -> _SubscriptionIterator:
         # Callers must either call aclose() or use `async with` to unsubscribe; iterating to exhaustion is also acceptable.

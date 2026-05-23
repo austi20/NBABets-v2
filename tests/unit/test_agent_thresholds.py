@@ -1,5 +1,4 @@
-"""Tests for overhaul agent validators: PredictionValidator deterministic pass
-and ParlayAdvisor correlation threshold logic."""
+"""Tests for agent deterministic thresholds and parlay correlation gates."""
 
 from __future__ import annotations
 
