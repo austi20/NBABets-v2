@@ -364,6 +364,15 @@ class Settings(BaseSettings):
         alias="MINIMUM_PREDICTION_HISTORY_MINUTES",
     )
     calibration_purge_days: int = Field(default=7, alias="CALIBRATION_PURGE_DAYS")
+    # OOF calibration cost controls. ~10 folds give equivalent isotonic coverage to the
+    # old 120 at a fraction of the model-refit cost; calibration MC tolerates fewer
+    # samples than production since isotonic averages over many points.
+    calibration_max_folds: int = Field(default=10, alias="CALIBRATION_MAX_FOLDS")
+    calibration_simulation_samples: int = Field(default=2500, alias="CALIBRATION_SIMULATION_SAMPLES")
+    calibration_dump_oof: bool = Field(default=False, alias="CALIBRATION_DUMP_OOF")
+    calibration_oof_max_folds: int = Field(default=20, alias="CALIBRATION_OOF_MAX_FOLDS")
+    calibration_ece_percentile: float = Field(default=99.0, alias="CALIBRATION_ECE_PERCENTILE")
+    calibration_ece_n_boot: int = Field(default=2000, alias="CALIBRATION_ECE_N_BOOT")
     ai_local_endpoint: str = Field(
         default="http://127.0.0.1:8080/v1/chat/completions",
         alias="AI_LOCAL_ENDPOINT",

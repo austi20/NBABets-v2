@@ -68,6 +68,28 @@ def get_runtime_budget() -> RuntimeBudget:
     )
 
 
+_worker_override: int | None = None
+
+
+def set_worker_override(value: int | None) -> None:
+    """Temporarily cap the effective worker/thread budget.
+
+    Used by the calibration fold loop: when folds run in parallel, each fold must
+    cap XGBoost and Monte Carlo threads to ``cpu_count // fold_workers`` so the
+    total stays near the hardware thread count instead of oversubscribing it.
+    Pass ``None`` to clear.
+    """
+    global _worker_override
+    _worker_override = None if value is None else max(1, int(value))
+
+
+def get_effective_worker_count() -> int:
+    """Worker/thread budget honoring any active override (nested parallelism)."""
+    if _worker_override is not None:
+        return _worker_override
+    return get_runtime_budget().worker_count
+
+
 def _detect_total_memory_bytes() -> int:
     if sys.platform.startswith("win"):
         return _detect_windows_memory_bytes()
