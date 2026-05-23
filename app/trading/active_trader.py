@@ -234,6 +234,9 @@ class ActiveTrader:
                 continue
 
     async def _consider(self, cand: ActiveCandidate) -> None:
+        if not self._book.is_connected():
+            logger.debug("skip %s: market book disconnected", cand.ticker)
+            return
         cfg = self._config
         if cand.model_prob < cfg.min_model_prob:
             logger.debug("skip %s: model_prob %.3f < %.3f", cand.ticker, cand.model_prob, cfg.min_model_prob)

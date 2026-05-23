@@ -36,6 +36,13 @@ class MarketBook:
         self._subscribers: list[asyncio.Queue[BookUpdate]] = []
         self._queue_size = max(1, int(subscriber_queue_size))
         self._vol_windows: dict[str, deque[tuple[float, float]]] = {}
+        self._connected: bool = True
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def mark_connected(self, connected: bool) -> None:
+        self._connected = bool(connected)
 
     async def update(self, entry: MarketEntry) -> BookUpdate:
         async with self._lock:
