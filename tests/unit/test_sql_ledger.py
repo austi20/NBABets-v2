@@ -16,7 +16,7 @@ from app.db.models.trading import (
     TradingOrder,
     TradingPosition,
 )
-from app.trading.ledger import SqlPortfolioLedger
+from app.trading.sql_ledger import SqlPortfolioLedger
 from app.trading.types import Fill, MarketRef, OrderEvent
 
 
