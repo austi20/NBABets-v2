@@ -33,7 +33,7 @@
 - Create: `app/training/calibration_ece.py`
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_calibration_ece.py
@@ -63,7 +63,7 @@ def test_compute_ece_perfect_bins_zero():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: FAIL (ModuleNotFoundError: app.training.calibration_ece)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # app/training/calibration_ece.py
@@ -97,7 +97,7 @@ def compute_ece(probs: np.ndarray, labels: np.ndarray, n_bins: int = DEFAULT_N_B
     return float(ece / max(probs.size, 1))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: PASS (3 passed)
@@ -117,7 +117,7 @@ git commit -m "feat(calibration): extract compute_ece into shared module"
 - Modify: `app/training/calibration_ece.py`
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # add to tests/unit/test_calibration_ece.py
@@ -165,7 +165,7 @@ def test_null_floor_deterministic():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: FAIL (ImportError: cannot import name 'null_floor')
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # append to app/training/calibration_ece.py
@@ -201,7 +201,7 @@ def null_floor(
     return float(np.percentile(dist, percentile))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: PASS (7 passed)
@@ -221,7 +221,7 @@ git commit -m "feat(calibration): null ECE distribution + percentile floor"
 - Modify: `app/training/calibration_ece.py`
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # add to tests/unit/test_calibration_ece.py
@@ -251,7 +251,7 @@ def test_gate_fails_for_miscalibration():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: FAIL (ImportError: cannot import name 'market_ece_gate')
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # append to app/training/calibration_ece.py
@@ -285,7 +285,7 @@ def market_ece_gate(
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py -q`
 Expected: PASS (9 passed)
@@ -305,7 +305,7 @@ git commit -m "feat(calibration): per-market self-calibrating ECE gate"
 - Modify: `app/training/calibration_ece.py`
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # add to tests/unit/test_calibration_ece.py
@@ -328,7 +328,7 @@ def test_dump_then_load_roundtrip(tmp_path):
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_dump_then_load_roundtrip -q`
 Expected: FAIL (ImportError: cannot import name 'dump_calibration_oof')
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # append to app/training/calibration_ece.py
@@ -362,7 +362,7 @@ def load_calibration_oof(path: str | Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_dump_then_load_roundtrip -q`
 Expected: PASS
@@ -382,7 +382,7 @@ git commit -m "feat(calibration): per-fold OOF dump/load io"
 - Modify: `app/config/settings.py` (after `calibration_simulation_samples`, near line 371)
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # add to tests/unit/test_calibration_ece.py
@@ -402,7 +402,7 @@ def test_calibration_ece_settings_defaults():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_calibration_ece_settings_defaults -q`
 Expected: FAIL (AttributeError: calibration_ece_percentile)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # in app/config/settings.py, immediately after the calibration_simulation_samples field:
@@ -412,7 +412,7 @@ Expected: FAIL (AttributeError: calibration_ece_percentile)
     calibration_ece_n_boot: int = Field(default=2000, alias="CALIBRATION_ECE_N_BOOT")
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_calibration_ece_settings_defaults -q`
 Expected: PASS
@@ -433,7 +433,7 @@ git commit -m "feat(config): calibration ECE gate + OOF capture settings"
 
 This is a refactor wiring step. The logic it relies on is already unit-tested (Tasks 1-4); verification here is import + ruff + a grep proving the magic constants are gone.
 
-- [ ] **Step 1: Replace the magic-threshold ECE block**
+- [x] **Step 1: Replace the magic-threshold ECE block**
 
 Replace the block currently spanning `_DEFAULT_ECE_THRESHOLD = 0.05` through the end of the per-market `for` loop (`pipeline.py:1101-1153`) with:
 
@@ -484,7 +484,7 @@ Replace the block currently spanning `_DEFAULT_ECE_THRESHOLD = 0.05` through the
                 )
 ```
 
-- [ ] **Step 2: Add the flag-gated OOF dump**
+- [x] **Step 2: Add the flag-gated OOF dump**
 
 Immediately after `diagnostics` is fully populated (just before the function returns the calibrators/diagnostics), add:
 
@@ -497,7 +497,7 @@ Immediately after `diagnostics` is fully populated (just before the function ret
             )
 ```
 
-- [ ] **Step 3: Verify the magic constants are gone and it imports**
+- [x] **Step 3: Verify the magic constants are gone and it imports**
 
 Run: `.venv/Scripts/python.exe -c "import app.training.pipeline; print('ok')"`
 Expected: `ok`
@@ -505,7 +505,7 @@ Expected: `ok`
 Run (Grep tool): pattern `_MARKET_ECE_THRESHOLDS|_DEFAULT_ECE_THRESHOLD` in `app/training/pipeline.py`
 Expected: no matches.
 
-- [ ] **Step 4: Lint**
+- [x] **Step 4: Lint**
 
 Run: `uvx ruff check app/training/pipeline.py`
 Expected: All checks passed.
@@ -527,7 +527,7 @@ git commit -m "feat(calibration): dynamic null-floor ECE gate + flag-gated OOF d
 
 The retrain trigger currently fires when a signal's ECE exceeds a flat `0.10`. Make it fire when ECE exceeds that market's persisted null floor (from `calibration_diagnostics`), falling back to `0.10` when no floor is available.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/unit/brain/test_selective_retrain.py
@@ -555,7 +555,7 @@ def test_falls_back_to_default_threshold():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/brain/test_selective_retrain.py -q`
 Expected: FAIL (TypeError: unexpected keyword 'market_floors')
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # replace build_retrain_market_list in app/services/brain/actions/selective_retrain.py
@@ -577,7 +577,7 @@ def build_retrain_market_list(
     return sorted(set(markets))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/brain/test_selective_retrain.py -q`
 Expected: PASS
@@ -598,7 +598,7 @@ git commit -m "feat(brain): selective retrain uses per-market null floor over fl
 - Create: `scripts/analyze_calibration_ece.py`
 - Test: `tests/unit/test_calibration_ece.py`
 
-- [ ] **Step 1: Write the failing test for the analysis helper**
+- [x] **Step 1: Write the failing test for the analysis helper**
 
 ```python
 # add to tests/unit/test_calibration_ece.py
@@ -626,7 +626,7 @@ def test_summarize_fold_subsets_shapes():
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_summarize_fold_subsets_shapes -q`
 Expected: FAIL (ImportError: cannot import name 'summarize_fold_subsets')
 
-- [ ] **Step 3: Write the helper**
+- [x] **Step 3: Write the helper**
 
 ```python
 # append to app/training/calibration_ece.py
@@ -656,12 +656,12 @@ def summarize_fold_subsets(
     return rows
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py::test_summarize_fold_subsets_shapes -q`
 Expected: PASS
 
-- [ ] **Step 5: Write the analysis script**
+- [x] **Step 5: Write the analysis script**
 
 ```python
 # scripts/analyze_calibration_ece.py
@@ -767,6 +767,6 @@ git commit -m "docs(calibration): per-market ECE findings vs null floor"
 
 ## Final verification
 
-- [ ] Run the full module test file: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py tests/unit/brain/test_selective_retrain.py -q` — all pass.
-- [ ] `uvx ruff check app/training/calibration_ece.py app/training/pipeline.py app/config/settings.py app/services/brain/actions/selective_retrain.py scripts/analyze_calibration_ece.py` — clean.
-- [ ] Grep confirms no `_MARKET_ECE_THRESHOLDS` / `_DEFAULT_ECE_THRESHOLD` remain in `pipeline.py`.
+- [x] Run the full module test file: `.venv/Scripts/python.exe -m pytest tests/unit/test_calibration_ece.py tests/unit/brain/test_selective_retrain.py -q` — all pass.
+- [x] `uvx ruff check app/training/calibration_ece.py app/training/pipeline.py app/config/settings.py app/services/brain/actions/selective_retrain.py scripts/analyze_calibration_ece.py` — clean.
+- [x] Grep confirms no `_MARKET_ECE_THRESHOLDS` / `_DEFAULT_ECE_THRESHOLD` remain in `pipeline.py`.
