@@ -11,7 +11,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 
 from app.core.resources import get_effective_worker_count
-from app.training.constants import MARKET_TARGETS
+from app.training.constants import MARKET_TARGETS, ROLLING_WINDOW_RECENCY_WEIGHTS
 from app.training.features import clip_non_negative, role_bucket_label, role_prior_flag_series
 
 try:
@@ -310,13 +310,15 @@ class FittedMarketModel:
         if self.market_key != "threes":
             return mean
 
-        recent_5 = _numeric_column(frame, "threes_avg_5", baseline_mean)
+        recent_3 = _numeric_column(frame, "threes_avg_3", baseline_mean)
+        recent_5 = _numeric_column(frame, "threes_avg_5", recent_3)
         recent_10 = _numeric_column(frame, "threes_avg_10", recent_5)
         recent_20 = _numeric_column(frame, "threes_avg_20", recent_10)
         season = _numeric_column(frame, "threes_season_avg", recent_20)
-        recent_std = _numeric_column(
+        recency_weighted = _recency_weighted_column(frame, "threes", baseline_mean)
+        recent_std = _recency_weighted_std_column(
             frame,
-            "threes_std_10",
+            "threes",
             np.sqrt(np.maximum(recent_10, 0.25)),
         )
         predicted_minutes = _numeric_column(frame, "predicted_minutes", _numeric_column(frame, "minutes_avg_10", 0.0))
@@ -326,7 +328,7 @@ class FittedMarketModel:
             _numeric_column(frame, "estimated_three_point_attempts_per_minute_avg_10", 0.0),
         )
 
-        anchor = clip_non_negative(0.40 * recent_5 + 0.25 * recent_10 + 0.20 * recent_20 + 0.15 * season)
+        anchor = clip_non_negative(recency_weighted)
         ceiling_anchor = np.maximum.reduce([anchor, baseline_mean, recent_10, season])
         stabilized = clip_non_negative(0.50 * mean + 0.50 * ceiling_anchor)
         attempt_ceiling = np.maximum(predicted_minutes * np.maximum(attempt_rate, 0.06) * 0.44, 0.70)
@@ -353,18 +355,19 @@ class FittedMarketModel:
         market_key: str,
         baseline_mean: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        recent_5 = _numeric_column(frame, f"{market_key}_avg_5", baseline_mean)
+        recent_3 = _numeric_column(frame, f"{market_key}_avg_3", baseline_mean)
+        recent_5 = _numeric_column(frame, f"{market_key}_avg_5", recent_3)
         recent_10 = _numeric_column(frame, f"{market_key}_avg_10", recent_5)
         recent_20 = _numeric_column(frame, f"{market_key}_avg_20", recent_10)
         season = _numeric_column(frame, f"{market_key}_season_avg", recent_20)
-        recent_std = _numeric_column(
+        recent_std = _recency_weighted_std_column(
             frame,
-            f"{market_key}_std_10",
+            market_key,
             np.sqrt(np.maximum(recent_10, 0.25)),
         )
-        weighted_anchor = clip_non_negative(0.40 * recent_5 + 0.25 * recent_10 + 0.20 * recent_20 + 0.15 * season)
+        weighted_anchor = _recency_weighted_column(frame, market_key, baseline_mean)
         # Use a true blended mean as the history anchor — not a ceiling based on the max of averages.
-        history_anchor = clip_non_negative(0.45 * weighted_anchor + 0.35 * recent_10 + 0.20 * season)
+        history_anchor = clip_non_negative(0.70 * weighted_anchor + 0.20 * recent_10 + 0.10 * season)
         history_anchor = np.maximum(history_anchor, baseline_mean * 0.50)
         return weighted_anchor, history_anchor, recent_std, recent_5, recent_10, season
 
@@ -582,18 +585,18 @@ class FittedMarketModel:
         # Use blended component means — not the max of each component's averages, which compounded the inflation.
         component_anchor = (
             clip_non_negative(
-                0.50 * _numeric_column(frame, "points_avg_10", 0.0)
-                + 0.30 * _numeric_column(frame, "points_season_avg", 0.0)
+                0.60 * _recency_weighted_column(frame, "points", 0.0)
+                + 0.20 * _numeric_column(frame, "points_season_avg", 0.0)
                 + 0.20 * _numeric_column(frame, "points_baseline_mean", 0.0)
             )
             + clip_non_negative(
-                0.50 * _numeric_column(frame, "rebounds_avg_10", 0.0)
-                + 0.30 * _numeric_column(frame, "rebounds_season_avg", 0.0)
+                0.60 * _recency_weighted_column(frame, "rebounds", 0.0)
+                + 0.20 * _numeric_column(frame, "rebounds_season_avg", 0.0)
                 + 0.20 * _numeric_column(frame, "rebounds_baseline_mean", 0.0)
             )
             + clip_non_negative(
-                0.50 * _numeric_column(frame, "assists_avg_10", 0.0)
-                + 0.30 * _numeric_column(frame, "assists_season_avg", 0.0)
+                0.60 * _recency_weighted_column(frame, "assists", 0.0)
+                + 0.20 * _numeric_column(frame, "assists_season_avg", 0.0)
                 + 0.20 * _numeric_column(frame, "assists_baseline_mean", 0.0)
             )
         )
@@ -686,7 +689,7 @@ class FittedMarketModel:
         )
         position_exposure_prior = clip_non_negative(position_rate_prior * np.maximum(exposure, 0.0))
         role_exposure_prior = clip_non_negative(role_rate_prior * np.maximum(exposure, 0.0))
-        history_anchor = _numeric_column(frame, f"{self.market_key}_avg_10", baseline_mean)
+        history_anchor = _recency_weighted_column(frame, self.market_key, baseline_mean)
         season_anchor = _numeric_column(frame, f"{self.market_key}_season_avg", history_anchor)
         pooled_prior = clip_non_negative(
             0.30 * baseline_mean
@@ -922,6 +925,43 @@ def _safe_training_rate(numerator: pd.Series | np.ndarray, denominator: pd.Serie
     numerator_array = np.asarray(numerator, dtype=float)
     denominator_array = np.maximum(np.asarray(denominator, dtype=float), 1.0)
     return clip_non_negative(numerator_array / denominator_array)
+
+
+def _recency_weighted_column(
+    frame: pd.DataFrame,
+    metric: str,
+    fallback: float | np.ndarray,
+) -> np.ndarray:
+    recent: dict[int, np.ndarray] = {}
+    previous: float | np.ndarray = fallback
+    for window in sorted(ROLLING_WINDOW_RECENCY_WEIGHTS):
+        recent[window] = _numeric_column(frame, f"{metric}_avg_{window}", previous)
+        previous = recent[window]
+    fallback_weighted = sum(
+        recent[window] * weight
+        for window, weight in ROLLING_WINDOW_RECENCY_WEIGHTS.items()
+    )
+    return clip_non_negative(_numeric_column(frame, f"{metric}_recency_weighted", fallback_weighted))
+
+
+def _recency_weighted_std_column(
+    frame: pd.DataFrame,
+    metric: str,
+    fallback: float | np.ndarray,
+) -> np.ndarray:
+    std_values: dict[int, np.ndarray] = {}
+    previous: float | np.ndarray = fallback
+    for window in sorted(ROLLING_WINDOW_RECENCY_WEIGHTS):
+        std_values[window] = _numeric_column(frame, f"{metric}_std_{window}", previous)
+        previous = std_values[window]
+    fallback_weighted = sum(
+        std_values[window] * weight
+        for window, weight in ROLLING_WINDOW_RECENCY_WEIGHTS.items()
+    )
+    return np.maximum(
+        _numeric_column(frame, f"{metric}_std_recency_weighted", fallback_weighted),
+        0.0,
+    )
 
 
 def _build_position_priors(

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.training.constants import ROLLING_WINDOW_RECENCY_WEIGHTS
 from app.training.feature_builders.rolling_windows import RollingWindowBuilder
 
 
@@ -32,6 +33,34 @@ def _minimal_history_frame() -> pd.DataFrame:
             "fouls": [3.0] * n,
             "team_injuries": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
             "lineup_instability_score": [0.1 * i for i in range(n)],
+        }
+    )
+
+
+def _recency_history_frame(points: list[float], minutes: list[float] | None = None) -> pd.DataFrame:
+    """Single-player frame long enough to exercise all recency windows."""
+    n = len(points)
+    minutes = [32.0] * n if minutes is None else minutes
+    return pd.DataFrame(
+        {
+            "player_id": [1] * n,
+            "minutes": minutes,
+            "points": points,
+            "rebounds": [5.0] * n,
+            "assists": [3.0] * n,
+            "threes": [1.0] * n,
+            "turnovers": [2.0] * n,
+            "pra": [point + 8.0 for point in points],
+            "field_goal_attempts": [12.0] * n,
+            "field_goals_made": [6.0] * n,
+            "free_throw_attempts": [4.0] * n,
+            "free_throws_made": [3.0] * n,
+            "offensive_rebounds": [1.0] * n,
+            "defensive_rebounds": [4.0] * n,
+            "plus_minus": [0.0] * n,
+            "fouls": [3.0] * n,
+            "team_injuries": [0.0] * n,
+            "lineup_instability_score": [0.0] * n,
         }
     )
 
@@ -73,6 +102,29 @@ def test_rolling_window_builder_key_set_stable() -> None:
         "lineup_instability_score_avg_10",
     }
     assert expected_subset.issubset(out.keys())
+
+
+def test_rolling_window_builder_points_recency_weighted_equals_weighted_windows() -> None:
+    frame = _recency_history_frame([float(i) for i in range(1, 26)])
+    out = RollingWindowBuilder().build_player_history_features(frame)
+
+    expected = sum(
+        float(out[f"points_avg_{window}"].iloc[-1]) * weight
+        for window, weight in ROLLING_WINDOW_RECENCY_WEIGHTS.items()
+    )
+
+    assert np.isclose(float(out["points_recency_weighted"].iloc[-1]), expected)
+    assert np.isclose(expected, 20.75)
+
+
+def test_rolling_window_builder_points_recency_weighted_excludes_dnp_like_row() -> None:
+    points = [10.0] * 19 + [200.0, 10.0]
+    minutes = [32.0] * 19 + [2.0, 32.0]
+    frame = _recency_history_frame(points, minutes)
+    out = RollingWindowBuilder().build_player_history_features(frame)
+
+    assert bool(out.dnp_mask.iloc[19])
+    assert np.isclose(float(out["points_recency_weighted"].iloc[20]), 10.0)
 
 
 def test_rolling_window_builder_home_away_split_points() -> None:
