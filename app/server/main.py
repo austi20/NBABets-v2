@@ -18,8 +18,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
-from sqlalchemy import Table
-from sqlalchemy.engine import make_url
+from sqlalchemy import Table, inspect, text
+from sqlalchemy.engine import Engine, make_url
 
 from app.config.settings import get_settings
 from app.db.base import Base
@@ -76,9 +76,25 @@ def _build_market_service() -> KalshiMarketService:
     )
 
 
+def _ensure_legacy_trading_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table(TradingKillSwitch.__tablename__):
+        return
+
+    kill_switch_columns = {
+        column["name"] for column in inspector.get_columns(TradingKillSwitch.__tablename__)
+    }
+    if "flatten" not in kill_switch_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE trading_kill_switch ADD COLUMN flatten BOOLEAN DEFAULT 0")
+            )
+
+
 def _ensure_trading_tables() -> None:
+    engine = get_engine()
     Base.metadata.create_all(
-        get_engine(),
+        engine,
         tables=[
             cast(Table, TradingOrder.__table__),
             cast(Table, TradingFill.__table__),
@@ -87,6 +103,7 @@ def _ensure_trading_tables() -> None:
             cast(Table, TradingDailyPnL.__table__),
         ],
     )
+    _ensure_legacy_trading_schema(engine)
 
 
 def _build_trading_risk() -> ExposureRiskEngine:
