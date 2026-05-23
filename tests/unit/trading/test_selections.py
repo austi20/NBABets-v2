@@ -24,14 +24,15 @@ def test_load_missing_file_returns_empty_store(store_path: Path) -> None:
 
 
 def test_save_then_load_roundtrip(store_path: Path) -> None:
+    today = date.today()
     store = SelectionStore.load(store_path)
-    store.set_selection(date(2026, 5, 11), "cunningham-pts", True)
-    store.set_selection(date(2026, 5, 11), "hardaway-3pt", False)
-    store.save()
+    store.set_selection(today, "cunningham-pts", True)
+    store.set_selection(today, "hardaway-3pt", False)
+    store.save(today=today)
 
     reloaded = SelectionStore.load(store_path)
-    assert reloaded.is_selected(date(2026, 5, 11), "cunningham-pts") is True
-    assert reloaded.is_selected(date(2026, 5, 11), "hardaway-3pt") is False
+    assert reloaded.is_selected(today, "cunningham-pts") is True
+    assert reloaded.is_selected(today, "hardaway-3pt") is False
 
 
 def test_default_for_unknown_candidate_is_true(store_path: Path) -> None:

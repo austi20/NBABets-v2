@@ -65,7 +65,7 @@ def load_live_limits(path: Path | str) -> RiskLimits:
 
 @dataclass(frozen=True)
 class ActiveTraderConfig:
-    """Strategy parameters for the active-trader loop (Phase 1)."""
+    """Strategy parameters for the active-trader loop."""
 
     enabled: bool
     tp_pct: float

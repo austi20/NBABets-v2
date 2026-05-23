@@ -16,7 +16,7 @@
 
 ## Key Files
 
-- `plan.md` - implementation plan and acceptance criteria.
+- `docs/archive/rotation-shock/implementation-plan.md` - original implementation plan and acceptance criteria.
 - `app/config/settings.py` - simulation settings defaults.
 - `app/training/pipeline.py` - training/inference pipeline entry.
 - `app/training/data.py` - availability context and feature attachment.
@@ -88,7 +88,7 @@ From `app/config/settings.py`:
   - proportional multi-absence attribution
   - expanded sanity report diagnostics
   - direct CLI import bootstrap
-- `plan.md` is present as the implementation plan.
+- `docs/archive/rotation-shock/implementation-plan.md` is present as the archived implementation plan.
 
 ## Test Commands
 
@@ -107,7 +107,7 @@ Plan-defined phase-boundary checks:
 
 ## Commands Run In This Session
 
-- Read `plan.md`
+- Read `docs/archive/rotation-shock/implementation-plan.md`
 - Read `app/config/settings.py`
 - Read `README.md`
 - Created `memory/rotation_shock_index.md`
@@ -339,7 +339,7 @@ Plan-defined phase-boundary checks:
 - Added architecture and rollback documentation:
   - `docs/rotation_shock_architecture.md`
 - Updated `.env.example` with promoted rotation defaults and Phase 3 simulation defaults.
-- Updated `plan.md` so Qwen explanation work is marked as future/post-v1 rather than a remaining numbered rotation-shock phase.
+- Updated the archived implementation plan so Qwen explanation work is marked as future/post-v1 rather than a remaining numbered rotation-shock phase.
 
 ## Phase 9 Validation
 

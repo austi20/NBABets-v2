@@ -97,6 +97,12 @@ export function LimitsModal() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const closeModal = () => {
+    setForm(EMPTY);
+    setError(null);
+    setOpen(false);
+  };
+
   useEffect(() => {
     if (open) {
       void tradingActions.readLimits()
@@ -114,9 +120,6 @@ export function LimitsModal() {
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : "failed to load limits");
         });
-    } else {
-      setForm(EMPTY);
-      setError(null);
     }
   }, [open]);
 
@@ -139,7 +142,7 @@ export function LimitsModal() {
         reject_cooldown_seconds: form.reject_cooldown_seconds ? Number(form.reject_cooldown_seconds) : undefined,
         per_order_cap_override: form.per_order_cap_override ? Number(form.per_order_cap_override) : undefined,
       });
-      setOpen(false);
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : "save failed");
     } finally {
@@ -160,7 +163,7 @@ export function LimitsModal() {
   );
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => (nextOpen ? setOpen(true) : closeModal())}>
       <Dialog.Portal>
         <Dialog.Overlay style={overlayStyle} />
         <Dialog.Content style={contentStyle}>

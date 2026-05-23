@@ -5,13 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-ARCHETYPE_LABELS = (
-    "primary_creator",
-    "scoring_wing",
-    "rim_big",
-    "spacing_guard",
-    "bench_depth",
-)
 LEAGUE_TEAM_ID = "LEAGUE"
 PLAYER_MINUTES_CAP = 48.0
 USAGE_SHARE_CAP = 0.45

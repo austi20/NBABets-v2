@@ -32,13 +32,5 @@
     "externalBin": [
       "binaries/nba-sidecar"
     ]
-  },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://updates.placeholder.nba-prop-engine.invalid/{{target}}/{{arch}}/{{current_version}}"
-      ],
-      "pubkey": "REPLACE_WITH_SIGNING_PUBLIC_KEY_FOR_PRODUCTION"
-    }
   }
 }

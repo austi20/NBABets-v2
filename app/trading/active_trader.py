@@ -1,12 +1,11 @@
-"""ActiveTrader loop for the paper-mode active trader (Phase 1).
+"""ActiveTrader loop for the paper-mode active trader.
 
 Wires a ``MarketBook`` subscription to a ``PortfolioManager``, applying entry
 gates to candidates supplied by an injected ``CandidateProvider``. No live I/O:
 the router lives behind ``PortfolioManager`` and candidates are supplied
-externally. LiveStatsPoller (Phase 2) and real Kalshi I/O (Phase 3) are out of
-scope.
+externally.
 
-Spec: docs/plans/specs/profit-machine-design.md §3.1.
+Spec: docs/plans/specs/profit-machine-design.md section 3.1.
 """
 
 from __future__ import annotations

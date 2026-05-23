@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -12,12 +11,10 @@ from app.services.agents.contracts import AgentTask
 from app.services.agents.parlay_advisor import ParlayAdvisorAgent
 
 
-def _make_session(monkeypatch):
+def _make_session(monkeypatch, tmp_path: Path):
     from app.config.settings import get_settings
 
-    root = Path("temp") / f"pytest_parlay_advisor_{uuid.uuid4().hex}"
-    root.mkdir(parents=True, exist_ok=True)
-    db_url = f"sqlite:///{(root / 'pa.sqlite').resolve().as_posix()}"
+    db_url = f"sqlite:///{(tmp_path / 'pa.sqlite').resolve().as_posix()}"
     monkeypatch.setenv("DATABASE_URL", db_url)
     # Point AI at an unreachable port so it always falls back deterministically.
     monkeypatch.setenv("AI_LOCAL_ENDPOINT", "http://127.0.0.1:19999/v1/chat/completions")
@@ -50,11 +47,11 @@ def _make_parlay(correlation_penalty: float) -> dict:
     }
 
 
-def test_flags_high_correlation(monkeypatch) -> None:
+def test_flags_high_correlation(monkeypatch, tmp_path: Path) -> None:
     """Parlay with correlation_penalty above threshold must be flagged even when AI is unreachable."""
     from app.config.settings import get_settings
 
-    session = _make_session(monkeypatch)
+    session = _make_session(monkeypatch, tmp_path)
     task = AgentTask(
         role="parlay_advisor",
         task_type="parlay_advisor_assessment",
@@ -69,10 +66,10 @@ def test_flags_high_correlation(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def test_ok_for_low_correlation(monkeypatch) -> None:
+def test_ok_for_low_correlation(monkeypatch, tmp_path: Path) -> None:
     from app.config.settings import get_settings
 
-    session = _make_session(monkeypatch)
+    session = _make_session(monkeypatch, tmp_path)
     task = AgentTask(
         role="parlay_advisor",
         task_type="parlay_advisor_assessment",
@@ -85,10 +82,10 @@ def test_ok_for_low_correlation(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def test_returns_ok_when_no_parlays(monkeypatch) -> None:
+def test_returns_ok_when_no_parlays(monkeypatch, tmp_path: Path) -> None:
     from app.config.settings import get_settings
 
-    session = _make_session(monkeypatch)
+    session = _make_session(monkeypatch, tmp_path)
     task = AgentTask(
         role="parlay_advisor",
         task_type="parlay_advisor_assessment",

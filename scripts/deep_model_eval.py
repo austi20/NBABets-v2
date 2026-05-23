@@ -58,19 +58,9 @@ LINE_TIERS = {
     "turnovers": [(0,  1, "low"), ( 1,  3, "mid"), ( 3, 99, "high")],
     "pra":       [(0, 20, "low"), (20, 35, "mid"), (35, 99, "high")],
 }
-PLAYER_MIN_TIERS = [(0, 20, "bench_<20min"), (20, 30, "mid_20-30min"), (30, 99, "starter_>30min")]
-
 
 def _ts() -> str:
     return time.strftime("%H:%M:%S")
-
-
-def _pct(n: float) -> str:
-    return f"{n * 100:.1f}%"
-
-
-def _num(n: float, dp: int = 3) -> str:
-    return f"{n:.{dp}f}"
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -93,12 +92,6 @@ DEFAULT_PREGAME_BUFFER_MINUTES = 90
 # injury exits, foul-outs, or coach's-decision DNPs where the player briefly appeared.
 # These do not reflect true production and should be excluded from training.
 MINIMUM_QUALIFYING_MINUTES = 5
-
-
-@dataclass(frozen=True)
-class DatasetBundle:
-    historical: pd.DataFrame
-    upcoming: pd.DataFrame
 
 
 class DatasetLoader:

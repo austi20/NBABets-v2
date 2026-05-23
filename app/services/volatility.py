@@ -1,7 +1,7 @@
 """Per-prop volatility coefficient + tier.
 
-See docs/superpowers/specs/2026-05-15-volatility-tier-design.md for the full
-specification. This module is intended to be a pure-function dependency:
+The original design outline is archived under docs/archive/superpowers/specs.
+This module is intended to be a pure-function dependency:
 callers assemble a FeatureSnapshot and pass it in along with the prediction
 row, and the module returns a VolatilityScore.
 """

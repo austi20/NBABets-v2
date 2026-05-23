@@ -4,7 +4,7 @@ import { Route as rootRoute } from "./__root";
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: "/players",
-  component: () => <PageStub title="Players" description="Player search and detail — coming in T3" />,
+  component: () => <PageStub title="Players" description="Player search and detail views will appear here." />,
 });
 
 function PageStub({ title, description }: { title: string; description: string }) {

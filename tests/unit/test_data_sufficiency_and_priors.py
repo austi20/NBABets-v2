@@ -1,5 +1,4 @@
-"""Tests for engine overhaul phases 2-5: population priors, tier-aware priors,
-confidence propagation, trade/injury detection, and role bucket classification."""
+"""Tests for data sufficiency, population priors, confidence propagation, and role buckets."""
 
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from app.training.data_sufficiency import (
 from app.training.features import FeatureEngineer, role_bucket_label, role_prior_flag_series
 
 # ---------------------------------------------------------------------------
-# Phase 1 boundary tests: data sufficiency tiers
+# Data sufficiency tier boundaries
 # ---------------------------------------------------------------------------
 
 
@@ -33,7 +32,7 @@ class TestDataSufficiencyBoundaries:
         assert classify_data_sufficiency_tier(10, 99.9, 12.0) == "B"
 
     def test_tier_a_below_recent_avg_boundary(self) -> None:
-        # Games and total minutes qualify for A, but recent avg too low → B
+        # Games and total minutes qualify for A, but recent avg is too low.
         assert classify_data_sufficiency_tier(10, 100.0, 11.9) == "B"
 
     def test_tier_b_exact_boundary(self) -> None:
@@ -43,7 +42,7 @@ class TestDataSufficiencyBoundaries:
         assert classify_data_sufficiency_tier(4, 50.0, 20.0) == "C"
 
     def test_tier_b_below_minutes_boundary(self) -> None:
-        # 5 games but only 49 total minutes → C
+        # 5 games but only 49 total minutes falls back to C.
         assert classify_data_sufficiency_tier(5, 49.9, 20.0) == "C"
 
     def test_tier_d_zero_games(self) -> None:
@@ -113,7 +112,7 @@ class TestAnnotateTiersPreservesRows:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: role bucket labels + population priors
+# Role bucket labels and population priors
 # ---------------------------------------------------------------------------
 
 
@@ -148,7 +147,7 @@ class TestRolePriorFlagSeries:
     def test_falls_back_to_minutes_when_no_starter_data(self) -> None:
         frame = pd.DataFrame({"starter_flag": [0.0, 0.0, 0.0], "minutes": [30, 15, 25]})
         result = role_prior_flag_series(frame)
-        # 30 >= 24 → 1.0, 15 < 24 → 0.0, 25 >= 24 → 1.0
+        # 30 >= 24 -> 1.0, 15 < 24 -> 0.0, 25 >= 24 -> 1.0
         assert list(result) == [1.0, 0.0, 1.0]
 
 
@@ -217,8 +216,8 @@ class TestFillWithPopulationPriors:
         frame = pd.DataFrame({
             "position_group": ["F"],
             "_data_sufficiency_tier": ["C"],
-            "points_avg_10": [12.0],  # has value — should NOT be overwritten
-            "rebounds_avg_10": [np.nan],  # NaN — should be filled
+            "points_avg_10": [12.0],  # has value; should not be overwritten
+            "rebounds_avg_10": [np.nan],  # NaN should be filled
         })
         priors = {
             "global_feature_priors": {"points_avg_10": 15.0, "rebounds_avg_10": 5.0},
@@ -265,7 +264,7 @@ class TestFillWithPopulationPriors:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: confidence score propagation through PropOpportunity
+# Confidence score propagation through PropOpportunity
 # ---------------------------------------------------------------------------
 
 

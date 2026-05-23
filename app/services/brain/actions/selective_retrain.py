@@ -22,10 +22,9 @@ def execute_selective_retrain(
 ) -> CorrectionRecord:
     """Trigger a retrain for specific markets only.
 
-    This creates a CorrectionRecord but delegates actual retraining
-    to the training pipeline via ``TrainingPipeline.retrain_markets()``.
-    The caller (correction executor) is responsible for invoking the
-    pipeline and comparing pre/post ECE.
+    This records a retrain request for the correction executor. The
+    executor/orchestrator owns the actual retrain run and pre/post ECE
+    comparison.
     """
     market = correction.market
     params = correction.parameters

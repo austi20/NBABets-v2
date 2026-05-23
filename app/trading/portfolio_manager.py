@@ -1,4 +1,4 @@
-"""Multi-position FSM for the active-trader paper mode (Phase 1).
+"""Multi-position FSM for the active-trader paper mode.
 
 This module is intentionally I/O-free except through the injected
 ``OrderRouter`` protocol. All time math goes through an injected ``clock``
@@ -6,7 +6,7 @@ callable so tests can step time deterministically. Risk-gate evaluation is
 the caller's job (see ``app/trading/risk.py``); this manager only enforces
 the per-ticker "no double-down" rule and per-session cooldown.
 
-Spec: docs/plans/specs/profit-machine-design.md §3.2 and §6.
+Spec: docs/plans/specs/profit-machine-design.md sections 3.2 and 6.
 """
 
 from __future__ import annotations

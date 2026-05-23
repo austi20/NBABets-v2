@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -12,13 +11,11 @@ from app.services.agents.contracts import AgentTask
 from app.services.agents.prediction_validator import PredictionValidatorAgent
 
 
-def _make_session(monkeypatch):
+def _make_session(monkeypatch, tmp_path: Path):
     import app.services.agents.prediction_validator as validator_mod
     from app.config.settings import get_settings
 
-    root = Path("temp") / f"pytest_pred_validator_{uuid.uuid4().hex}"
-    root.mkdir(parents=True, exist_ok=True)
-    db_url = f"sqlite:///{(root / 'pv.sqlite').resolve().as_posix()}"
+    db_url = f"sqlite:///{(tmp_path / 'pv.sqlite').resolve().as_posix()}"
     monkeypatch.setenv("DATABASE_URL", db_url)
     # Point AI at an unreachable port so it always falls back deterministically.
     monkeypatch.setenv("AI_LOCAL_ENDPOINT", "http://127.0.0.1:19999/v1/chat/completions")
@@ -30,10 +27,10 @@ def _make_session(monkeypatch):
     return Session()
 
 
-def test_returns_ok_when_no_extreme_predictions(monkeypatch) -> None:
+def test_returns_ok_when_no_extreme_predictions(monkeypatch, tmp_path: Path) -> None:
     from app.config.settings import get_settings
 
-    session = _make_session(monkeypatch)
+    session = _make_session(monkeypatch, tmp_path)
     task = AgentTask(
         role="prediction_validator",
         task_type="prediction_validator_assessment",
@@ -47,11 +44,11 @@ def test_returns_ok_when_no_extreme_predictions(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def test_threshold_setting_applied(monkeypatch) -> None:
+def test_threshold_setting_applied(monkeypatch, tmp_path: Path) -> None:
     from app.config.settings import get_settings
 
     monkeypatch.setenv("PREDICTION_VALIDATOR_EXTREME_PROB_THRESHOLD", "0.85")
-    session = _make_session(monkeypatch)
+    session = _make_session(monkeypatch, tmp_path)
 
     agent = PredictionValidatorAgent(session)
     assert agent._settings.prediction_validator_extreme_prob_threshold == 0.85

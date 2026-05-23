@@ -14,7 +14,6 @@ from app.server.schemas.props import (
     PropOpportunityModel,
     PropWithInsightModel,
 )
-from app.server.services.board_cache import BoardCacheEntry
 from app.services import rotation_audit
 from app.services.insights import PropInsight, build_prop_insight_for_quote
 from app.services.prop_analysis import PropOpportunity
@@ -54,12 +53,6 @@ def _passes_backtest_tuning_filters(
 
 def _opportunity_key(opportunity: PropOpportunity) -> tuple[int, int, str, float]:
     return (opportunity.game_id, opportunity.player_id, opportunity.market_key, float(opportunity.consensus_line))
-
-
-def _best_book_name(entry: BoardCacheEntry, opportunity: PropOpportunity) -> str:
-    key = _opportunity_key(opportunity)
-    insight = entry.opportunity_insights[key]
-    return insight.best_quote.sportsbook_name
 
 
 def _sort_opportunities(entry, opportunities: list[PropOpportunity], sort_choice: str) -> list[PropOpportunity]:

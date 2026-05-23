@@ -1,10 +1,7 @@
 """Tests for game_already_played blocker in _candidate_policy_blockers."""
 from __future__ import annotations
 
-from datetime import date, timedelta
-from unittest.mock import patch
-
-import pytest
+from datetime import date
 
 from app.trading.decision_brain import DecisionBrainCandidate, DecisionBrainPolicy, _candidate_policy_blockers
 
@@ -38,7 +35,6 @@ def _make_policy(**overrides) -> DecisionBrainPolicy:
 
 
 def _make_candidate(game_date: date, **overrides) -> DecisionBrainCandidate:
-    today = date.today()
     defaults = dict(
         stable_id="test-id",
         source="test",
