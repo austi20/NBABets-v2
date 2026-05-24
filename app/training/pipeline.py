@@ -1149,6 +1149,11 @@ class TrainingPipeline:
                 else:
                     oof_priors[market_key].append(priors)
 
+        fold_plan: dict[str, Any] = {
+            "available_folds": int(fold_count),
+            "default_max_folds": int(self._settings.calibration_max_folds),
+            "markets": {},
+        }
         calibrators: dict[str, ProbabilityCalibrator] = {}
         for market_key, target_column in MARKET_TARGETS.items():
             n_folds = self._settings.calibration_fold_table.get(
@@ -1157,6 +1162,12 @@ class TrainingPipeline:
             raw_chunks = oof_raw[market_key][-n_folds:]
             label_chunks = oof_labels[market_key][-n_folds:]
             reason = "ECE-table" if market_key in self._settings.calibration_fold_table else "default"
+            fold_plan["markets"][market_key] = {
+                "configured_folds": int(n_folds),
+                "effective_folds": int(len(raw_chunks)),
+                "source": reason,
+                "capped_by_available_folds": bool(len(raw_chunks) < int(n_folds)),
+            }
             _log.info(
                 "calibration: %s using %d folds (%s)",
                 market_key,
@@ -1262,6 +1273,7 @@ class TrainingPipeline:
             ),
             "purge_days": int(self._settings.calibration_purge_days),
         }
+        diagnostics["_fold_plan"] = fold_plan
         if self._settings.calibration_dump_oof:
             dump_calibration_oof(
                 oof_raw,

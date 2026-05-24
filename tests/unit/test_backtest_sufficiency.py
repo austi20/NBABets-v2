@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
-from app.evaluation.backtest import RollingOriginBacktester, _build_segmented_summary
+from app.evaluation.backtest import (
+    RollingOriginBacktester,
+    _build_segmented_summary,
+    _rolling_origin_validation_starts,
+)
 
 
 def test_build_segmented_summary_preserves_sufficiency_columns() -> None:
@@ -74,3 +80,16 @@ def test_score_quote_rows_handles_empty_prediction_frame_without_merge_keys() ->
 
     assert scored.empty
     assert set(scored.columns) == set(quote_rows.columns)
+
+
+def test_rolling_origin_validation_starts_caps_to_latest_ten_folds() -> None:
+    starts, requested = _rolling_origin_validation_starts(
+        date(2026, 1, 1),
+        date(2026, 6, 1),
+        step_days=7,
+        max_folds=10,
+    )
+
+    assert requested > 10
+    assert len(starts) == 10
+    assert starts[-1] == date(2026, 5, 28)

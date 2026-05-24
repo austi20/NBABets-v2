@@ -30,6 +30,7 @@ from app.services.startup_cache import (
 )
 from app.services.startup_eta_history import load_step_estimates, record_step_duration
 from app.tasks.ingestion import refresh_all
+from app.training.constants import MARKET_TARGETS
 from app.training.data import DatasetLoader
 from app.training.pipeline import TrainingPipeline
 
@@ -113,6 +114,7 @@ _STEP_SPECS = (
     ("start_local_ai", "Start local AI server", 5, 8.0),
     ("refresh_data", "Refresh data feeds", 35, 15.0),
     ("train_model", "Train models", 20, 12.0),
+    ("calibration_folds", "Review calibration folds", 0, 0.5),
     ("predict", "Generate predictions", 10, 6.0),
     ("backtest", "Run backtests", 15, 10.0),
     ("automation_report", "Generate daily automation report", 5, 2.0),
@@ -175,6 +177,60 @@ def _build_startup_steps(eta_history_path: Path) -> list[StartupStep]:
     for step in steps:
         step.estimated_seconds = estimates[step.key]
     return steps
+
+
+def _calibration_fold_plan_from_metrics(train_metrics: dict[str, Any] | None) -> dict[str, Any]:
+    if isinstance(train_metrics, dict):
+        metrics = train_metrics.get("metrics")
+        if isinstance(metrics, dict):
+            diagnostics = metrics.get("calibration_diagnostics")
+            if isinstance(diagnostics, dict):
+                plan = diagnostics.get("_fold_plan")
+                if isinstance(plan, dict):
+                    return plan
+
+    settings = get_settings()
+    markets: dict[str, dict[str, Any]] = {}
+    for market_key in MARKET_TARGETS:
+        configured = int(settings.calibration_fold_table.get(market_key, settings.calibration_max_folds))
+        effective = min(configured, int(settings.calibration_max_folds))
+        markets[market_key] = {
+            "configured_folds": configured,
+            "effective_folds": effective,
+            "source": "ECE-table" if market_key in settings.calibration_fold_table else "default",
+            "capped_by_available_folds": effective < configured,
+        }
+    return {
+        "available_folds": None,
+        "default_max_folds": int(settings.calibration_max_folds),
+        "markets": markets,
+    }
+
+
+def _format_calibration_fold_plan(plan: dict[str, Any]) -> str:
+    markets = plan.get("markets") if isinstance(plan, dict) else {}
+    market_parts: list[str] = []
+    if isinstance(markets, dict):
+        for market_key in MARKET_TARGETS:
+            payload = markets.get(market_key)
+            if not isinstance(payload, dict):
+                continue
+            configured = int(payload.get("configured_folds") or 0)
+            effective = int(payload.get("effective_folds") or 0)
+            if configured and effective != configured:
+                market_parts.append(f"{market_key}={effective}/{configured}")
+            elif effective:
+                market_parts.append(f"{market_key}={effective}")
+    available = plan.get("available_folds")
+    default_cap = plan.get("default_max_folds")
+    prefix_parts = []
+    if available is not None:
+        prefix_parts.append(f"available OOF folds={available}")
+    if default_cap is not None:
+        prefix_parts.append(f"default cap={default_cap}")
+    prefix = "; ".join(prefix_parts)
+    markets_text = ", ".join(market_parts) if market_parts else "no market fold plan available"
+    return f"{prefix}; {markets_text}" if prefix else markets_text
 
 
 class StartupRunner:
@@ -283,6 +339,7 @@ class StartupRunner:
             "start_local_ai": self._step_start_local_ai,
             "refresh_data": self._step_refresh_data,
             "train_model": self._step_train_model,
+            "calibration_folds": self._step_calibration_folds,
             "predict": self._step_predict,
             "backtest": self._step_backtest,
             "automation_report": self._step_automation_report,
@@ -380,6 +437,15 @@ class StartupRunner:
         self._set_metric("train_model", metrics)
         self._record_quote_coverage_metric()
         return {"cached_historical": cached_historical}
+
+    def _step_calibration_folds(self, *, step_key: str, **_: Any) -> dict[str, Any]:
+        with self._lock:
+            train_metrics = deepcopy(self._snapshot.metrics.get("train_model"))
+        plan = _calibration_fold_plan_from_metrics(train_metrics if isinstance(train_metrics, dict) else None)
+        message = _format_calibration_fold_plan(plan)
+        self._set_metric("calibration_fold_plan", plan)
+        self._set_step_status(step_key, "completed", message)
+        return {"early_complete": True}
 
     def _step_predict(
         self,

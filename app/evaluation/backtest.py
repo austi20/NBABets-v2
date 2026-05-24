@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -64,6 +64,7 @@ class RollingOriginBacktester:
         train_days: int = 120,
         validation_days: int = 14,
         step_days: int = 14,
+        max_folds: int | None = None,
         prediction_buffer_minutes: int = DEFAULT_PREGAME_BUFFER_MINUTES,
         progress_callback: Callable[[int | None, int | None, str], None] | None = None,
         historical: pd.DataFrame | None = None,
@@ -88,14 +89,19 @@ class RollingOriginBacktester:
             if train_days >= history_span_days:
                 train_days = max(1, history_span_days - 1)
         start_date = history_start + timedelta(days=train_days)
-        cursor = start_date
         fold_rows: list[dict[str, object]] = []
         detailed_bets: list[pd.DataFrame] = []
-        total_windows = max(((end_date - start_date).days // max(step_days, 1)) + 1, 1)
-        current_window = 0
+        effective_max_folds = self._settings.backtest_max_folds if max_folds is None else int(max_folds)
+        validation_starts, requested_windows = _rolling_origin_validation_starts(
+            start_date,
+            end_date,
+            step_days=step_days,
+            max_folds=effective_max_folds,
+        )
+        total_windows = max(len(validation_starts), 1)
+        skipped_windows = max(requested_windows - len(validation_starts), 0)
 
-        while cursor <= end_date:
-            current_window += 1
+        for current_window, cursor in enumerate(validation_starts, start=1):
             train_start = cursor - timedelta(days=train_days)
             train_end = cursor - timedelta(days=1)
             validation_end = min(cursor + timedelta(days=validation_days - 1), end_date)
@@ -110,7 +116,6 @@ class RollingOriginBacktester:
                 (quote_inventory["game_date"].dt.date >= cursor) & (quote_inventory["game_date"].dt.date <= validation_end)
             ].copy()
             if len(train_frame) < 50 or validation_frame.empty:
-                cursor += timedelta(days=step_days)
                 continue
 
             train_frame, validation_frame, feature_columns = self._prepare_frames(train_frame, validation_frame, feature_set.feature_columns)
@@ -294,7 +299,6 @@ class RollingOriginBacktester:
                         "sufficiency_flag": sufficiency_flag,
                     }
                 )
-            cursor += timedelta(days=step_days)
 
         results = pd.DataFrame(fold_rows)
         bet_detail = pd.concat(detailed_bets, ignore_index=True) if detailed_bets else pd.DataFrame()
@@ -323,6 +327,10 @@ class RollingOriginBacktester:
                     "history_span_days": int(history_span_days),
                     "validation_days": int(validation_days),
                     "step_days": int(step_days),
+                    "requested_fold_windows": int(requested_windows),
+                    "effective_fold_windows": int(len(validation_starts)),
+                    "max_fold_windows": int(effective_max_folds) if effective_max_folds > 0 else None,
+                    "skipped_fold_windows": int(skipped_windows),
                     "fold_rows": int(len(fold_rows)),
                 },
             },
@@ -341,6 +349,10 @@ class RollingOriginBacktester:
                         "history_span_days": int(history_span_days),
                         "validation_days": int(validation_days),
                         "step_days": int(step_days),
+                        "requested_fold_windows": int(requested_windows),
+                        "effective_fold_windows": int(len(validation_starts)),
+                        "max_fold_windows": int(effective_max_folds) if effective_max_folds > 0 else None,
+                        "skipped_fold_windows": int(skipped_windows),
                         "fold_rows": int(len(fold_rows)),
                     },
                 },
@@ -358,6 +370,10 @@ class RollingOriginBacktester:
                 "history_span_days": int(history_span_days),
                 "validation_days": int(validation_days),
                 "step_days": int(step_days),
+                "requested_fold_windows": int(requested_windows),
+                "effective_fold_windows": int(len(validation_starts)),
+                "max_fold_windows": int(effective_max_folds) if effective_max_folds > 0 else None,
+                "skipped_fold_windows": int(skipped_windows),
                 "fold_rows": int(len(fold_rows)),
             },
             "artifacts": {
@@ -713,6 +729,26 @@ def _build_segmented_summary(results: pd.DataFrame, bet_detail: pd.DataFrame) ->
     numeric_columns = summary.select_dtypes(include=["number", "bool"]).columns
     summary[numeric_columns] = summary[numeric_columns].fillna(0.0)
     return summary.sort_values(["segment", "segment_value", "market_key"]).reset_index(drop=True)
+
+
+def _rolling_origin_validation_starts(
+    start_date: date,
+    end_date: date,
+    *,
+    step_days: int,
+    max_folds: int | None,
+) -> tuple[list[date], int]:
+    """Return validation-window start dates, capped to the latest requested folds."""
+    step = max(int(step_days), 1)
+    cursor = start_date
+    starts = []
+    while cursor <= end_date:
+        starts.append(cursor)
+        cursor += timedelta(days=step)
+    requested = len(starts)
+    if max_folds is not None and int(max_folds) > 0 and len(starts) > int(max_folds):
+        starts = starts[-int(max_folds):]
+    return starts, requested
 
 
 def _finalize_bet_rows(frame: pd.DataFrame) -> pd.DataFrame:

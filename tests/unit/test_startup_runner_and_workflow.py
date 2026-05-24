@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.services.daily_workflow import DailyWorkflowService, WorkflowGateSummary
 from app.services.parlays import ParlayLeg, ParlayRecommendation
-from app.services.startup import StartupRunner, StartupRunResult
+from app.services.startup import StartupRunner, StartupRunResult, _format_calibration_fold_plan
 
 
 class _SessionStub:
@@ -23,6 +23,7 @@ def test_startup_runner_returns_structured_result(monkeypatch) -> None:
     monkeypatch.setattr(runner, "_step_start_local_ai", lambda **_: {"early_complete": True})
     monkeypatch.setattr(runner, "_step_refresh_data", lambda **_: {"board_date": board_date})
     monkeypatch.setattr(runner, "_step_train_model", lambda **_: None)
+    monkeypatch.setattr(runner, "_step_calibration_folds", lambda **_: {"early_complete": True})
     monkeypatch.setattr(runner, "_step_predict", lambda **_: {"board_date": board_date})
     monkeypatch.setattr(runner, "_step_backtest", lambda **_: None)
     monkeypatch.setattr(runner, "_step_automation_report", lambda **_: None)
@@ -39,11 +40,33 @@ def test_startup_runner_returns_structured_result(monkeypatch) -> None:
         "start_local_ai",
         "refresh_data",
         "train_model",
+        "calibration_folds",
         "predict",
         "backtest",
         "automation_report",
         "analyze_props",
     ]
+
+
+def test_format_calibration_fold_plan_shows_effective_market_caps() -> None:
+    message = _format_calibration_fold_plan(
+        {
+            "available_folds": 10,
+            "default_max_folds": 10,
+            "markets": {
+                "points": {"configured_folds": 8, "effective_folds": 8},
+                "rebounds": {"configured_folds": 6, "effective_folds": 6},
+                "assists": {"configured_folds": 12, "effective_folds": 10},
+                "threes": {"configured_folds": 8, "effective_folds": 8},
+                "turnovers": {"configured_folds": 8, "effective_folds": 8},
+                "pra": {"configured_folds": 10, "effective_folds": 10},
+            },
+        }
+    )
+
+    assert "available OOF folds=10" in message
+    assert "points=8" in message
+    assert "assists=10/12" in message
 
 
 def test_daily_workflow_retries_once_then_succeeds(monkeypatch) -> None:
