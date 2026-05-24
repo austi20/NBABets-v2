@@ -566,6 +566,16 @@ def _quote_edge(quote: SportsbookQuote) -> float:
 _HIGH_CONFIDENCE_MARKET_BLOCKLIST: frozenset[str] = frozenset({"threes"})
 _HIGH_CONFIDENCE_CAP: int = 71
 
+# Flat score penalty per volatile market key. Applied before the cap so the
+# cap still limits runaway threes scores. Volatile = higher variance outcome
+# distribution that makes high-confidence badges misleading.
+_MARKET_SCORE_PENALTY: dict[str, int] = {
+    "threes": 10,
+    "blocks": 8,
+    "steals": 8,
+    "turnovers": 12,
+}
+
 
 def _prop_confidence_score(
     *,
@@ -598,6 +608,7 @@ def _prop_confidence_score(
         score -= 2
     if volatility is not None:
         score = int(score * volatility.confidence_multiplier)
+    score -= _MARKET_SCORE_PENALTY.get(opportunity.market_key.lower(), 0)
     if opportunity.market_key.lower() in _HIGH_CONFIDENCE_MARKET_BLOCKLIST:
         score = min(score, _HIGH_CONFIDENCE_CAP)
     return max(1, min(score, 99))

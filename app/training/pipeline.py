@@ -60,6 +60,7 @@ from app.training.rotation import (
     status_to_play_probability,
 )
 from app.training.rotation_monte_carlo import dnp_risk_from_branches, enumerate_or_sample_branches
+from app.training.simulation_context import build_simulation_context
 
 _log = __import__("logging").getLogger(__name__)
 
@@ -1068,16 +1069,27 @@ class TrainingPipeline:
 
         calibrators: dict[str, ProbabilityCalibrator] = {}
         for market_key, target_column in MARKET_TARGETS.items():
-            raw_chunks = oof_raw[market_key]
-            label_chunks = oof_labels[market_key]
+            n_folds = self._settings.calibration_fold_table.get(
+                market_key, self._settings.calibration_max_folds
+            )
+            raw_chunks = oof_raw[market_key][-n_folds:]
+            label_chunks = oof_labels[market_key][-n_folds:]
+            reason = "ECE-table" if market_key in self._settings.calibration_fold_table else "default"
+            _log.info(
+                "calibration: %s using %d folds (%s)",
+                market_key,
+                len(raw_chunks),
+                reason,
+            )
             if raw_chunks and label_chunks:
                 raw_probabilities = np.concatenate(raw_chunks)
                 labels = np.concatenate(label_chunks)
                 if raw_probabilities.size and len(np.unique(labels)) >= 2:
                     calibrator = ProbabilityCalibrator()
+                    prior_chunks = oof_priors[market_key][-n_folds:]
                     market_priors = (
-                        np.concatenate(oof_priors[market_key])
-                        if priors_complete[market_key] and oof_priors[market_key]
+                        np.concatenate(prior_chunks)
+                        if priors_complete[market_key] and prior_chunks
                         else None
                     )
                     calibrator.fit(raw_probabilities, labels, market_priors=market_priors)
@@ -1708,155 +1720,7 @@ class TrainingPipeline:
         return np.clip(offered.astype(float), 0.025, 0.975)
 
     def _simulation_context(self, row: dict[str, Any], market_key: str) -> dict[str, float]:
-        base_context = {
-            "usage_rate": _row_float(
-                row,
-                ("adjusted_usage_rate", "usage_rate_blended", "usage_rate_avg_10", "usage_rate"),
-                fallback=0.20,
-                minimum=0.01,
-            ),
-            "touches_per_minute": _row_float(
-                row,
-                ("adjusted_touches_per_minute", "touches_per_minute_blended", "touches_per_minute_avg_10", "touches_per_minute"),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "passes_per_minute": _row_float(
-                row,
-                ("adjusted_passes_per_minute", "passes_per_minute_blended", "passes_per_minute_avg_10", "passes_per_minute"),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "assist_creation_proxy_per_minute": _row_float(
-                row,
-                (
-                    "adjusted_assist_creation_proxy_per_minute",
-                    "assist_creation_proxy_per_minute_blended",
-                    "assist_creation_proxy_per_minute_avg_10",
-                    "assist_creation_proxy_per_minute",
-                ),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "rebound_chances_total_per_minute": _row_float(
-                row,
-                (
-                    "adjusted_rebound_chances_total_per_minute",
-                    "rebound_chances_total_per_minute_blended",
-                    "rebound_chances_total_per_minute_avg_10",
-                    "rebound_chances_total_per_minute",
-                ),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "rebound_conversion_rate": _row_float(
-                row,
-                ("rebound_conversion_rate_blended", "rebound_conversion_rate_avg_10", "rebound_conversion_rate"),
-                fallback=0.35,
-                minimum=0.01,
-            ),
-            "field_goal_attempts_per_minute": _row_float(
-                row,
-                (
-                    "adjusted_field_goal_attempts_per_minute",
-                    "field_goal_attempts_per_minute_blended",
-                    "field_goal_attempts_per_minute_avg_10",
-                    "field_goal_attempts_per_minute",
-                ),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "free_throw_attempts_per_minute": _row_float(
-                row,
-                (
-                    "adjusted_free_throw_attempts_per_minute",
-                    "free_throw_attempts_per_minute_blended",
-                    "free_throw_attempts_per_minute_avg_10",
-                    "free_throw_attempts_per_minute",
-                ),
-                fallback=0.02,
-                minimum=0.0,
-            ),
-            "estimated_three_point_attempts_per_minute": _row_float(
-                row,
-                (
-                    "adjusted_estimated_three_point_attempts_per_minute",
-                    "estimated_three_point_attempts_per_minute_blended",
-                    "estimated_three_point_attempts_per_minute_avg_10",
-                    "estimated_three_point_attempts_per_minute",
-                ),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "percentage_field_goals_attempted_3pt": _row_float(
-                row,
-                (
-                    "percentage_field_goals_attempted_3pt_blended",
-                    "percentage_field_goals_attempted_3pt_avg_10",
-                    "percentage_field_goals_attempted_3pt",
-                ),
-                fallback=0.35,
-                minimum=0.01,
-            ),
-            "true_shooting_percentage": _row_float(
-                row,
-                ("true_shooting_percentage_blended", "true_shooting_percentage_avg_10", "true_shooting_percentage"),
-                fallback=0.58,
-                minimum=0.01,
-            ),
-            "turnover_ratio": _row_float(
-                row,
-                ("turnover_ratio_blended", "turnover_ratio_avg_10", "turnover_ratio"),
-                fallback=0.12,
-                minimum=0.01,
-            ),
-            "points_pace_exposure": _row_float(
-                row,
-                ("points_pace_exposure",),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "points_3pt_variance": _row_float(
-                row,
-                ("points_3pt_variance",),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-            "rebounds_std_10": _row_float(
-                row,
-                ("rebounds_std_10",),
-                fallback=0.0,
-                minimum=0.0,
-            ),
-        }
-        threes_per_minute = _row_float(
-            row,
-            ("threes_per_minute_blended", "threes_per_minute_avg_10"),
-            fallback=0.0,
-            minimum=0.0,
-        )
-        if base_context["estimated_three_point_attempts_per_minute"] > 1e-6 and threes_per_minute > 0.0:
-            base_context["three_point_make_rate"] = threes_per_minute / max(
-                base_context["estimated_three_point_attempts_per_minute"],
-                1e-6,
-            )
-        else:
-            base_context["three_point_make_rate"] = 0.35
-        if market_key == "assists":
-            assists_rate = _row_float(
-                row,
-                ("assists_per_minute_blended", "assists_per_minute_avg_10", "assists_per_minute"),
-                fallback=0.0,
-                minimum=0.0,
-            )
-            if base_context["assist_creation_proxy_per_minute"] > 1e-6 and assists_rate > 0.0:
-                base_context["assist_conversion_rate"] = assists_rate / max(
-                    base_context["assist_creation_proxy_per_minute"],
-                    1e-6,
-                )
-            else:
-                base_context["assist_conversion_rate"] = 0.32
-        return base_context
+        return build_simulation_context(row, market_key=market_key)
 
     def _provider_context_counts(self) -> dict[str, Any]:
         day_start = datetime.combine(date.today(), datetime.min.time(), tzinfo=UTC)
@@ -1949,7 +1813,7 @@ def _row_float(
             continue
         if key.startswith("adjusted_") and numeric >= 0.0:
             return numeric
-        if numeric > minimum:
+        if numeric >= minimum:
             return numeric
     return float(fallback)
 

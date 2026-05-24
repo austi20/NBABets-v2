@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from app.providers.canonical_schema import ODDS_CANONICAL_FIELDS
-from app.training.constants import MARKET_TARGETS
+from app.training.constants import MARKET_TARGETS, ROLLING_WINDOW_RECENCY_WEIGHTS
 from app.training.feature_builders import travel_geography
 from app.training.feature_builders.market_group import add_market_group_features
 from app.training.feature_builders.opponent_lineup import add_opponent_lineup_disruption
@@ -278,10 +278,14 @@ class FeatureEngineer:
         usage_proxy_vals = pd.to_numeric(feature_map["usage_proxy"], errors="coerce").fillna(0.0)
         feature_map["points_pace_exposure"] = (blended_pace * usage_proxy_vals).clip(lower=0.0)
 
-        # threes_std_10 is already computed by _build_player_history_features above;
-        # squaring it gives variance units and amplifies signal for boom/bust shooters.
+        # Recency-weighted 3PT volatility is already computed by
+        # _build_player_history_features above; squaring it gives variance units
+        # and amplifies signal for boom/bust shooters.
         threes_std = pd.to_numeric(
-            feature_map.get("threes_std_10", pd.Series(0.0, index=frame.index)),
+            feature_map.get(
+                "threes_std_recency_weighted",
+                feature_map.get("threes_std_10", pd.Series(0.0, index=frame.index)),
+            ),
             errors="coerce",
         ).fillna(0.0)
         feature_map["points_3pt_variance"] = threes_std ** 2
@@ -467,6 +471,7 @@ class FeatureEngineer:
                 column.endswith("_prev")
                 or "_avg_" in column
                 or "_std_" in column
+                or column.endswith("_recency_weighted")
                 or "_ewm_" in column
                 or "_season_avg" in column
                 or column.endswith("_blended")
@@ -777,14 +782,27 @@ class FeatureEngineer:
             if "_avg_5" in column
         }
         for metric in sorted(candidate_metrics):
+            avg_3 = result.get(f"{metric}_avg_3", pd.Series(0.0, index=result.index))
             avg_5 = result.get(f"{metric}_avg_5", pd.Series(0.0, index=result.index))
             avg_10 = result.get(f"{metric}_avg_10", avg_5)
             avg_20 = result.get(f"{metric}_avg_20", avg_10)
             ewm_10 = result.get(f"{metric}_ewm_10", avg_10)
             season = result.get(f"{metric}_season_avg", avg_20)
-            short_horizon = 0.55 * avg_5 + 0.45 * ewm_10
+            fallback_recency_weighted = (
+                ROLLING_WINDOW_RECENCY_WEIGHTS[3] * avg_3
+                + ROLLING_WINDOW_RECENCY_WEIGHTS[5] * avg_5
+                + ROLLING_WINDOW_RECENCY_WEIGHTS[10] * avg_10
+                + ROLLING_WINDOW_RECENCY_WEIGHTS[20] * avg_20
+            )
+            recency_column = f"{metric}_recency_weighted"
+            if recency_column in result.columns:
+                recency_weighted = pd.to_numeric(result[recency_column], errors="coerce").fillna(fallback_recency_weighted)
+            else:
+                recency_weighted = fallback_recency_weighted
+            short_horizon = 0.65 * recency_weighted + 0.35 * ewm_10
             long_horizon = 0.65 * avg_20 + 0.35 * season
-            result[f"{metric}_blended"] = (1.0 - role) * short_horizon + role * long_horizon
+            role_blend = (1.0 - role) * short_horizon + role * long_horizon
+            result[f"{metric}_blended"] = 0.65 * recency_weighted + 0.35 * role_blend
         return result
 
     def _attach_team_travel_schedule_distance(self, frame: pd.DataFrame) -> pd.DataFrame:
@@ -1232,6 +1250,7 @@ class FeatureEngineer:
                 for token in (
                     "_avg_",
                     "_std_",
+                    "_recency_weighted",
                     "_ewm_",
                     "_season_avg",
                     "_prev",

@@ -28,6 +28,7 @@ from app.training.locked_defaults import (
 )
 from app.training.models import MinutesModel, StatModelSuite
 from app.training.pipeline import _with_output_columns
+from app.training.simulation_context import build_simulation_context
 
 MIN_TRAIN_QUOTES_PER_MARKET = 50
 MIN_VALIDATION_QUOTES_PER_MARKET = 20
@@ -453,7 +454,7 @@ class RollingOriginBacktester:
                 variance,
                 float(line),
                 market_key=market_key,
-                context=_simulation_context(row),
+                context=_simulation_context(row, market_key),
                 dist_family=self._dist_family_for_market(market_key),
             )
             for row, mean, variance, line in zip(
@@ -498,7 +499,7 @@ class RollingOriginBacktester:
                 float(row["projected_variance"]),
                 float(row["line_value"]),
                 market_key=market_key,
-                context=_simulation_context(row),
+                context=_simulation_context(row, market_key),
                 dist_family=self._dist_family_for_market(market_key),
             )
             for row in merged.to_dict("records")
@@ -804,68 +805,8 @@ def _market_prior(frame: pd.DataFrame, market_key: str) -> np.ndarray | None:
     return None
 
 
-def _simulation_context(row: dict[str, object] | pd.Series) -> dict[str, float]:
-    getter = row.get if isinstance(row, dict) else row.get
-    context = {
-        "usage_rate": float(getter("usage_rate_blended", getter("usage_rate_avg_10", getter("usage_rate", 0.20)))),
-        "touches_per_minute": float(getter("touches_per_minute_blended", getter("touches_per_minute_avg_10", getter("touches_per_minute", 0.0)))),
-        "passes_per_minute": float(getter("passes_per_minute_blended", getter("passes_per_minute_avg_10", getter("passes_per_minute", 0.0)))),
-        "assist_creation_proxy_per_minute": float(
-            getter(
-                "assist_creation_proxy_per_minute_blended",
-                getter("assist_creation_proxy_per_minute_avg_10", getter("assist_creation_proxy_per_minute", 0.0)),
-            )
-        ),
-        "rebound_chances_total_per_minute": float(
-            getter(
-                "rebound_chances_total_per_minute_blended",
-                getter("rebound_chances_total_per_minute_avg_10", getter("rebound_chances_total_per_minute", 0.0)),
-            )
-        ),
-        "rebound_conversion_rate": float(
-            getter("rebound_conversion_rate_blended", getter("rebound_conversion_rate_avg_10", getter("rebound_conversion_rate", 0.0)))
-        ),
-        "field_goal_attempts_per_minute": float(
-            getter(
-                "field_goal_attempts_per_minute_blended",
-                getter("field_goal_attempts_per_minute_avg_10", getter("field_goal_attempts_per_minute", 0.0)),
-            )
-        ),
-        "free_throw_attempts_per_minute": float(
-            getter(
-                "free_throw_attempts_per_minute_blended",
-                getter("free_throw_attempts_per_minute_avg_10", getter("free_throw_attempts_per_minute", 0.0)),
-            )
-        ),
-        "estimated_three_point_attempts_per_minute": float(
-            getter(
-                "estimated_three_point_attempts_per_minute_blended",
-                getter("estimated_three_point_attempts_per_minute_avg_10", getter("estimated_three_point_attempts_per_minute", 0.0)),
-            )
-        ),
-        "percentage_field_goals_attempted_3pt": float(
-            getter(
-                "percentage_field_goals_attempted_3pt_blended",
-                getter("percentage_field_goals_attempted_3pt_avg_10", getter("percentage_field_goals_attempted_3pt", 0.35)),
-            )
-        ),
-        "true_shooting_percentage": float(
-            getter("true_shooting_percentage_blended", getter("true_shooting_percentage_avg_10", getter("true_shooting_percentage", 0.58)))
-        ),
-        "turnover_ratio": float(getter("turnover_ratio_blended", getter("turnover_ratio_avg_10", getter("turnover_ratio", 0.12)))),
-    }
-    context["three_point_make_rate"] = float(getter("threes_per_minute_blended", getter("threes_avg_10", 0.0))) / max(
-        float(
-            getter(
-                "estimated_three_point_attempts_per_minute_blended",
-                getter("estimated_three_point_attempts_per_minute_avg_10", 0.0),
-            )
-        ),
-        1e-6,
-    )
-    assists_rate = float(getter("assists_per_minute_blended", getter("assists_per_minute_avg_10", 0.0)))
-    context["assist_conversion_rate"] = assists_rate / max(context["assist_creation_proxy_per_minute"], 1e-6)
-    return context
+def _simulation_context(row: dict[str, object] | pd.Series, market_key: str | None = None) -> dict[str, float]:
+    return build_simulation_context(row, market_key=market_key)
 
 
 def _confidence_tier(probability: float) -> str:

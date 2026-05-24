@@ -78,3 +78,6 @@ uv.lock
 config/trading_limits.json
 config/kalshi_symbols.json
 config/kalshi_resolution_targets.json
+
+# Git worktrees
+.worktrees/

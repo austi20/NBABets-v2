@@ -168,18 +168,35 @@ def set_kill_switch(
     *,
     killed: bool,
     set_by: str = "system",
+    flatten: bool = False,
 ) -> None:
     with session_factory() as session:
         row = session.get(TradingKillSwitch, 1)
         now = datetime.now(UTC)
         if row is None:
-            row = TradingKillSwitch(id=1, killed=killed, set_at=now, set_by=set_by)
+            row = TradingKillSwitch(id=1, killed=killed, flatten=flatten, set_at=now, set_by=set_by)
             session.add(row)
         else:
             row.killed = killed
+            row.flatten = flatten
             row.set_at = now
             row.set_by = set_by
         session.commit()
+
+
+def make_kill_switch_callable(
+    session_factory: Callable[[], Session],
+) -> Callable[[], bool]:
+    """Return a zero-arg callable that reads the kill-switch state from the DB.
+
+    Safe to pass as ``kill_switch=`` to ``ActiveTrader.__init__``.
+    Returns False when no row exists (permissive default).
+    """
+    def _check() -> bool:
+        with session_factory() as session:
+            row = session.get(TradingKillSwitch, 1)
+            return bool(row and row.killed)
+    return _check
 
 
 def _load_decisions(path: Path) -> list[PropDecision]:

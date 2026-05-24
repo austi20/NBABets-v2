@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from app.training.constants import ROLLING_WINDOWS
+from app.training.constants import ROLLING_WINDOW_RECENCY_WEIGHTS, ROLLING_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +213,14 @@ class RollingWindowBuilder:
                 if fill_terminal_nan is not None:
                     current = current.fillna(fill_terminal_nan)
                 features[std_key] = current
+
+            recency_avg = pd.Series(0.0, index=frame.index)
+            recency_std = pd.Series(0.0, index=frame.index)
+            for window, weight in ROLLING_WINDOW_RECENCY_WEIGHTS.items():
+                recency_avg = recency_avg + (features[f"{metric}_avg_{window}"] * weight)
+                recency_std = recency_std + (features[f"{metric}_std_{window}"] * weight)
+            features[f"{metric}_recency_weighted"] = recency_avg
+            features[f"{metric}_std_recency_weighted"] = recency_std
 
             # EWM and season_avg: fill with each other, then 0.0
             if ewm_key in features and season_key in features:

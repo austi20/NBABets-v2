@@ -59,6 +59,7 @@ class TradingKillSwitch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     killed: Mapped[bool] = mapped_column(Boolean, default=False)
+    flatten: Mapped[bool] = mapped_column(Boolean, default=False)
     set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     set_by: Mapped[str] = mapped_column(String(64), default="")
 
