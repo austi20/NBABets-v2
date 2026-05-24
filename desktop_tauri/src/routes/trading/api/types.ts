@@ -59,6 +59,10 @@ export type PickState = "queued" | "excluded" | "blocked" | "filled" | "partial"
 
 export type PickRow = {
   candidate_id: string;
+  stat_projection_id?: string | number | null;
+  prop_line_evaluation_id?: string | number | null;
+  primary_line_evaluation_id?: string | number | null;
+  probability_source?: string | null;
   rank: number;
   prop_label: string;
   game_label: string | null;

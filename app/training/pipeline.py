@@ -19,7 +19,8 @@ from threadpoolctl import threadpool_limits
 
 from app.config.settings import get_settings
 from app.core.resources import get_effective_worker_count, get_runtime_budget, set_worker_override
-from app.models.all import ModelRun, Prediction, PropMarket, RawPayload
+from app.evaluation.line_evaluator import evaluate_projection_line, line_evaluation_meta
+from app.models.all import ModelRun, Prediction, PropLineEvaluation, PropMarket, RawPayload, StatProjection
 from app.schemas.domain import PropPrediction
 from app.services.rotation_audit import dataclass_records, write_game_audit
 from app.training.artifacts import (
@@ -348,7 +349,6 @@ class TrainingPipeline:
         paths = artifact_paths(self._settings.model_version, self._artifact_namespace)
         minutes_model = load_artifact(paths.minutes_model)
         stat_models = load_artifact(paths.stat_models)
-        calibrators = load_artifact(paths.calibrators)
         metadata = load_artifact(paths.metadata)
         population_priors = load_artifact(paths.population_priors) if artifact_exists(paths.population_priors) else None
         if not isinstance(metadata, dict):
@@ -417,6 +417,8 @@ class TrainingPipeline:
             branch_frames_by_team = {}
         predictions: list[PropPrediction] = []
         prediction_models: list[Prediction] = []
+        projection_models_by_key: dict[tuple[int, int, int], StatProjection] = {}
+        line_evaluation_records: list[tuple[tuple[int, int, int], dict[str, Any]]] = []
         model_run_id = int(metadata["model_run_id"])
         metadata_feature_version = str(metadata.get("feature_version") or self._settings.feature_version)
         market_rows = {market.key: market.market_id for market in self._session.query(PropMarket).all()}
@@ -436,24 +438,6 @@ class TrainingPipeline:
                 progress_callback=progress_callback,
                 progress_state=(processed_prediction_rows, total_prediction_rows),
             )
-            raw_probs = np.array([simulation.summary.over_probability for simulation in simulations], dtype=float)
-            calibrated = calibrators[market_key].transform(
-                raw_probs,
-                market_priors=self._market_prior(subset, market_key),
-            )
-            calibrated = self._stabilize_over_probabilities(
-                subset=subset,
-                market_key=market_key,
-                raw_probabilities=raw_probs,
-                calibrated_probabilities=np.asarray(calibrated, dtype=float),
-            )
-
-            # P1 CHANGE 4: Hard probability clamp - no NBA player prop should exceed 96% or fall below 4%.
-            # Even the most lopsided props have 5-10% miss rates. Predictions beyond this range are always feature artifacts.
-            PROBABILITY_FLOOR = 0.04
-            PROBABILITY_CEILING = 0.96
-            calibrated = np.clip(calibrated, PROBABILITY_FLOOR, PROBABILITY_CEILING)
-
             # Log divergence warnings for monitoring
             line_values = subset["line_value"].to_numpy(dtype=float)
             projected_means = np.array([sim.summary.mean for sim in simulations], dtype=float)
@@ -466,18 +450,16 @@ class TrainingPipeline:
                     market_key, divergent_count, len(subset),
                 )
 
-            for row, simulation, raw_prob, calibrated_prob in zip(
+            for row, simulation in zip(
                 subset.to_dict("records"),
                 simulations,
-                raw_probs,
-                calibrated,
                 strict=False,
             ):
                 summary = simulation.summary
                 signal_summary = self._summarize_row_signals(row, market_model.feature_columns)
                 availability = _lookup_availability_context(availability_context, row)
                 dnp_risk = float(availability.get("dnp_risk", 0.0))
-                boom_probability, bust_probability = summary.boom_probability, summary.bust_probability
+                boom_probability, bust_probability = _projection_boom_bust(summary)
                 p25, p75 = summary.p25, summary.p75
                 tier = str(row.get("_data_sufficiency_tier", "A"))
                 data_confidence = _compute_data_confidence(
@@ -493,66 +475,147 @@ class TrainingPipeline:
                     injury_return=bool(row.get("player_injury_return_flag", False)),
                     team_changed=bool(row.get("team_changed_recently", row.get("_team_changed", False))),
                 )
-                prediction_models.append(
-                    Prediction(
+                market_id = int(market_rows[market_key])
+                game_id = int(row["game_id"])
+                player_id = int(row["player_id"])
+                line_snapshot_id = int(row["snapshot_id"])
+                over_odds = _row_optional_int(row, ("over_odds",))
+                under_odds = _row_optional_int(row, ("under_odds",))
+                line_evaluation = evaluate_projection_line(
+                    projected_mean=summary.mean,
+                    projected_variance=summary.variance,
+                    line_value=float(row["line_value"]),
+                    market_key=market_key,
+                    over_odds=over_odds,
+                    under_odds=under_odds,
+                    threshold_value=float(row["line_value"]),
+                    summary=summary,
+                    summary_line_value=float(row["line_value"]),
+                )
+                feature_summary = {
+                    "signal_summary": signal_summary,
+                    "top_features": signal_summary,
+                    "simulation_samples": simulation.samples_used,
+                    "simulation_margin_of_error": simulation.margin_of_error,
+                    "availability_branches": int(availability.get("availability_branches", 1)),
+                    "dnp_risk": dnp_risk,
+                    "boom_probability": boom_probability,
+                    "bust_probability": bust_probability,
+                    "percentile_25": p25,
+                    "percentile_75": p75,
+                    "probability_source": "projection_distribution",
+                    "rotation_shock": {
+                        "metadata": metadata.get("rotation_shock", {}),
+                        "baseline_projected_minutes": float(
+                            _row_optional_float(row, ("baseline_projected_minutes",)) or 0.0
+                        ),
+                        "adjusted_projected_minutes": float(
+                            _row_optional_float(row, ("adjusted_projected_minutes", "predicted_minutes")) or 0.0
+                        ),
+                        "rotation_shock_magnitude": float(
+                            _row_optional_float(row, ("rotation_shock_magnitude",)) or 0.0
+                        ),
+                        "rotation_shock_confidence": float(
+                            _row_optional_float(row, ("rotation_shock_confidence",)) or 1.0
+                        ),
+                    },
+                    "data_sufficiency_tier": tier,
+                    "data_confidence_score": data_confidence,
+                }
+                projection_key = (game_id, player_id, market_id)
+                if projection_key not in projection_models_by_key:
+                    projection_models_by_key[projection_key] = StatProjection(
                         model_run_id=model_run_id,
-                        game_id=int(row["game_id"]),
-                        player_id=int(row["player_id"]),
-                        market_id=market_rows[market_key],
-                        line_snapshot_id=int(row["snapshot_id"]),
+                        game_id=game_id,
+                        player_id=player_id,
+                        market_id=market_id,
                         predicted_at=timestamp,
                         projected_mean=summary.mean,
                         projected_variance=summary.variance,
                         projected_median=summary.median,
-                        over_probability=float(raw_prob),
-                        under_probability=summary.under_probability,
                         confidence_interval_low=summary.ci_low,
                         confidence_interval_high=summary.ci_high,
-                        calibration_adjusted_probability=float(calibrated_prob),
-                        feature_attribution_summary={
-                            "signal_summary": signal_summary,
-                            "top_features": signal_summary,
-                            "simulation_samples": simulation.samples_used,
-                            "simulation_margin_of_error": simulation.margin_of_error,
-                            "availability_branches": int(availability.get("availability_branches", 1)),
-                            "dnp_risk": dnp_risk,
-                            "boom_probability": boom_probability,
-                            "bust_probability": bust_probability,
-                            "percentile_25": p25,
-                            "percentile_75": p75,
-                            "rotation_shock": {
-                                "metadata": metadata.get("rotation_shock", {}),
-                                "baseline_projected_minutes": float(
-                                    _row_optional_float(row, ("baseline_projected_minutes",)) or 0.0
-                                ),
-                                "adjusted_projected_minutes": float(
-                                    _row_optional_float(row, ("adjusted_projected_minutes", "predicted_minutes")) or 0.0
-                                ),
-                                "rotation_shock_magnitude": float(
-                                    _row_optional_float(row, ("rotation_shock_magnitude",)) or 0.0
-                                ),
-                                "rotation_shock_confidence": float(
-                                    _row_optional_float(row, ("rotation_shock_confidence",)) or 1.0
-                                ),
-                            },
-                            "data_sufficiency_tier": tier,
-                            "data_confidence_score": data_confidence,
+                        percentile_25=p25,
+                        percentile_75=p75,
+                        dnp_risk=dnp_risk,
+                        boom_probability=boom_probability,
+                        bust_probability=bust_probability,
+                        availability_branches=int(availability.get("availability_branches", 1)),
+                        data_sufficiency_tier=tier,
+                        data_confidence_score=data_confidence,
+                        feature_attribution_summary=feature_summary,
+                        meta={
+                            "feature_version": metadata_feature_version,
+                            "projection_source": "stat_projection_first",
                         },
+                    )
+                line_evaluation_records.append(
+                    (
+                        projection_key,
+                        {
+                            "model_run_id": model_run_id,
+                            "game_id": game_id,
+                            "player_id": player_id,
+                            "market_id": market_id,
+                            "line_snapshot_id": line_snapshot_id,
+                            "source_type": "sportsbook",
+                            "source_id": str(line_snapshot_id),
+                            "evaluated_at": timestamp,
+                            "line_value": line_evaluation.line_value,
+                            "threshold_value": line_evaluation.threshold_value,
+                            "over_probability": line_evaluation.over_probability,
+                            "under_probability": line_evaluation.under_probability,
+                            "push_probability": line_evaluation.push_probability,
+                            "calibration_adjusted_probability": line_evaluation.calibration_adjusted_probability,
+                            "calibrated_under_probability": line_evaluation.calibrated_under_probability,
+                            "fair_over_price": line_evaluation.fair_over_price,
+                            "fair_under_price": line_evaluation.fair_under_price,
+                            "market_probability": line_evaluation.market_probability,
+                            "no_vig_market_probability": line_evaluation.no_vig_market_probability,
+                            "ev": line_evaluation.ev,
+                            "edge_bps": line_evaluation.edge_bps,
+                            "recommendation": line_evaluation.recommendation,
+                            "hit_probability": line_evaluation.hit_probability,
+                            "meta": line_evaluation_meta(
+                                samples_used=simulation.samples_used,
+                                margin_of_error=simulation.margin_of_error,
+                                extra={"source_market_key": str(row.get("market_key", market_key))},
+                            ),
+                        },
+                    )
+                )
+                prediction_models.append(
+                    Prediction(
+                        model_run_id=model_run_id,
+                        game_id=game_id,
+                        player_id=player_id,
+                        market_id=market_id,
+                        line_snapshot_id=line_snapshot_id,
+                        predicted_at=timestamp,
+                        projected_mean=summary.mean,
+                        projected_variance=summary.variance,
+                        projected_median=summary.median,
+                        over_probability=line_evaluation.over_probability,
+                        under_probability=line_evaluation.under_probability,
+                        confidence_interval_low=summary.ci_low,
+                        confidence_interval_high=summary.ci_high,
+                        calibration_adjusted_probability=line_evaluation.calibration_adjusted_probability,
+                        feature_attribution_summary={**feature_summary, "legacy_prediction_surface": True},
                     )
                 )
                 predictions.append(
                     PropPrediction(
-                        player_id=int(row["player_id"]),
+                        player_id=player_id,
                         player_name=str(row["player_name"]),
-                        game_id=int(row["game_id"]),
+                        game_id=game_id,
                         market_key=market_key,
                         sportsbook_line=float(row["line_value"]),
                         projected_mean=summary.mean,
                         projected_variance=summary.variance,
                         projected_median=summary.median,
-                        over_probability=float(raw_prob),
-                        under_probability=summary.under_probability,
-                        calibrated_over_probability=float(calibrated_prob),
+                        over_probability=line_evaluation.over_probability,
+                        under_probability=line_evaluation.under_probability,
+                        calibrated_over_probability=line_evaluation.calibration_adjusted_probability,
                         percentile_10=summary.p10,
                         percentile_50=summary.median,
                         percentile_90=summary.p90,
@@ -573,16 +636,35 @@ class TrainingPipeline:
                     )
                 )
             processed_prediction_rows += len(subset)
-        if prediction_models and persist_predictions:
-            # Delete any existing predictions for the same (model_run, game) pairs
-            # before inserting so repeated calls (e.g. after inactive list update)
-            # don't accumulate duplicate rows.
-            game_ids_being_replaced = {p.game_id for p in prediction_models}
+        if projection_models_by_key and persist_predictions:
+            # Delete existing compatibility predictions and projection/evaluation
+            # rows for the same (model_run, game) pairs before inserting so
+            # repeated calls don't accumulate duplicate rows.
+            game_ids_being_replaced = {projection.game_id for projection in projection_models_by_key.values()}
             self._session.query(Prediction).filter(
                 Prediction.model_run_id == model_run_id,
                 Prediction.game_id.in_(game_ids_being_replaced),
             ).delete(synchronize_session=False)
-            self._session.add_all(prediction_models)
+            self._session.query(PropLineEvaluation).filter(
+                PropLineEvaluation.model_run_id == model_run_id,
+                PropLineEvaluation.game_id.in_(game_ids_being_replaced),
+            ).delete(synchronize_session=False)
+            self._session.query(StatProjection).filter(
+                StatProjection.model_run_id == model_run_id,
+                StatProjection.game_id.in_(game_ids_being_replaced),
+            ).delete(synchronize_session=False)
+            self._session.add_all(projection_models_by_key.values())
+            self._session.flush()
+            line_evaluation_models = [
+                PropLineEvaluation(
+                    stat_projection_id=int(projection_models_by_key[projection_key].stat_projection_id),
+                    **record,
+                )
+                for projection_key, record in line_evaluation_records
+            ]
+            self._session.add_all(line_evaluation_models)
+            if prediction_models:
+                self._session.add_all(prediction_models)
             self._session.commit()
         if progress_callback is not None:
             progress_callback(total_prediction_rows, total_prediction_rows, "Prediction generation complete")
@@ -1828,6 +1910,34 @@ def _row_optional_float(row: dict[str, Any], keys: tuple[str, ...]) -> float | N
         if np.isfinite(numeric):
             return numeric
     return None
+
+
+def _row_optional_int(row: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        value = row.get(key)
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if np.isfinite(numeric):
+            return int(numeric)
+    return None
+
+
+def _projection_boom_bust(summary: DistributionSummary) -> tuple[float, float]:
+    """Line-independent boom/bust markers for canonical stat projections."""
+    mean = float(summary.mean)
+    std = float(np.sqrt(max(summary.variance, 1e-9)))
+    if std <= 1e-6:
+        return 0.0, 0.0
+    from scipy.stats import norm  # local to avoid top-level cost when scipy absent
+
+    boom_threshold = mean + std
+    bust_threshold = max(mean - std, 0.0)
+    return (
+        float(norm.sf(boom_threshold, loc=mean, scale=std)),
+        float(norm.cdf(bust_threshold, loc=mean, scale=std)),
+    )
 
 
 def _apply_dnp_correction(

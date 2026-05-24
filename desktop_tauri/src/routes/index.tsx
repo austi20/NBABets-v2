@@ -38,7 +38,7 @@ const MARKET_FILTERS: FilterOption[] = [
 const SORT_OPTIONS = [
   "Best Edge",
   "Best EV",
-  "Highest Hit Rate",
+  "Highest Hit Likelihood",
   "Most Consensus",
   "Freshest",
   "Player A-Z",

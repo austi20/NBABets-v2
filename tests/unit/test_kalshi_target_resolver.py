@@ -145,6 +145,57 @@ def test_resolve_targets_rejects_wrong_threshold_even_when_player_matches() -> N
     assert resolved["unresolved"][0]["adjacent_line_values"][0] == 29.5
 
 
+def test_resolve_targets_enumerates_kalshi_threshold_ladder_from_projection() -> None:
+    target = {
+        "target_id": "lebron-points",
+        "market_key": "points",
+        "game_date": "2026-05-09",
+        "player_id": "208",
+        "line_value": 23.5,
+        "recommendation": "buy_yes",
+        "projected_mean": 24.0,
+        "projected_variance": 25.0,
+        "prop_line_evaluation_id": 1234,
+        "match_rules": {
+            "title_contains_all": ["OKC", "LAL"],
+            "player_name_contains_any": ["LeBron James", "James"],
+            "stat_contains_any": ["points", "pts"],
+            "acceptable_line_values": [23.5, 24.0],
+            "enumerate_thresholds": True,
+            "status": "open",
+            "mve_filter": "exclude",
+        },
+    }
+    markets = [
+        {
+            "ticker": "KXNBAPTS-26MAY09OKCLAL-LALLJAMES23-20",
+            "event_ticker": "KXNBAPTS-26MAY09OKCLAL",
+            "status": "open",
+            "title": "LeBron James: 20+ points",
+            "floor_strike": 20,
+        },
+        {
+            "ticker": "KXNBAPTS-26MAY09OKCLAL-LALLJAMES23-25",
+            "event_ticker": "KXNBAPTS-26MAY09OKCLAL",
+            "status": "open",
+            "title": "LeBron James: 25+ points",
+            "floor_strike": 25,
+        },
+    ]
+
+    resolved = resolve_targets([target], markets, min_score=70)
+
+    assert resolved["unresolved"] == []
+    assert [row["kalshi_ticker"] for row in resolved["symbols"]] == [market["ticker"] for market in markets]
+    assert resolved["symbols"][0]["base_target_id"] == "lebron-points"
+    assert resolved["symbols"][0]["target_id"].endswith("::KXNBAPTS-26MAY09OKCLAL-LALLJAMES23-20")
+    assert resolved["symbols"][0]["line_value"] == 19.5
+    assert resolved["symbols"][0]["kalshi_threshold_value"] == 20.0
+    assert "prop_line_evaluation_id" not in resolved["symbols"][0]
+    assert resolved["symbols"][0]["match_quality"] == "enumerated_threshold"
+    assert resolved["symbols"][0]["pricing_source"] == "projection_distribution"
+
+
 def test_resolve_targets_classifies_closed_matching_market() -> None:
     target = {
         "target_id": "lebron-points",

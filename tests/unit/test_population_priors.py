@@ -120,7 +120,10 @@ def test_fill_with_population_priors_uses_position_for_tier_c_and_role_for_tier_
         ["starter_flag", "points_avg_10"],
     )
 
-    assert float(filled.loc[0, "starter_flag"]) == 1.0
-    assert float(filled.loc[0, "points_avg_10"]) == 23.0
+    # Exact prop lines are downstream evaluation inputs, not stat-prior role
+    # signals. Tier D therefore falls back to starter_flag instead of treating
+    # a high points line as evidence of a starter role.
+    assert float(filled.loc[0, "starter_flag"]) == 0.0
+    assert float(filled.loc[0, "points_avg_10"]) == 7.0
     assert float(filled.loc[1, "starter_flag"]) == 0.0
     assert float(filled.loc[1, "points_avg_10"]) == 12.5

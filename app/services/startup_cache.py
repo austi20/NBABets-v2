@@ -18,7 +18,9 @@ from app.models.all import (
     ModelRun,
     PlayerGameLog,
     Prediction,
+    PropLineEvaluation,
     RawPayload,
+    StatProjection,
 )
 from app.services.board_date import matches_board_date
 from app.services.provider_cache import LocalProviderCache
@@ -441,6 +443,18 @@ class StartupCacheResetService:
         }
 
     def _delete_predictions(self, day_start: datetime, day_end: datetime) -> int:
+        self._session.execute(
+            delete(PropLineEvaluation).where(
+                PropLineEvaluation.evaluated_at >= day_start,
+                PropLineEvaluation.evaluated_at < day_end,
+            )
+        )
+        self._session.execute(
+            delete(StatProjection).where(
+                StatProjection.predicted_at >= day_start,
+                StatProjection.predicted_at < day_end,
+            )
+        )
         statement = delete(Prediction).where(Prediction.predicted_at >= day_start, Prediction.predicted_at < day_end)
         return int(self._session.execute(statement).rowcount or 0)
 

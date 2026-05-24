@@ -183,7 +183,21 @@ MARKET_FEATURE_EMBEDDED_TOKENS: dict[str, tuple[str, ...]] = {
     "turnovers": ("turnover_",),
     "pra": ("assist_", "turnover_"),
 }
-RAW_MODEL_EXCLUDE_TOKENS = ("consensus_prob", "line_movement_", "book_count", "market_count", "group_market_consensus")
+RAW_MODEL_EXCLUDE_TOKENS = (
+    "line_delta",
+    "recent_hit_rate",
+    "sportsbook_count",
+    "book_count",
+    "market_count",
+    "consensus_prob",
+    "group_market_consensus",
+    "line_movement_",
+    "raw_implied",
+    "no_vig",
+    "consensus_line",
+    "best_over_price",
+    "best_under_price",
+)
 
 
 def _make_regressor(random_state: int, *, reg_alpha: float = 0.0) -> Any:

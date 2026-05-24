@@ -66,7 +66,7 @@ def _sort_opportunities(entry, opportunities: list[PropOpportunity], sort_choice
             ),
             reverse=True,
         )
-    if sort_choice == "Highest Hit Rate":
+    if sort_choice in {"Highest Hit Rate", "Highest Hit Likelihood"}:
         return sorted(
             opportunities,
             key=lambda row: (
@@ -125,7 +125,7 @@ def _sort_flat_rows(
             key=lambda row: (row[1].expected_profit_per_unit, row[1].edge, row[0].hit_probability),
             reverse=True,
         )
-    if sort_choice == "Highest Hit Rate":
+    if sort_choice in {"Highest Hit Rate", "Highest Hit Likelihood"}:
         return sorted(
             rows,
             key=lambda row: (row[0].hit_probability, row[1].edge, row[0].projected_mean),

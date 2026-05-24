@@ -313,6 +313,10 @@ class PickKalshiModel(BaseModel):
 
 class PickRowModel(BaseModel):
     candidate_id: str
+    stat_projection_id: int | str | None = None
+    prop_line_evaluation_id: int | str | None = None
+    primary_line_evaluation_id: int | str | None = None
+    probability_source: str | None = None
     rank: int
     prop_label: str
     game_label: str | None

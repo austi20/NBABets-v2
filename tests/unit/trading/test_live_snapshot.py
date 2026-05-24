@@ -135,6 +135,27 @@ def test_selected_picks_get_proportional_allocation(builder, selections) -> None
     assert allocs["a"] == pytest.approx(3.5, abs=0.01)
 
 
+def test_pick_rows_expose_projection_line_evaluation_metadata(builder, selections) -> None:
+    pack = _decision_pack(
+        candidates=[
+            _row(
+                "a",
+                stat_projection_id=101,
+                prop_line_evaluation_id=202,
+                primary_line_evaluation_id=202,
+                probability_source="projection_distribution",
+            )
+        ]
+    )
+    inputs = _inputs(builder, selections, decision_pack=pack, mode="supervised-live")
+    pick = builder.build(inputs).picks[0]
+
+    assert pick.stat_projection_id == 101
+    assert pick.prop_line_evaluation_id == 202
+    assert pick.primary_line_evaluation_id == 202
+    assert pick.probability_source == "projection_distribution"
+
+
 def test_excluded_picks_have_zero_alloc(builder, selections) -> None:
     selections.set_selection(date(2026, 5, 11), "a", False)
     pack = _decision_pack(candidates=[_row("a")])

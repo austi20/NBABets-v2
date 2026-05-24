@@ -145,6 +145,26 @@ def _market_line_values(market: dict[str, Any]) -> set[float]:
     return values
 
 
+def _enumerates_thresholds(target: dict[str, Any]) -> bool:
+    rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
+    return bool(rules.get("enumerate_thresholds"))
+
+
+def _kalshi_threshold_value(market: dict[str, Any]) -> float | None:
+    strike = _numeric(market.get("floor_strike"))
+    if strike is not None:
+        return strike
+    values = sorted(_market_line_values(market))
+    return values[0] if values else None
+
+
+def _threshold_line_value(market: dict[str, Any]) -> float | None:
+    threshold = _kalshi_threshold_value(market)
+    if threshold is None:
+        return None
+    return max(0.0, threshold - 0.5)
+
+
 def _status_ok(target: dict[str, Any], market: dict[str, Any]) -> bool:
     desired = norm(target.get("match_rules", {}).get("status") or target.get("market_status") or "open")
     actual = norm(market.get("status"))
@@ -194,12 +214,17 @@ def score_market(target: dict[str, Any], market: dict[str, Any]) -> tuple[int, s
             acceptable.add(numeric_value)
     if target_line is not None:
         acceptable.add(target_line)
-    if acceptable:
+    if acceptable and not _enumerates_thresholds(target):
         market_lines = _market_line_values(market)
         if not any(any(abs(want - got) < 0.01 for got in market_lines) for want in acceptable):
             return 0, "line"
         score += 40
         reasons.append("line")
+    elif _enumerates_thresholds(target):
+        if _kalshi_threshold_value(market) is None:
+            return 0, "threshold"
+        score += 40
+        reasons.append("threshold")
 
     hint = norm(target.get("event_or_page_hint"))
     if hint and hint in norm(market.get("event_ticker")):
@@ -223,13 +248,28 @@ def _is_executable(target: dict[str, Any]) -> bool:
 
 
 def _market_snapshot(target: dict[str, Any], market: dict[str, Any], reasons: str) -> dict[str, Any]:
+    enumerate_thresholds = _enumerates_thresholds(target)
+    threshold = _kalshi_threshold_value(market)
+    line_value = (
+        _threshold_line_value(market)
+        if enumerate_thresholds
+        else (_numeric(target.get("line_value")) or _numeric(market.get("floor_strike")))
+    )
+    target_id = str(target["target_id"])
+    unique_target_id = f"{target_id}::{market['ticker']}" if enumerate_thresholds else target_id
     entry: dict[str, Any] = {
-        "target_id": target["target_id"],
+        "target_id": unique_target_id,
+        "base_target_id": target_id if enumerate_thresholds else None,
         "market_key": target["market_key"],
         "game_date": target["game_date"],
         "player_id": target.get("player_id"),
-        "line_value": _numeric(target.get("line_value")) or _numeric(market.get("floor_strike")),
+        "line_value": line_value,
+        "kalshi_threshold_value": threshold,
         "recommendation": target.get("recommendation"),
+        "projected_mean": target.get("projected_mean"),
+        "projected_variance": target.get("projected_variance"),
+        "stat_projection_id": target.get("stat_projection_id"),
+        "prop_line_evaluation_id": None if enumerate_thresholds else target.get("prop_line_evaluation_id"),
         "kalshi_ticker": market["ticker"],
         "event_ticker": market.get("event_ticker"),
         "title": market.get("title"),
@@ -240,8 +280,10 @@ def _market_snapshot(target: dict[str, Any], market: dict[str, Any], reasons: st
         "yes_bid_dollars": market.get("yes_bid_dollars"),
         "yes_ask_dollars": market.get("yes_ask_dollars"),
         "matched_at": datetime.now(UTC).isoformat(),
-        "match_quality": "exact" if "line" in reasons else reasons,
+        "match_quality": "enumerated_threshold" if enumerate_thresholds else "exact" if "line" in reasons else reasons,
+        "pricing_source": "projection_distribution" if enumerate_thresholds else "target_line_match",
     }
+    entry = {key: value for key, value in entry.items() if value is not None}
     side = _side_from_recommendation(target.get("recommendation"))
     if side is not None:
         entry["side"] = side
@@ -270,7 +312,7 @@ def resolve_targets(targets: list[dict[str, Any]], markets: list[dict[str, Any]]
         "unresolved": [],
     }
     for target in targets:
-        if _is_executable(target) and _numeric(target.get("line_value")) is None:
+        if _is_executable(target) and _numeric(target.get("line_value")) is None and not _enumerates_thresholds(target):
             out["unresolved"].append(_unresolved(target, "line_value required before executable resolution"))
             continue
         ranked: list[tuple[int, str, dict[str, Any]]] = []
@@ -282,6 +324,11 @@ def resolve_targets(targets: list[dict[str, Any]], markets: list[dict[str, Any]]
         if not ranked or ranked[0][0] < min_score:
             reason, extra = classify_unresolved_target(target, markets)
             out["unresolved"].append(_unresolved(target, reason, **extra))
+            continue
+        if _enumerates_thresholds(target):
+            for _score, reasons, market in ranked:
+                if _score >= min_score:
+                    out["symbols"].append(_market_snapshot(target, market, reasons))
             continue
         _score, reasons, market = ranked[0]
         out["symbols"].append(_market_snapshot(target, market, reasons))
@@ -331,6 +378,8 @@ def _stat_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
 
 
 def _line_matches(target: dict[str, Any], market: dict[str, Any]) -> bool:
+    if _enumerates_thresholds(target):
+        return _kalshi_threshold_value(market) is not None
     target_line = _numeric(target.get("line_value"))
     acceptable: set[float] = set()
     rules = target.get("match_rules", {}) if isinstance(target.get("match_rules"), dict) else {}
@@ -357,7 +406,7 @@ def _adjacent_thresholds(target: dict[str, Any], markets: list[dict[str, Any]]) 
 
 
 def _market_scan_needed(target: dict[str, Any]) -> bool:
-    return not (_is_executable(target) and _numeric(target.get("line_value")) is None)
+    return _enumerates_thresholds(target) or not (_is_executable(target) and _numeric(target.get("line_value")) is None)
 
 
 def _coerce_series_list(value: object) -> list[str]:

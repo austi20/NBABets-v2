@@ -170,6 +170,10 @@ class TradingLiveSnapshotBuilder:
             rows.append(
                 PickRowModel(
                     candidate_id=candidate_id,
+                    stat_projection_id=raw.get("stat_projection_id"),
+                    prop_line_evaluation_id=raw.get("prop_line_evaluation_id"),
+                    primary_line_evaluation_id=raw.get("primary_line_evaluation_id"),
+                    probability_source=raw.get("probability_source"),
                     rank=rank,
                     prop_label=self._prop_label(raw),
                     game_label=raw.get("game_label"),

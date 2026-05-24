@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import date
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +12,7 @@ from app.services.prop_analysis import (
     PropAnalysisService,
     _quote_recommendation,
     _QuotePredictionRow,
+    _merge_quote_groups,
 )
 
 
@@ -236,3 +239,60 @@ def test_prediction_row_to_quote_exposes_no_vig_market_probability() -> None:
 
     quote = service._prediction_row_to_quote(row)
     assert quote.no_vig_market_probability == 0.50
+
+
+def test_merge_quote_groups_prefers_evaluations_per_quote_and_keeps_legacy_gaps() -> None:
+    key = (date(2026, 5, 1), 1, 2, 20, "player_points", -1.0)
+    base = _QuotePredictionRow(
+        game_id=10,
+        player_id=20,
+        player_name="Player",
+        player_team_abbreviation="AAA",
+        player_position="G",
+        market_key="player_points",
+        game_label="AAA @ BBB",
+        game_start_time="2026-05-01T00:00:00",
+        projected_mean=25.4,
+        line_value=24.5,
+        over_odds=-110,
+        under_odds=-110,
+        timestamp="2026-05-01T00:00:00",
+        sportsbook_key="book",
+        sportsbook_name="Book",
+        is_live_quote=True,
+        is_alternate_line=False,
+        source_market_key="player_points",
+        verification_status="provider_live",
+        odds_source_provider="balldontlie",
+        predicted_at="2026-05-01T00:00:00",
+        projected_variance=9.0,
+        confidence_interval_low=18.0,
+        confidence_interval_high=31.0,
+        over_probability=0.56,
+        under_probability=0.36,
+        push_probability=0.08,
+        calibration_adjusted_probability=0.58,
+        calibrated_under_probability=0.34,
+        recommended_side="OVER",
+        hit_probability=0.58,
+        no_vig_market_probability=0.50,
+        top_features=["usage_up"],
+        data_sufficiency_tier="A",
+        data_confidence_score=0.9,
+    )
+    legacy_other = replace(base, sportsbook_key="other", sportsbook_name="Other")
+    evaluated_base = replace(
+        base,
+        hit_probability=0.62,
+        stat_projection_id=101,
+        prop_line_evaluation_id=202,
+        probability_source="projection_distribution",
+    )
+
+    merged = _merge_quote_groups(preferred={key: [evaluated_base]}, fallback={key: [base, legacy_other]})
+
+    assert len(merged[key]) == 2
+    by_book = {row.sportsbook_key: row for row in merged[key]}
+    assert by_book["book"].hit_probability == 0.62
+    assert by_book["book"].stat_projection_id == 101
+    assert by_book["other"].probability_source == "legacy_prediction"

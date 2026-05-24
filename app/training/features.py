@@ -1159,36 +1159,22 @@ class FeatureEngineer:
         if is_d.any():
             d_idx = result.index[is_d]
             projected_starter = pd.to_numeric(result.get("projected_starter_flag", pd.Series(np.nan, index=result.index)), errors="coerce")
-            line_value = pd.to_numeric(result.get("line_value", pd.Series(np.nan, index=result.index)), errors="coerce")
             starter_flag = pd.to_numeric(result.get("starter_flag", pd.Series(np.nan, index=result.index)), errors="coerce")
-            market_key_series = (
-                result["market_key"].fillna("").astype(str).str.lower()
-                if "market_key" in result.columns
-                else pd.Series("", index=result.index)
-            )
-            thresholds = priors.get("role_bucket_thresholds", {})
 
             # Vectorized bucket computation for D rows:
-            # Priority: projected_starter -> line >= threshold -> starter_flag
+            # Priority: projected_starter -> starter_flag. Exact prop lines are
+            # evaluated downstream and should not influence stat priors.
             pos_d = position_letter.loc[d_idx]
             proj_d = projected_starter.loc[d_idx]
-            line_d = line_value.loc[d_idx]
-            mkey_d = market_key_series.loc[d_idx]
             sf_d = starter_flag.loc[d_idx]
-
-            # Map market_key -> threshold (scalar lookup per unique key; few unique values)
-            thresh_d = mkey_d.map(lambda k: float(thresholds.get(k, np.inf)))
 
             # Determine effective starter value per row
             eff_starter = pd.Series(np.nan, index=d_idx)
             # Case 1: projected_starter present
             has_proj = proj_d.notna()
             eff_starter[has_proj] = proj_d[has_proj]
-            # Case 2: line >= threshold (and projected absent)
-            has_line = (~has_proj) & line_d.notna() & (line_d >= thresh_d)
-            eff_starter[has_line] = 1.0
-            # Case 3: starter_flag (fallback)
-            fallback = ~has_proj & ~has_line
+            # Case 2: starter_flag (fallback)
+            fallback = ~has_proj
             eff_starter[fallback] = sf_d[fallback].fillna(0.0)
 
             # Build role bucket string using vectorized string ops + lookup cache
@@ -1231,12 +1217,6 @@ class FeatureEngineer:
         projected_starter = pd.to_numeric(pd.Series([row.get("projected_starter_flag")]), errors="coerce").iloc[0]
         if pd.notna(projected_starter):
             return role_bucket_label(position_group, projected_starter)
-
-        line_value = pd.to_numeric(pd.Series([row.get("line_value")]), errors="coerce").iloc[0]
-        market_key = str(row.get("market_key", "") or "").lower()
-        threshold = float(priors.get("role_bucket_thresholds", {}).get(market_key, np.inf))
-        if pd.notna(line_value) and line_value >= threshold:
-            return role_bucket_label(position_group, 1.0)
 
         starter_flag = pd.to_numeric(pd.Series([row.get("starter_flag")]), errors="coerce").iloc[0]
         return role_bucket_label(position_group, 0.0 if pd.isna(starter_flag) else starter_flag)
@@ -1286,19 +1266,12 @@ class FeatureEngineer:
                     "opponent_similar_allowed_",
                     "vs_opponent_",
                     "vs_matchup_player_",
-                    "line_delta",
                     "usage_proxy",
                     "consistency_score",
                     "minutes_volatility",
                     "starter_flag",
                     "starter_consistency_10",
                     "role_stability",
-                    "recent_hit_rate_",
-                    "sportsbook_count",
-                    "book_count",
-                    "market_count",
-                    "consensus_prob",
-                    "line_movement_",
                     "expected_possessions",
                     "blended_game_pace",
                     "team_pace_avg_10",

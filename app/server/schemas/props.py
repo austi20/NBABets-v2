@@ -7,6 +7,8 @@ from app.services.prop_analysis import PropOpportunity, SportsbookQuote
 
 
 class SportsbookQuoteModel(BaseModel):
+    stat_projection_id: int | None = None
+    prop_line_evaluation_id: int | None = None
     game_id: int
     sportsbook_key: str
     sportsbook_name: str
@@ -27,6 +29,7 @@ class SportsbookQuoteModel(BaseModel):
     recommended_side: str
     hit_probability: float
     no_vig_market_probability: float
+    probability_source: str = "legacy_prediction"
     source_market_key: str
     is_alternate_line: bool
 
@@ -37,6 +40,8 @@ class SportsbookQuoteModel(BaseModel):
 
 class PropOpportunityModel(BaseModel):
     rank: int
+    stat_projection_id: int | None = None
+    primary_line_evaluation_id: int | None = None
     game_id: int
     player_id: int
     player_name: str
@@ -70,6 +75,7 @@ class PropOpportunityModel(BaseModel):
     volatility_coefficient: float = 0.0
     volatility_tier: str = "low"
     adjusted_over_probability: float | None = None
+    probability_source: str = "legacy_prediction"
 
     @classmethod
     def from_dataclass(cls, value: PropOpportunity) -> PropOpportunityModel:
@@ -89,6 +95,8 @@ class PropOpportunityModel(BaseModel):
             sportsbooks_summary=value.sportsbooks_summary,
             top_features=value.top_features,
             quotes=[SportsbookQuoteModel.from_dataclass(quote) for quote in value.quotes],
+            stat_projection_id=value.stat_projection_id,
+            primary_line_evaluation_id=value.primary_line_evaluation_id,
             projected_variance=value.projected_variance,
             confidence_interval_low=value.confidence_interval_low,
             confidence_interval_high=value.confidence_interval_high,
@@ -108,6 +116,7 @@ class PropOpportunityModel(BaseModel):
             volatility_coefficient=value.volatility_coefficient,
             volatility_tier=value.volatility_tier,
             adjusted_over_probability=value.adjusted_over_probability,
+            probability_source=value.probability_source,
         )
 
 

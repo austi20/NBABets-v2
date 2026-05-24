@@ -10,7 +10,7 @@ import { PickRowExpansion } from "./PickRowExpansion";
 // Only columns with valid SortKey values
 const COLUMNS: { key: "candidate_id" | "model_prob" | "edge_bps" | "alloc"; label: string }[] = [
   { key: "candidate_id", label: "Prop" },
-  { key: "model_prob", label: "Hit %" },
+  { key: "model_prob", label: "Hit Likelihood" },
   { key: "edge_bps", label: "Edge" },
   { key: "alloc", label: "Alloc" },
 ];

@@ -185,6 +185,81 @@ class Prediction(Base):
     feature_attribution_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class StatProjection(Base):
+    __tablename__ = "stat_projections"
+    __table_args__ = (
+        UniqueConstraint(
+            "model_run_id",
+            "game_id",
+            "player_id",
+            "market_id",
+            name="uq_stat_projections_model_game_player_market",
+        ),
+    )
+
+    stat_projection_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_run_id: Mapped[int] = mapped_column(ForeignKey("model_runs.model_run_id"), index=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.game_id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.player_id"), index=True)
+    market_id: Mapped[int] = mapped_column(ForeignKey("prop_markets.market_id"), index=True)
+    predicted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    projected_mean: Mapped[float] = mapped_column(Float)
+    projected_variance: Mapped[float] = mapped_column(Float)
+    projected_median: Mapped[float] = mapped_column(Float)
+    confidence_interval_low: Mapped[float] = mapped_column(Float)
+    confidence_interval_high: Mapped[float] = mapped_column(Float)
+    percentile_25: Mapped[float] = mapped_column(Float, default=0.0)
+    percentile_75: Mapped[float] = mapped_column(Float, default=0.0)
+    dnp_risk: Mapped[float] = mapped_column(Float, default=0.0)
+    boom_probability: Mapped[float] = mapped_column(Float, default=0.0)
+    bust_probability: Mapped[float] = mapped_column(Float, default=0.0)
+    availability_branches: Mapped[int] = mapped_column(Integer, default=1)
+    data_sufficiency_tier: Mapped[str] = mapped_column(String(8), default="A")
+    data_confidence_score: Mapped[float] = mapped_column(Float, default=1.0)
+    feature_attribution_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PropLineEvaluation(Base):
+    __tablename__ = "prop_line_evaluations"
+    __table_args__ = (
+        UniqueConstraint(
+            "stat_projection_id",
+            "source_type",
+            "source_id",
+            "line_value",
+            name="uq_prop_line_evaluations_projection_source_line",
+        ),
+    )
+
+    prop_line_evaluation_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stat_projection_id: Mapped[int] = mapped_column(ForeignKey("stat_projections.stat_projection_id"), index=True)
+    model_run_id: Mapped[int] = mapped_column(ForeignKey("model_runs.model_run_id"), index=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.game_id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.player_id"), index=True)
+    market_id: Mapped[int] = mapped_column(ForeignKey("prop_markets.market_id"), index=True)
+    line_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("line_snapshots.snapshot_id"), nullable=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), index=True)
+    source_id: Mapped[str] = mapped_column(String(128), index=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    line_value: Mapped[float] = mapped_column(Float)
+    threshold_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    over_probability: Mapped[float] = mapped_column(Float)
+    under_probability: Mapped[float] = mapped_column(Float)
+    push_probability: Mapped[float] = mapped_column(Float, default=0.0)
+    calibration_adjusted_probability: Mapped[float] = mapped_column(Float)
+    calibrated_under_probability: Mapped[float] = mapped_column(Float)
+    fair_over_price: Mapped[float] = mapped_column(Float)
+    fair_under_price: Mapped[float] = mapped_column(Float)
+    market_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    no_vig_market_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    edge_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hit_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class BacktestResult(Base):
     __tablename__ = "backtest_results"
 

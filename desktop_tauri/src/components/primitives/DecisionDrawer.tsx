@@ -35,9 +35,9 @@ export function DecisionDrawer({
       const offeredOdds = side === "over" ? quote.over_odds : quote.under_odds;
       const impliedProbability = americanToProbability(offeredOdds);
       const trueProbability = quote.no_vig_market_probability;
-      const modelProbability = quote.hit_probability;
-      const edge = modelProbability - trueProbability;
-      const ev = expectedValue(modelProbability, offeredOdds);
+      const hitLikelihood = quote.hit_probability;
+      const edge = hitLikelihood - trueProbability;
+      const ev = expectedValue(hitLikelihood, offeredOdds);
       return {
         quote,
         impliedProbability,
@@ -75,7 +75,7 @@ export function DecisionDrawer({
               </p>
 
               <section className="decision-grid-two">
-                <ProbabilityBar label="Model probability" value={item.opportunity.hit_probability} accent="positive" />
+                <ProbabilityBar label="Line hit likelihood" value={item.opportunity.hit_probability} accent="positive" />
                 <ProbabilityBar
                   label="Market probability"
                   value={item.insight.best_quote.no_vig_market_probability}
@@ -266,14 +266,14 @@ function toggleSort(
 }
 
 function renderEvMath(item: PropWithInsight): string {
-  const modelProbability = item.opportunity.hit_probability;
+  const hitLikelihood = item.opportunity.hit_probability;
   const odds = item.insight.recommended_odds;
   if (odds === null) {
     return "EV unavailable";
   }
   const decimalOdds = americanToDecimal(odds);
-  const ev = modelProbability * decimalOdds - 1;
-  return `(${modelProbability.toFixed(2)} x ${decimalOdds.toFixed(2)}) - 1 = ${formatSignedPercent(ev)}`;
+  const ev = hitLikelihood * decimalOdds - 1;
+  return `(${hitLikelihood.toFixed(2)} x ${decimalOdds.toFixed(2)}) - 1 = ${formatSignedPercent(ev)}`;
 }
 
 function formatAmericanOdds(odds: number | null): string {
@@ -327,11 +327,11 @@ function probabilityToAmerican(probability: number): number | null {
   return Math.round((100 * (1 - p)) / p);
 }
 
-function expectedValue(modelProbability: number, offeredOdds: number | null): number {
+function expectedValue(hitLikelihood: number, offeredOdds: number | null): number {
   if (offeredOdds === null) {
     return 0;
   }
-  return modelProbability * americanToDecimal(offeredOdds) - 1;
+  return hitLikelihood * americanToDecimal(offeredOdds) - 1;
 }
 
 function marketLabel(marketKey: string): string {

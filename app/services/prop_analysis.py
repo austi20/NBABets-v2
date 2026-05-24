@@ -1,19 +1,33 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import date
 from statistics import median
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 
 from app.core.icons import player_icon, sportsbook_icon
 from app.evaluation.prop_pricer import price_prop
-from app.models.all import Game, LineSnapshot, Player, Prediction, PropMarket, Sportsbook, Team
+from app.models.all import (
+    Game,
+    LineSnapshot,
+    Player,
+    Prediction,
+    PropLineEvaluation,
+    PropMarket,
+    Sportsbook,
+    StatProjection,
+    Team,
+)
 from app.services.board_date import to_local_board_date
 from app.services.live_games import sync_live_games_from_nba_api
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,7 +51,10 @@ class SportsbookQuote:
     calibrated_under_probability: float
     recommended_side: str
     hit_probability: float
+    stat_projection_id: int | None = None
+    prop_line_evaluation_id: int | None = None
     no_vig_market_probability: float = 0.5
+    probability_source: str = "legacy_prediction"
     source_market_key: str = ""
     is_alternate_line: bool = False
 
@@ -59,6 +76,8 @@ class PropOpportunity:
     sportsbooks_summary: str
     top_features: list[str]
     quotes: list[SportsbookQuote]
+    stat_projection_id: int | None = None
+    primary_line_evaluation_id: int | None = None
     projected_variance: float | None = None
     confidence_interval_low: float | None = None
     confidence_interval_high: float | None = None
@@ -78,6 +97,7 @@ class PropOpportunity:
     volatility_coefficient: float = 0.0
     volatility_tier: str = "low"
     adjusted_over_probability: float | None = None
+    probability_source: str = "legacy_prediction"
 
 
 class PropAnalysisService:
@@ -106,6 +126,8 @@ class PropAnalysisService:
                     sportsbooks_summary=row.sportsbooks_summary,
                     top_features=row.top_features,
                     quotes=row.quotes,
+                    stat_projection_id=row.stat_projection_id,
+                    primary_line_evaluation_id=row.primary_line_evaluation_id,
                     projected_variance=row.projected_variance,
                     confidence_interval_low=row.confidence_interval_low,
                     confidence_interval_high=row.confidence_interval_high,
@@ -122,6 +144,7 @@ class PropAnalysisService:
                     boom_probability=row.boom_probability,
                     bust_probability=row.bust_probability,
                     availability_branches=row.availability_branches,
+                    probability_source=row.probability_source,
                 )
             )
         return ranked
@@ -174,6 +197,8 @@ class PropAnalysisService:
                     sportsbooks_summary=sportsbooks_summary,
                     top_features=best_row.top_features,
                     quotes=sorted(quotes, key=lambda quote: (quote.hit_probability, quote.sportsbook_name), reverse=True),
+                    stat_projection_id=best_row.stat_projection_id,
+                    primary_line_evaluation_id=best_row.prop_line_evaluation_id,
                     projected_variance=best_row.projected_variance,
                     confidence_interval_low=best_row.confidence_interval_low,
                     confidence_interval_high=best_row.confidence_interval_high,
@@ -190,6 +215,7 @@ class PropAnalysisService:
                     boom_probability=best_row.boom_probability,
                     bust_probability=best_row.bust_probability,
                     availability_branches=best_row.availability_branches,
+                    probability_source=best_row.probability_source,
                 )
             )
 
@@ -211,6 +237,15 @@ class PropAnalysisService:
         self,
         target_date: date | None,
     ) -> dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]]:
+        evaluated = self._latest_line_evaluation_quotes(target_date)
+        legacy = self._latest_legacy_prediction_quotes(target_date)
+        return _merge_quote_groups(preferred=evaluated, fallback=legacy)
+
+    def _latest_legacy_prediction_quotes(
+        self,
+        target_date: date | None,
+    ) -> dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]]:
+
         home_team = aliased(Team)
         away_team = aliased(Team)
         player_team = aliased(Team)
@@ -389,6 +424,161 @@ class PropAnalysisService:
             ).append(row)
         return grouped
 
+    def _latest_line_evaluation_quotes(
+        self,
+        target_date: date | None,
+    ) -> dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]]:
+        home_team = aliased(Team)
+        away_team = aliased(Team)
+        player_team = aliased(Team)
+        query = (
+            select(
+                PropLineEvaluation,
+                StatProjection,
+                Player.full_name,
+                Player.position,
+                player_team.abbreviation,
+                PropMarket.key,
+                Game.game_date,
+                Game.start_time,
+                home_team.abbreviation,
+                away_team.abbreviation,
+                Game.home_team_id,
+                Game.away_team_id,
+                LineSnapshot.line_value,
+                LineSnapshot.over_odds,
+                LineSnapshot.under_odds,
+                LineSnapshot.timestamp,
+                LineSnapshot.meta,
+                Sportsbook.key,
+                Sportsbook.display_name,
+            )
+            .join(StatProjection, PropLineEvaluation.stat_projection_id == StatProjection.stat_projection_id)
+            .join(Player, PropLineEvaluation.player_id == Player.player_id)
+            .join(player_team, Player.team_id == player_team.team_id, isouter=True)
+            .join(PropMarket, PropLineEvaluation.market_id == PropMarket.market_id)
+            .join(Game, PropLineEvaluation.game_id == Game.game_id)
+            .join(home_team, Game.home_team_id == home_team.team_id)
+            .join(away_team, Game.away_team_id == away_team.team_id)
+            .join(LineSnapshot, PropLineEvaluation.line_snapshot_id == LineSnapshot.snapshot_id)
+            .join(Sportsbook, LineSnapshot.sportsbook_id == Sportsbook.sportsbook_id)
+            .where(Game.status == "scheduled", PropLineEvaluation.source_type == "sportsbook")
+            .order_by(PropLineEvaluation.evaluated_at.desc(), LineSnapshot.timestamp.desc())
+        )
+        try:
+            rows = self._session.execute(query).all()
+        except SQLAlchemyError:
+            _log.warning(
+                "Projection-backed prop line evaluation query failed; falling back to legacy predictions",
+                exc_info=True,
+            )
+            return {}
+        latest: dict[tuple[date, int, int, int, str, str, float], _QuotePredictionRow] = {}
+        for (
+            evaluation,
+            projection,
+            player_name,
+            player_position,
+            player_team_abbreviation,
+            market_key,
+            game_date,
+            start_time,
+            home_abbreviation,
+            away_abbreviation,
+            home_team_id,
+            away_team_id,
+            line_value,
+            over_odds,
+            under_odds,
+            timestamp,
+            snapshot_meta,
+            sportsbook_key,
+            sportsbook_name,
+        ) in rows:
+            board_date = to_local_board_date(game_date, start_time)
+            if target_date is not None and board_date != target_date:
+                continue
+            snapshot_payload = _coerce_snapshot_meta(snapshot_meta)
+            if not _is_prediction_snapshot_usable(snapshot_payload, over_odds, under_odds):
+                continue
+            recommendation = _quote_recommendation(
+                over_odds=over_odds,
+                under_odds=under_odds,
+                calibrated_over_probability=evaluation.calibration_adjusted_probability,
+                calibrated_under_probability=evaluation.calibrated_under_probability,
+                market_key=market_key,
+                player_id=evaluation.player_id,
+            )
+            if recommendation is None:
+                continue
+            recommended_side, hit_probability, no_vig_market_probability = recommendation
+            key = (
+                board_date,
+                int(home_team_id),
+                int(away_team_id),
+                evaluation.player_id,
+                market_key,
+                str(sportsbook_key),
+                float(line_value),
+            )
+            attr = _coerce_feature_summary(projection.feature_attribution_summary)
+            meta = _coerce_feature_summary(evaluation.meta)
+            candidate = _QuotePredictionRow(
+                game_id=evaluation.game_id,
+                player_id=evaluation.player_id,
+                player_name=player_name,
+                player_team_abbreviation=str(player_team_abbreviation) if player_team_abbreviation else None,
+                player_position=str(player_position) if player_position else None,
+                market_key=market_key,
+                game_label=f"{away_abbreviation} @ {home_abbreviation}",
+                game_start_time=start_time.isoformat() if start_time is not None else None,
+                projected_mean=projection.projected_mean,
+                line_value=float(line_value),
+                over_odds=int(over_odds) if over_odds is not None else None,
+                under_odds=int(under_odds) if under_odds is not None else None,
+                timestamp=timestamp.isoformat(),
+                sportsbook_key=str(sportsbook_key),
+                sportsbook_name=str(sportsbook_name),
+                is_live_quote=bool(snapshot_payload.get("is_live_quote", False)),
+                is_alternate_line=bool(snapshot_payload.get("is_alternate_line", False)),
+                source_market_key=str(snapshot_payload.get("source_market_key", market_key)),
+                verification_status=str(snapshot_payload.get("odds_verification_status", "unknown")),
+                odds_source_provider=str(snapshot_payload.get("odds_source_provider", "unknown")),
+                predicted_at=projection.predicted_at.isoformat(),
+                projected_variance=projection.projected_variance,
+                confidence_interval_low=projection.confidence_interval_low,
+                confidence_interval_high=projection.confidence_interval_high,
+                over_probability=evaluation.over_probability,
+                under_probability=evaluation.under_probability,
+                push_probability=evaluation.push_probability,
+                calibration_adjusted_probability=evaluation.calibration_adjusted_probability,
+                calibrated_under_probability=evaluation.calibrated_under_probability,
+                recommended_side=recommended_side,
+                hit_probability=hit_probability,
+                no_vig_market_probability=no_vig_market_probability,
+                top_features=list(
+                    attr.get(
+                        "signal_summary",
+                        attr.get("top_features", []),
+                    )
+                ),
+                data_sufficiency_tier=str(projection.data_sufficiency_tier or attr.get("data_sufficiency_tier", "A")),
+                data_confidence_score=float(projection.data_confidence_score or attr.get("data_confidence_score", 1.0)),
+                percentile_25=float(projection.percentile_25 or 0.0),
+                percentile_75=float(projection.percentile_75 or 0.0),
+                dnp_risk=float(projection.dnp_risk or 0.0),
+                boom_probability=float(projection.boom_probability or 0.0),
+                bust_probability=float(projection.bust_probability or 0.0),
+                availability_branches=int(projection.availability_branches or 1),
+                stat_projection_id=int(projection.stat_projection_id),
+                prop_line_evaluation_id=int(evaluation.prop_line_evaluation_id),
+                probability_source=str(meta.get("probability_source", "projection_distribution")),
+            )
+            existing = latest.get(key)
+            if existing is None or (candidate.predicted_at, candidate.timestamp) > (existing.predicted_at, existing.timestamp):
+                latest[key] = candidate
+        return _group_quote_rows(latest)
+
     def _prediction_row_to_quote(self, row: _QuotePredictionRow) -> SportsbookQuote:
         return SportsbookQuote(
             game_id=row.game_id,
@@ -410,7 +600,10 @@ class PropAnalysisService:
             calibrated_under_probability=row.calibrated_under_probability,
             recommended_side=row.recommended_side,
             hit_probability=row.hit_probability,
+            stat_projection_id=row.stat_projection_id,
+            prop_line_evaluation_id=row.prop_line_evaluation_id,
             no_vig_market_probability=row.no_vig_market_probability,
+            probability_source=row.probability_source,
             source_market_key=row.source_market_key,
             is_alternate_line=row.is_alternate_line,
         )
@@ -472,6 +665,71 @@ class _QuotePredictionRow:
     boom_probability: float = 0.0
     bust_probability: float = 0.0
     availability_branches: int = 1
+    stat_projection_id: int | None = None
+    prop_line_evaluation_id: int | None = None
+    probability_source: str = "legacy_prediction"
+
+
+def _group_quote_rows(
+    latest: dict[tuple[date, int, int, int, str, str, float], _QuotePredictionRow],
+) -> dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]]:
+    line_counts: dict[tuple[date, int, int, int, str, str], set[float]] = {}
+    for (
+        board_date,
+        home_team_id,
+        away_team_id,
+        player_id,
+        market_key,
+        sportsbook_key,
+        line_value,
+    ) in latest:
+        line_counts.setdefault(
+            (board_date, home_team_id, away_team_id, player_id, market_key, sportsbook_key),
+            set(),
+        ).add(line_value)
+    grouped: dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]] = {}
+    for (
+        board_date,
+        home_team_id,
+        away_team_id,
+        player_id,
+        market_key,
+        sportsbook_key,
+        line_value,
+    ), row in latest.items():
+        has_multiple_lines_for_book = len(
+            line_counts[(board_date, home_team_id, away_team_id, player_id, market_key, sportsbook_key)]
+        ) > 1
+        line_group_key = line_value if row.is_alternate_line or has_multiple_lines_for_book else -1.0
+        grouped.setdefault(
+            (board_date, home_team_id, away_team_id, player_id, market_key, line_group_key),
+            [],
+        ).append(row)
+    return grouped
+
+
+def _merge_quote_groups(
+    *,
+    preferred: dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]],
+    fallback: dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]],
+) -> dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]]:
+    if not preferred:
+        return fallback
+    if not fallback:
+        return preferred
+    merged: dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]] = {
+        key: list(rows)
+        for key, rows in fallback.items()
+    }
+    for key, rows in preferred.items():
+        by_quote = {
+            (row.sportsbook_key, row.source_market_key, row.line_value): row
+            for row in merged.get(key, [])
+        }
+        for row in rows:
+            by_quote[(row.sportsbook_key, row.source_market_key, row.line_value)] = row
+        merged[key] = list(by_quote.values())
+    return merged
 
 
 def _push_probability(over_probability: float, under_probability: float) -> float:

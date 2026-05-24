@@ -140,6 +140,9 @@ export type TradingFill = {
 };
 
 export type TradingQuote = {
+  prop_line_evaluation_id?: string | number | null;
+  stat_projection_id?: string | number | null;
+  probability_source?: string | null;
   ticker: string;
   market_key: string;
   side: string | null;
@@ -303,6 +306,9 @@ export type TradingLoopStartRequest = {
 };
 
 export type SportsbookQuote = {
+  prop_line_evaluation_id?: string | number | null;
+  stat_projection_id?: string | number | null;
+  probability_source?: string | null;
   game_id: number;
   sportsbook_key: string;
   sportsbook_name: string;
@@ -328,6 +334,10 @@ export type SportsbookQuote = {
 };
 
 export type PropOpportunity = {
+  stat_projection_id?: string | number | null;
+  primary_line_evaluation_id?: string | number | null;
+  prop_line_evaluation_id?: string | number | null;
+  probability_source?: string | null;
   rank: number;
   game_id: number;
   player_id: number;
@@ -405,6 +415,9 @@ export type PropsQuery = {
 };
 
 export type ParlayLeg = {
+  stat_projection_id?: string | number | null;
+  prop_line_evaluation_id?: string | number | null;
+  probability_source?: string | null;
   game_id: number;
   matchup: string;
   player_name: string;

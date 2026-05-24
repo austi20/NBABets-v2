@@ -389,6 +389,71 @@ def test_ranked_symbols_select_all_eligible_live_rows(tmp_path: Path) -> None:
     assert ranked["brain"]["live_candidate_count"] == 2
 
 
+def test_ranked_symbols_reprice_enumerated_kalshi_threshold_from_projection(tmp_path: Path) -> None:
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+    policy = load_policy(settings)
+    candidate = candidates_from_board(_board_entry(edge=0.080, ev=0.035, confidence=75), policy=policy, limit=25)[0]
+    candidate = replace(candidate, projected_mean=10.0, projected_variance=4.0)
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "symbols": [
+                    {
+                        "target_id": f"{candidate.stable_id}::KX-UNDER",
+                        "base_target_id": candidate.stable_id,
+                        "market_key": "points",
+                        "game_date": "2026-05-08",
+                        "player_id": "237",
+                        "line_value": 14.5,
+                        "kalshi_threshold_value": 15.0,
+                        "recommendation": "buy_yes",
+                        "match_quality": "enumerated_threshold",
+                        "pricing_source": "projection_distribution",
+                        "kalshi_ticker": "KX-UNDER",
+                    }
+                ],
+                "unresolved": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = _FakeMarketClient(
+        {
+            "KX-UNDER": {
+                "status": "open",
+                "yes_bid_dollars": "0.68",
+                "yes_ask_dollars": "0.70",
+                "no_bid_dollars": "0.28",
+                "no_ask_dollars": "0.30",
+            },
+        }
+    )
+
+    ranked, selected, _checks = rank_and_enrich_symbols(
+        settings=settings,
+        policy=policy,
+        candidates=[candidate],
+        market_client=client,
+        today=date(2026, 5, 8),
+    )
+
+    row = ranked["symbols"][0]
+    assert selected is not None
+    assert row["recommendation"] == "buy_no"
+    assert row["side"] == "under"
+    assert row["model_prob"] > 0.57
+    assert row["market_prob"] == 0.30
+    assert row["edge_bps"] > 450
+    assert row["probability_source"] == "projection_distribution"
+    assert row["prop_line_evaluation_id"] is None
+    assert row["candidate_status"] == "selected_live"
+
+
 def test_ranked_symbols_prefer_higher_consistency_score(tmp_path: Path) -> None:
     brain_root = tmp_path / "brain"
     _write_policy(brain_root, allow_live_submit=True)

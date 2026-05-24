@@ -30,6 +30,11 @@ def test_market_feature_columns_respects_excludes_and_predicted_minutes() -> Non
     cols = [
         "points_avg_10",
         "points_consensus_prob_mean",
+        "points_line_delta_5",
+        "recent_hit_rate_points_10",
+        "sportsbook_count",
+        "raw_implied_over_probability",
+        "no_vig_over_probability",
         "minutes_blended",
         "predicted_minutes",
         "noise_xyz",
@@ -40,4 +45,9 @@ def test_market_feature_columns_respects_excludes_and_predicted_minutes() -> Non
     assert "minutes_blended" in picked
     assert "predicted_minutes" in picked
     assert "points_consensus_prob_mean" not in picked
+    assert "points_line_delta_5" not in picked
+    assert "recent_hit_rate_points_10" not in picked
+    assert "sportsbook_count" not in picked
+    assert "raw_implied_over_probability" not in picked
+    assert "no_vig_over_probability" not in picked
     assert "noise_xyz" not in picked

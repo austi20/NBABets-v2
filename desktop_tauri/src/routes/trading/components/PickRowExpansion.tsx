@@ -20,10 +20,11 @@ export function PickRowExpansion({ pick }: Props) {
             </div>
           </div>
           <div>
-            <div className="micro">Model</div>
+            <div className="micro">Line evaluation</div>
             <div style={{ marginTop: 4 }}>
-              model prob: {(pick.model_prob * 100).toFixed(1)}%<br />
+              hit likelihood: {(pick.model_prob * 100).toFixed(1)}%<br />
               market prob: {pick.market_prob !== null ? `${(pick.market_prob * 100).toFixed(1)}%` : "—"}<br />
+              source: {pick.probability_source ?? "--"}<br />
               edge: +{pick.edge_bps}bp<br />
               rank: #{pick.rank + 1}
             </div>

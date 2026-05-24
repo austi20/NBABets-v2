@@ -32,8 +32,8 @@ export function DistChart({ projectedMean, projectedVariance, line }: DistChartP
   return (
     <div className="dist-chart">
       <div className="dist-chart-meta">
-        <span className="tabular">Under {line.toFixed(1)}: {(underProbability * 100).toFixed(1)}%</span>
-        <span className="tabular">Over {line.toFixed(1)}: {(overProbability * 100).toFixed(1)}%</span>
+        <span className="tabular">Projected under {line.toFixed(1)}: {(underProbability * 100).toFixed(1)}%</span>
+        <span className="tabular">Projected over {line.toFixed(1)}: {(overProbability * 100).toFixed(1)}%</span>
       </div>
       <div className="dist-chart-canvas">
         <ResponsiveContainer width="100%" height="100%">

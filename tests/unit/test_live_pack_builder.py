@@ -368,7 +368,7 @@ def test_write_live_pack_arms_multiple_selected_rows_and_downgrades_failed_gate(
         """
 {
   "symbols": [
-    {"target_id": "ok", "market_key": "points", "recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "KX-OK", "line_value": 25.5, "player_id": "1", "game_date": "2099-05-10", "confidence": 0.7, "edge_bps": 700},
+    {"target_id": "ok", "market_key": "points", "recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "KX-OK", "line_value": 25.5, "player_id": "1", "game_date": "2099-05-10", "confidence": 0.7, "edge_bps": 700, "stat_projection_id": 101, "prop_line_evaluation_id": 202, "probability_source": "projection_distribution"},
     {"target_id": "price", "market_key": "points", "recommendation": "buy_yes", "candidate_status": "selected_live", "kalshi_ticker": "KX-PRICE", "line_value": 20.5, "player_id": "2", "game_date": "2099-05-10", "confidence": 0.7, "edge_bps": 700, "max_price_dollars": "0.40"}
   ],
   "unresolved": []
@@ -387,6 +387,10 @@ def test_write_live_pack_arms_multiple_selected_rows_and_downgrades_failed_gate(
 
     assert [row["decision_id"] for row in doc["decisions"]] == ["ok", "price"]
     assert doc["decisions"][0]["mode"] == "live"
+    assert doc["decisions"][0]["stat_projection_id"] == 101
+    assert doc["decisions"][0]["prop_line_evaluation_id"] == 202
+    assert doc["decisions"][0]["primary_line_evaluation_id"] == 202
+    assert doc["decisions"][0]["probability_source"] == "projection_distribution"
     assert doc["decisions"][1]["mode"] == "observe"
     assert doc["decisions"][1]["recommendation"] == "observe_only"
     assert doc["decisions"][1]["gates"]["price_within_limit"] is False

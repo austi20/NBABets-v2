@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from app.config.settings import Settings
+from app.evaluation.line_evaluator import evaluate_projection_line
 from app.trading.live_limits import load_live_limits
 from app.trading.live_pack_builder import (
     LivePackBuildError,
@@ -134,6 +135,10 @@ class DecisionBrainCandidate:
     driver: str
     policy_version: str | None = None
     consistency_score: float = 0.0
+    projected_mean: float | None = None
+    projected_variance: float | None = None
+    stat_projection_id: int | None = None
+    prop_line_evaluation_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -646,6 +651,8 @@ def rank_and_enrich_symbols(
             row = dict(raw)
             candidate = candidate_by_id.get(str(row.get("target_id") or ""))
             if candidate is None:
+                candidate = candidate_by_id.get(str(row.get("base_target_id") or ""))
+            if candidate is None:
                 row["brain_blockers"] = ["missing_candidate_metadata"]
                 row["recommendation"] = "observe_only"
                 row["rank_score"] = 0.0
@@ -660,20 +667,26 @@ def rank_and_enrich_symbols(
                 continue
             row.update(_candidate_symbol_fields(candidate, policy))
             row["consistency_score"] = candidate.consistency_score
-            blockers = _candidate_policy_blockers(candidate, policy=policy, board_date=candidate.board_date)
-            if session_blockers:
-                blockers = list(session_blockers) + blockers
-            selection_blockers = _trading_selection_blockers(candidate, selection_store)
+            effective_candidate = candidate
+            blockers: list[str] = []
             quote = None
             monitored = row_to_monitored(row)
             if monitored is None:
                 blockers.append("unresolved_ticker")
             else:
                 quote = fetch_quote_snapshot(monitored, client)
+                effective_candidate, quote = _reprice_enumerated_kalshi_row(
+                    row=row,
+                    candidate=candidate,
+                    quote=quote,
+                    client=client,
+                )
+                if effective_candidate is not candidate:
+                    row.update(_candidate_symbol_fields(effective_candidate, policy))
                 gate = evaluate_gates_for_row(
                     row,
                     limits=limits,
-                    risk=_candidate_risk(candidate),
+                    risk=_candidate_risk(effective_candidate),
                     quote=quote,
                     max_spread=policy.max_spread_dollars,
                     today=today,
@@ -689,23 +702,27 @@ def rank_and_enrich_symbols(
                     row["rank_quote_observed_at"] = quote.observed_at.isoformat()
                     row["rank_market_status"] = quote.status
 
+            blockers.extend(_candidate_policy_blockers(effective_candidate, policy=policy, board_date=effective_candidate.board_date))
+            if session_blockers:
+                blockers = list(session_blockers) + blockers
+            selection_blockers = _trading_selection_blockers(effective_candidate, selection_store)
             score = 0.0
             eligible = not blockers and not selection_blockers
             if eligible:
                 score = _rank_score(
                     policy=policy,
-                    edge_bps=float(candidate.edge_bps or 0),
-                    ev=float(candidate.ev or 0.0),
+                    edge_bps=float(effective_candidate.edge_bps or 0),
+                    ev=float(effective_candidate.ev or 0.0),
                     spread=_float_or(row.get("spread_dollars"), 0.0),
-                    confidence=float(candidate.confidence or 0.0),
+                    confidence=float(effective_candidate.confidence or 0.0),
                 )
             row["rank_score"] = round(score, 6)
             row["brain_blockers"] = sorted(set(blockers + selection_blockers))
             row["original_recommendation"] = candidate.recommendation
             if not eligible:
                 row["recommendation"] = "observe_only"
-            sort_key = _rank_sort_key(row, candidate)
-            enriched.append((row, score, sort_key, candidate, eligible, bool(blockers)))
+            sort_key = _rank_sort_key(row, effective_candidate)
+            enriched.append((row, score, sort_key, effective_candidate, eligible, bool(blockers)))
 
         enriched.sort(key=lambda item: item[2])
         for index, (row, _score, _sort_key, candidate, eligible, hard_blocked) in enumerate(enriched, start=1):
@@ -732,7 +749,7 @@ def rank_and_enrich_symbols(
         with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as client:
             with_client(client)
 
-    selected_ids = [candidate.stable_id for candidate in selected_candidates]
+    selected_ids = list(dict.fromkeys(candidate.stable_id for candidate in selected_candidates))
     selected_ticker_values = _selected_tickers({"symbols": rows}, selected_ids)
     output = {
         "version": 1,
@@ -1158,6 +1175,10 @@ def _candidate_from_frontmatter(
         exclude_multivariate=_bool_or(fields.get("exclude_multivariate"), True),
         driver=str(fields.get("driver") or "vault_manual"),
         policy_version=_str_or_none(fields.get("policy_version")),
+        projected_mean=_float_or_none(fields.get("projected_mean")),
+        projected_variance=_float_or_none(fields.get("projected_variance")),
+        stat_projection_id=_int_or_none(fields.get("stat_projection_id")),
+        prop_line_evaluation_id=_int_or_none(fields.get("prop_line_evaluation_id")),
     )
 
 
@@ -1272,6 +1293,11 @@ def _candidate_from_opportunity(
         exclude_multivariate=True,
         driver="board_prop_analysis",
         policy_version=policy.policy_version,
+        projected_mean=_float_or_none(getattr(opportunity, "projected_mean", None)),
+        projected_variance=_float_or_none(getattr(opportunity, "projected_variance", None)),
+        stat_projection_id=_int_or_none(getattr(opportunity, "stat_projection_id", None)),
+        prop_line_evaluation_id=_int_or_none(getattr(best_quote, "prop_line_evaluation_id", None))
+        or _int_or_none(getattr(opportunity, "primary_line_evaluation_id", None)),
     )
 
 
@@ -1296,6 +1322,10 @@ def _candidate_to_target(candidate: DecisionBrainCandidate) -> dict[str, Any]:
         "edge_bps": candidate.edge_bps,
         "ev": candidate.ev,
         "confidence": candidate.confidence,
+        "projected_mean": candidate.projected_mean,
+        "projected_variance": candidate.projected_variance,
+        "stat_projection_id": candidate.stat_projection_id,
+        "prop_line_evaluation_id": candidate.prop_line_evaluation_id,
         "driver": candidate.driver,
         "event_or_page_hint": candidate.event_or_page_hint,
         "match_rules": {
@@ -1303,6 +1333,11 @@ def _candidate_to_target(candidate: DecisionBrainCandidate) -> dict[str, Any]:
             "player_name_contains_any": candidate.player_name_contains_any,
             "stat_contains_any": candidate.stat_contains_any,
             "acceptable_line_values": candidate.acceptable_line_values,
+            "enumerate_thresholds": bool(
+                candidate.source == "board"
+                and candidate.projected_mean is not None
+                and candidate.projected_variance is not None
+            ),
             "status": "open",
             "mve_filter": "exclude" if candidate.exclude_multivariate else "only",
         },
@@ -1338,6 +1373,10 @@ def _candidate_symbol_fields(candidate: DecisionBrainCandidate, policy: Decision
         "edge_bps": candidate.edge_bps,
         "ev": candidate.ev,
         "confidence": candidate.confidence,
+        "projected_mean": candidate.projected_mean,
+        "projected_variance": candidate.projected_variance,
+        "stat_projection_id": candidate.stat_projection_id,
+        "prop_line_evaluation_id": candidate.prop_line_evaluation_id,
         "contracts": f"{candidate.contracts:.2f}",
         "max_price_dollars": f"{candidate.max_price_dollars:.4f}",
         "post_only": candidate.post_only,
@@ -1355,6 +1394,98 @@ def _candidate_risk(candidate: DecisionBrainCandidate) -> dict[str, Any]:
         "post_only": candidate.post_only,
         "time_in_force": candidate.time_in_force,
     }
+
+
+def _reprice_enumerated_kalshi_row(
+    *,
+    row: dict[str, Any],
+    candidate: DecisionBrainCandidate,
+    quote: Any,
+    client: MarketDataClient,
+) -> tuple[DecisionBrainCandidate, Any]:
+    if not _should_reprice_from_projection(row, candidate):
+        return candidate, quote
+    line_value = _float_or_none(row.get("line_value"))
+    if line_value is None or quote is None or getattr(quote, "error", None):
+        return candidate, quote
+    projected_mean = candidate.projected_mean
+    projected_variance = candidate.projected_variance
+    if projected_mean is None or projected_variance is None:
+        return candidate, quote
+
+    evaluation = evaluate_projection_line(
+        projected_mean=projected_mean,
+        projected_variance=projected_variance,
+        line_value=line_value,
+        market_key=candidate.market_key,
+        threshold_value=_float_or_none(row.get("kalshi_threshold_value")),
+        simulations=3000,
+    )
+    yes_entry = _float_or_none(getattr(quote, "yes_ask", None))
+    no_entry = _float_or_none(getattr(quote, "no_ask", None))
+    yes_edge = evaluation.over_probability - yes_entry if yes_entry is not None else None
+    no_edge = evaluation.under_probability - no_entry if no_entry is not None else None
+    if yes_edge is None and no_edge is None:
+        buy_yes = evaluation.over_probability >= evaluation.under_probability
+    elif yes_edge is None:
+        buy_yes = False
+    elif no_edge is None:
+        buy_yes = True
+    else:
+        buy_yes = yes_edge >= no_edge
+
+    recommendation = "buy_yes" if buy_yes else "buy_no"
+    outcome_side = "over" if buy_yes else "under"
+    model_prob = evaluation.over_probability if buy_yes else evaluation.under_probability
+    entry_price = yes_entry if buy_yes else no_entry
+    edge = model_prob - entry_price if entry_price is not None else None
+    edge_bps = int(round(edge * 10000)) if edge is not None else None
+    ev = edge
+    row.update(
+        {
+            "line_value": line_value,
+            "recommendation": recommendation,
+            "side": outcome_side,
+            "outcome_side": outcome_side,
+            "model_prob": model_prob,
+            "market_prob": entry_price,
+            "no_vig_market_prob": entry_price,
+            "edge_bps": edge_bps,
+            "ev": ev,
+            "fair_over_price": evaluation.fair_over_price,
+            "fair_under_price": evaluation.fair_under_price,
+            "push_probability": evaluation.push_probability,
+            "probability_source": "projection_distribution",
+            "pricing_source": "projection_distribution",
+            "prop_line_evaluation_id": None,
+            "primary_line_evaluation_id": None,
+        }
+    )
+    repriced_candidate = replace(
+        candidate,
+        recommendation=recommendation,
+        outcome_side=outcome_side,
+        model_prob=model_prob,
+        market_prob=entry_price,
+        no_vig_market_prob=entry_price,
+        edge_bps=edge_bps,
+        ev=ev,
+        prop_line_evaluation_id=None,
+    )
+    monitored = row_to_monitored(row)
+    if monitored is not None and getattr(quote, "side", None) != monitored.side:
+        quote = fetch_quote_snapshot(monitored, client)
+    return repriced_candidate, quote
+
+
+def _should_reprice_from_projection(row: dict[str, Any], candidate: DecisionBrainCandidate) -> bool:
+    if candidate.projected_mean is None or candidate.projected_variance is None:
+        return False
+    return bool(
+        row.get("base_target_id")
+        or row.get("pricing_source") == "projection_distribution"
+        or row.get("match_quality") == "enumerated_threshold"
+    )
 
 
 def _candidate_policy_blockers(
@@ -1549,7 +1680,11 @@ def _selected_tickers(payload: dict[str, Any], selected_candidate_ids: list[str]
             continue
         stable_id = _str_or_none(row.get("stable_id") or row.get("target_id"))
         ticker = _str_or_none(row.get("kalshi_ticker"))
-        if stable_id in selected and ticker:
+        if (
+            row.get("candidate_status") in {"selected_live", "selected_observe_only"}
+            and stable_id in selected
+            and ticker
+        ):
             out.append(ticker)
     return out
 

@@ -362,6 +362,10 @@ def build_primary_decision_row(
         "model_prob": primary.get("model_prob"),
         "market_prob": primary.get("market_prob"),
         "side": primary.get("side"),
+        "stat_projection_id": primary.get("stat_projection_id"),
+        "prop_line_evaluation_id": primary.get("prop_line_evaluation_id"),
+        "primary_line_evaluation_id": primary.get("prop_line_evaluation_id"),
+        "probability_source": primary.get("probability_source") or primary.get("pricing_source"),
     }
 
     if live_ok:
