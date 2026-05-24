@@ -1067,8 +1067,6 @@ class TrainingPipeline:
                 else:
                     oof_priors[market_key].append(priors)
 
-        import logging as _logging
-        _fold_logger = _logging.getLogger(__name__)
         calibrators: dict[str, ProbabilityCalibrator] = {}
         for market_key, target_column in MARKET_TARGETS.items():
             n_folds = self._settings.calibration_fold_table.get(
@@ -1077,7 +1075,7 @@ class TrainingPipeline:
             raw_chunks = oof_raw[market_key][-n_folds:]
             label_chunks = oof_labels[market_key][-n_folds:]
             reason = "ECE-table" if market_key in self._settings.calibration_fold_table else "default"
-            _fold_logger.info(
+            _log.info(
                 "calibration: %s using %d folds (%s)",
                 market_key,
                 len(raw_chunks),

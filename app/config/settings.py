@@ -369,8 +369,9 @@ class Settings(BaseSettings):
     # samples than production since isotonic averages over many points.
     calibration_max_folds: int = Field(default=10, alias="CALIBRATION_MAX_FOLDS")
     # Per-market OOF fold counts derived from Phase 2 ECE sweetspot analysis
-    # (0.7·accuracy + 0.3·runtime blend on calibration-ece-findings.md).
+    # (0.7*accuracy + 0.3*runtime blend on calibration-ece-findings.md).
     # Markets absent here fall back to calibration_max_folds.
+    # Intentionally code-only (no env alias); change via code when re-running the sweep.
     calibration_fold_table: dict[str, int] = Field(
         default_factory=lambda: {
             "points": 8,
