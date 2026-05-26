@@ -1939,17 +1939,52 @@ def _row_optional_int(row: dict[str, Any], keys: tuple[str, ...]) -> int | None:
 def _projection_boom_bust(summary: DistributionSummary) -> tuple[float, float]:
     """Line-independent boom/bust markers for canonical stat projections."""
     mean = float(summary.mean)
-    std = float(np.sqrt(max(summary.variance, 1e-9)))
-    if std <= 1e-6:
-        return 0.0, 0.0
-    from scipy.stats import norm  # local to avoid top-level cost when scipy absent
+    if mean <= 1e-6:
+        return 0.0, 1.0
 
-    boom_threshold = mean + std
-    bust_threshold = max(mean - std, 0.0)
-    return (
-        float(norm.sf(boom_threshold, loc=mean, scale=std)),
-        float(norm.cdf(bust_threshold, loc=mean, scale=std)),
-    )
+    # The canonical projection has no sportsbook line, so anchor material tails
+    # to the player's own projection.  Reusing +/-1 standard deviation collapses
+    # nearly every normal-ish row to 15.9% / 15.9%; interpolating the simulated
+    # quantiles keeps player-specific volatility and skew in the displayed risk.
+    boom_threshold = mean * 1.10
+    bust_threshold = max(mean * 0.70, 0.0)
+    boom = 1.0 - _projection_quantile_cdf(summary, boom_threshold)
+    bust = _projection_quantile_cdf(summary, bust_threshold)
+    return float(np.clip(boom, 0.0, 1.0)), float(np.clip(bust, 0.0, 1.0))
+
+
+def _projection_quantile_cdf(summary: DistributionSummary, threshold: float) -> float:
+    points = [
+        (0.0, 0.0),
+        (0.10, float(summary.p10)),
+        (0.25, float(summary.p25)),
+        (0.50, float(summary.median)),
+        (0.75, float(summary.p75)),
+        (0.90, float(summary.p90)),
+    ]
+    finite_points = [(q, x) for q, x in points if np.isfinite(q) and np.isfinite(x)]
+    if not finite_points:
+        return 0.0
+
+    by_value: dict[float, float] = {}
+    for quantile, value in finite_points:
+        by_value[value] = max(by_value.get(value, 0.0), quantile)
+    ordered = sorted((value, quantile) for value, quantile in by_value.items())
+    if len(ordered) == 1:
+        return 1.0 if threshold >= ordered[0][0] else 0.0
+
+    xs = np.asarray([value for value, _ in ordered], dtype=float)
+    qs = np.asarray([quantile for _, quantile in ordered], dtype=float)
+    threshold = float(threshold)
+    if threshold <= xs[0]:
+        return float(qs[0] if np.isclose(threshold, xs[0]) else 0.0)
+    if threshold <= xs[-1]:
+        return float(np.interp(threshold, xs, qs))
+
+    tail_width = max(xs[-1] - xs[-2], 1e-6)
+    tail_slope = (qs[-1] - qs[-2]) / tail_width
+    extrapolated = qs[-1] + tail_slope * (threshold - xs[-1])
+    return float(np.clip(extrapolated, qs[-1], 1.0))
 
 
 def _apply_dnp_correction(

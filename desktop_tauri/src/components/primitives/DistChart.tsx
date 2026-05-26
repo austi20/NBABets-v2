@@ -13,6 +13,10 @@ type DistChartProps = {
   projectedMean: number;
   projectedVariance: number | null;
   line: number;
+  percentile25?: number | null;
+  percentile75?: number | null;
+  confidenceIntervalLow?: number | null;
+  confidenceIntervalHigh?: number | null;
 };
 
 type DistPoint = {
@@ -24,8 +28,21 @@ type DistPoint = {
 const SAMPLE_COUNT = 100;
 const MIN_STDDEV = 0.75;
 
-export function DistChart({ projectedMean, projectedVariance, line }: DistChartProps) {
-  const points = buildDistribution(projectedMean, projectedVariance, line);
+export function DistChart({
+  projectedMean,
+  projectedVariance,
+  line,
+  percentile25,
+  percentile75,
+  confidenceIntervalLow,
+  confidenceIntervalHigh,
+}: DistChartProps) {
+  const points = buildDistribution(projectedMean, projectedVariance, line, {
+    percentile25,
+    percentile75,
+    confidenceIntervalLow,
+    confidenceIntervalHigh,
+  });
   const underProbability = interpolateCdf(points, line);
   const overProbability = Math.max(0, Math.min(1, 1 - underProbability));
 
@@ -81,7 +98,22 @@ export function DistChart({ projectedMean, projectedVariance, line }: DistChartP
   );
 }
 
-function buildDistribution(projectedMean: number, projectedVariance: number | null, line: number): DistPoint[] {
+function buildDistribution(
+  projectedMean: number,
+  projectedVariance: number | null,
+  line: number,
+  quantiles: {
+    percentile25?: number | null;
+    percentile75?: number | null;
+    confidenceIntervalLow?: number | null;
+    confidenceIntervalHigh?: number | null;
+  },
+): DistPoint[] {
+  const quantilePoints = buildQuantileDistribution(projectedMean, line, quantiles);
+  if (quantilePoints.length > 0) {
+    return quantilePoints;
+  }
+
   const stdDev = Math.max(Math.sqrt(Math.max(projectedVariance ?? MIN_STDDEV * MIN_STDDEV, 0)), MIN_STDDEV);
   const minValue = Math.min(projectedMean - stdDev * 4, line - stdDev * 2);
   const maxValue = Math.max(projectedMean + stdDev * 4, line + stdDev * 2);
@@ -106,6 +138,87 @@ function buildDistribution(projectedMean: number, projectedVariance: number | nu
       cumulative: Math.min(cumulative, 1),
     };
   });
+}
+
+function buildQuantileDistribution(
+  projectedMean: number,
+  line: number,
+  quantiles: {
+    percentile25?: number | null;
+    percentile75?: number | null;
+    confidenceIntervalLow?: number | null;
+    confidenceIntervalHigh?: number | null;
+  },
+): DistPoint[] {
+  const anchors = [
+    { quantile: 0.1, value: quantiles.confidenceIntervalLow },
+    { quantile: 0.25, value: quantiles.percentile25 },
+    { quantile: 0.5, value: projectedMean },
+    { quantile: 0.75, value: quantiles.percentile75 },
+    { quantile: 0.9, value: quantiles.confidenceIntervalHigh },
+  ]
+    .filter((point): point is { quantile: number; value: number } => Number.isFinite(point.value))
+    .sort((left, right) => left.value - right.value);
+
+  if (anchors.length < 3 || anchors[0].value >= anchors[anchors.length - 1].value) {
+    return [];
+  }
+
+  const byValue = new Map<number, number>();
+  for (const anchor of anchors) {
+    byValue.set(anchor.value, Math.max(byValue.get(anchor.value) ?? 0, anchor.quantile));
+  }
+  const distinct = Array.from(byValue.entries())
+    .map(([value, quantile]) => ({ value, quantile }))
+    .sort((left, right) => left.value - right.value);
+  if (distinct.length < 3) {
+    return [];
+  }
+
+  const lowStep = Math.max(distinct[1].value - distinct[0].value, MIN_STDDEV);
+  const highStep = Math.max(
+    distinct[distinct.length - 1].value - distinct[distinct.length - 2].value,
+    MIN_STDDEV,
+  );
+  const extended = [
+    { quantile: 0, value: Math.max(0, distinct[0].value - lowStep) },
+    ...distinct,
+    { quantile: 1, value: distinct[distinct.length - 1].value + highStep },
+  ];
+
+  const minValue = Math.min(extended[0].value, line);
+  const maxValue = Math.max(extended[extended.length - 1].value, line);
+  const step = (maxValue - minValue) / (SAMPLE_COUNT - 1);
+  let previousCdf = 0;
+  return Array.from({ length: SAMPLE_COUNT }, (_, index) => {
+    const value = minValue + index * step;
+    const cumulative = interpolateQuantileCdf(extended, value);
+    const density = Math.max(0, cumulative - previousCdf);
+    previousCdf = cumulative;
+    return { value, density, cumulative };
+  });
+}
+
+function interpolateQuantileCdf(anchors: Array<{ value: number; quantile: number }>, value: number): number {
+  if (value <= anchors[0].value) {
+    return anchors[0].quantile;
+  }
+  if (value >= anchors[anchors.length - 1].value) {
+    return anchors[anchors.length - 1].quantile;
+  }
+  for (let index = 1; index < anchors.length; index += 1) {
+    const left = anchors[index - 1];
+    const right = anchors[index];
+    if (value <= right.value) {
+      const width = right.value - left.value;
+      if (width <= 0) {
+        return right.quantile;
+      }
+      const weight = (value - left.value) / width;
+      return left.quantile + (right.quantile - left.quantile) * weight;
+    }
+  }
+  return 0.5;
 }
 
 function interpolateCdf(points: DistPoint[], line: number): number {

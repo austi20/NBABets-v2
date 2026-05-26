@@ -95,6 +95,10 @@ export function DecisionDrawer({
                   projectedMean={item.opportunity.projected_mean}
                   projectedVariance={item.opportunity.projected_variance}
                   line={item.opportunity.consensus_line}
+                  percentile25={item.opportunity.percentile_25}
+                  percentile75={item.opportunity.percentile_75}
+                  confidenceIntervalLow={item.opportunity.confidence_interval_low}
+                  confidenceIntervalHigh={item.opportunity.confidence_interval_high}
                 />
                 <RotationContext item={item} />
               </section>
