@@ -1,0 +1,10 @@
+# Pre-remediation baseline — 2026-05-27
+
+pytest:  935 collected (934 pass, 1 skip, 42 warnings)  [worktree baseline]
+ruff:    12 errors (all F541/I001, all auto-fixable)
+mypy:    355 errors in 44 files (211 source files checked)
+         NOTE: plan expected 227; pandas-stubs installation increased count
+         (stubs expose previously hidden type errors — this is expected)
+
+Branch: fix/deep-review-2026-05-26
+Worktree: E:/Projects/NBABets v2/.worktrees/fix-deep-review-2026-05-26
