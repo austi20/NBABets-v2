@@ -10,9 +10,9 @@ from app.config.settings import get_settings
 from app.evaluation.prop_decision import PropDecision
 from app.services.prop_analysis import (
     PropAnalysisService,
+    _merge_quote_groups,
     _quote_recommendation,
     _QuotePredictionRow,
-    _merge_quote_groups,
 )
 
 

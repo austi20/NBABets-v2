@@ -4,8 +4,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from app.trading.kalshi_order_router import KalshiOrderRouter
 
+from app.trading.kalshi_order_router import KalshiOrderRouter
 from app.trading.portfolio_manager import OrderHandle
 
 

@@ -84,10 +84,10 @@ def stage1_training_data(settings) -> int:
 
 def stage2_artifacts(settings) -> None:
     _section("STAGE 2: Model Artifact Status")
-    from app.training.artifacts import artifact_paths, artifact_exists, resolve_artifact_namespace
+    import datetime as dt
     import sqlite3
 
-    import datetime as dt
+    from app.training.artifacts import artifact_exists, artifact_paths, resolve_artifact_namespace
     ns = resolve_artifact_namespace(settings.database_url, settings.app_env)
     # All markets share a single artifact directory keyed by model version "v1"
     paths = artifact_paths("v1", namespace=ns)
@@ -155,13 +155,14 @@ def stage3_predict(settings) -> None:
 
 def stage4_brain_candidates(settings) -> list:
     _section("STAGE 4: Decision Brain Candidate Trace")
-    from app.trading.decision_brain import (
-        load_policy,
-        _stale_context_blockers,
-    )
-    from pathlib import Path
     import json
     from collections import Counter
+    from pathlib import Path
+
+    from app.trading.decision_brain import (
+        _stale_context_blockers,
+        load_policy,
+    )
 
     try:
         policy = load_policy(settings)
@@ -271,11 +272,11 @@ def stage5_kalshi_attrition(settings, exportable_candidates: list) -> None:
         else:
             eligible_count += 1
 
-    print(f"\n  Resolved by market_key:")
+    print("\n  Resolved by market_key:")
     for mk, cnt in sorted(market_dist_sym.items(), key=lambda x: -x[1]):
         print(f"    {mk:<22} {cnt}")
 
-    print(f"\n  Brain gate results on resolved symbols:")
+    print("\n  Brain gate results on resolved symbols:")
     print(f"    Eligible (no blockers): {eligible_count}")
     print(f"    Blocked:                {len(symbols) - eligible_count}")
     if brain_blocker_dist:
@@ -285,7 +286,7 @@ def stage5_kalshi_attrition(settings, exportable_candidates: list) -> None:
             print(f"    {blocker:<35} {cnt}{note}")
 
     # All resolved symbols detail
-    print(f"\n  All resolved symbols:")
+    print("\n  All resolved symbols:")
     print(f"  {'Player':<26} {'Market':<12} {'Ticker':<30} {'Blockers'}")
     print("  " + "-" * 90)
     for sym in symbols:
@@ -305,7 +306,7 @@ def stage5_kalshi_attrition(settings, exportable_candidates: list) -> None:
         print(f"\n  Unresolved reasons ({len(unresolved)} total):")
         for reason, cnt in sorted(unres_reasons.items(), key=lambda x: -x[1]):
             print(f"    {reason:<38} {cnt}")
-        print(f"\n  Unresolved sample (first 8):")
+        print("\n  Unresolved sample (first 8):")
         print(f"  {'Player':<26} {'Market':<14} {'Line':>5}  {'Reason'}")
         print("  " + "-" * 70)
         for u in unresolved[:8]:
@@ -323,7 +324,7 @@ def main() -> None:
     from app.config.settings import get_settings
     settings = get_settings()
 
-    print(f"NBA Prop Engine Diagnostic")
+    print("NBA Prop Engine Diagnostic")
     print(f"DB: {settings.database_url}")
     print(f"Date: {date.today()}")
 
@@ -349,7 +350,7 @@ def main() -> None:
     if parquet_root and parquet_root.exists():
         print(f"  HISTORICAL_PARQUET_ROOT: {parquet_root}")
     else:
-        print(f"  HISTORICAL_PARQUET_ROOT: not set")
+        print("  HISTORICAL_PARQUET_ROOT: not set")
     print(f"  Exportable candidates:   {len(exportable)}")
     print()
 
