@@ -34,7 +34,8 @@ class BallDontLieOddsProvider(HttpProviderMixin, OddsProvider):
 
     def __init__(self) -> None:
         super().__init__()
-        self._api_key = get_settings().balldontlie_api_key
+        _key = get_settings().balldontlie_api_key
+        self._api_key: str | None = _key.get_secret_value() if _key else None
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}

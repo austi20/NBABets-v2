@@ -30,7 +30,8 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
 
     def __init__(self) -> None:
         super().__init__()
-        self._api_key = get_settings().balldontlie_api_key
+        _key = get_settings().balldontlie_api_key
+        self._api_key: str | None = _key.get_secret_value() if _key else None
         self._bdl_max_rpm = int(self._settings.balldontlie_max_rpm)
         self._bdl_window_s = float(self._settings.balldontlie_rate_window_seconds)
         self._bdl_throttle_lock = asyncio.Lock()

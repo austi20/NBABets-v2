@@ -60,7 +60,7 @@ _ALLOWED_ORIGINS = ("*",)
 def _build_market_service() -> KalshiMarketService:
     settings = get_settings()
     creds = KalshiWsCredentials(
-        api_key_id=settings.kalshi_api_key_id or "",
+        api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
         private_key_path=Path(settings.kalshi_private_key_path)
         if settings.kalshi_private_key_path
         else Path(""),
@@ -217,7 +217,7 @@ def create_app(
                 from app.trading.wallet_init import init_budget_from_wallet
 
                 _wc = KalshiClient(
-                    api_key_id=settings.kalshi_api_key_id,
+                    api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
                     private_key_path=Path(str(settings.kalshi_private_key_path)),
                     base_url=settings.kalshi_base_url,
                 )

@@ -102,7 +102,8 @@ async def pull_box_scores_for_date(client, headers, d: date) -> list[dict]:
 
 
 async def main():
-    key = get_settings().balldontlie_api_key
+    _bdl_key = get_settings().balldontlie_api_key
+    key = _bdl_key.get_secret_value() if _bdl_key else None
     if not key:
         raise SystemExit("BALLDONTLIE_API_KEY not configured")
 

@@ -72,7 +72,7 @@ def build_exchange_adapter(settings: Settings | None = None) -> ExchangeAdapterC
                 adapter=KalshiAdapter(reason=f"Kalshi symbol resolver is not live-ready: {exc}"),
             )
         client = KalshiClient(
-            api_key_id=str(settings.kalshi_api_key_id),
+            api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
             private_key_path=Path(str(settings.kalshi_private_key_path)),
             base_url=settings.kalshi_base_url,
             timeout_seconds=float(settings.request_timeout_seconds),

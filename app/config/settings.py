@@ -6,7 +6,7 @@ from functools import lru_cache
 from os import getenv
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -298,7 +298,7 @@ class Settings(BaseSettings):
     stats_provider: str = Field(default="balldontlie", alias="STATS_PROVIDER")
     odds_provider: str = Field(default="balldontlie", alias="ODDS_PROVIDER")
     injury_provider: str = Field(default="balldontlie", alias="INJURY_PROVIDER")
-    balldontlie_api_key: str | None = Field(default="3485b14a-01ed-42b3-882a-fa6c0d3f2e0a", alias="BALLDONTLIE_API_KEY")
+    balldontlie_api_key: SecretStr | None = Field(default=None, alias="BALLDONTLIE_API_KEY")
     # Ball Dont Lie tier limit is 600 req/min; default leaves headroom (~10%).
     balldontlie_max_rpm: int = Field(default=540, ge=0, alias="BALLDONTLIE_MAX_RPM")
     balldontlie_rate_window_seconds: float = Field(default=60.0, gt=0, alias="BALLDONTLIE_RATE_WINDOW_SECONDS")
@@ -415,7 +415,7 @@ class Settings(BaseSettings):
     trading_exchange: str = Field(default="paper", alias="TRADING_EXCHANGE")
     trading_paper_adapter: str = Field(default="realistic", alias="TRADING_PAPER_ADAPTER")
     trading_live_enabled: bool = Field(default=False, alias="TRADING_LIVE_ENABLED")
-    kalshi_api_key_id: str | None = Field(default=None, alias="KALSHI_API_KEY_ID")
+    kalshi_api_key_id: SecretStr | None = Field(default=None, alias="KALSHI_API_KEY_ID")
     kalshi_private_key_path: Path | None = Field(default=None, alias="KALSHI_PRIVATE_KEY_PATH")
     network_circuit_breaker_failures: int = Field(default=5, alias="NETWORK_CIRCUIT_BREAKER_FAILURES")
     network_circuit_breaker_open_seconds: int = Field(default=90, alias="NETWORK_CIRCUIT_BREAKER_OPEN_SECONDS")

@@ -20,7 +20,8 @@ class BallDontLieInjuriesProvider(HttpProviderMixin, InjuriesProvider):
 
     def __init__(self) -> None:
         super().__init__()
-        self._api_key = get_settings().balldontlie_api_key
+        _key = get_settings().balldontlie_api_key
+        self._api_key: str | None = _key.get_secret_value() if _key else None
         self._team_lookup: dict[int, str] = {}
 
     async def healthcheck(self) -> bool:

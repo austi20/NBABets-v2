@@ -103,7 +103,7 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
         private_key_path = Path(settings.kalshi_private_key_path) if settings.kalshi_private_key_path else None
         if settings.kalshi_api_key_id and private_key_path is not None and private_key_path.exists():
             with KalshiClient(
-                api_key_id=settings.kalshi_api_key_id,
+                api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
                 private_key_path=private_key_path,
                 base_url=settings.kalshi_base_url,
             ) as account_client:
@@ -346,7 +346,7 @@ def trading_snapshot(request: Request) -> TradingSnapshotModel:
         private_key_path = Path(settings.kalshi_private_key_path) if settings.kalshi_private_key_path else None
         if settings.kalshi_api_key_id and private_key_path is not None and private_key_path.exists():
             with KalshiClient(
-                api_key_id=settings.kalshi_api_key_id,
+                api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
                 private_key_path=private_key_path,
                 base_url=settings.kalshi_base_url,
             ) as account_client:
@@ -624,7 +624,7 @@ def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
         raise HTTPException(status_code=400, detail="Kalshi credentials not configured")
     private_key_path = Path(str(settings.kalshi_private_key_path))
     client = KalshiClient(
-        api_key_id=settings.kalshi_api_key_id,
+        api_key_id=settings.kalshi_api_key_id.get_secret_value() if settings.kalshi_api_key_id else "",
         private_key_path=private_key_path,
         base_url=settings.kalshi_base_url,
     )
