@@ -106,6 +106,7 @@ class Settings(BaseSettings):
         env_file=_resolve_env_files(),
         env_file_encoding="utf-8",
         extra="ignore",
+        protected_namespaces=(),
     )
 
     app_env: str = Field(default="dev", alias="APP_ENV")
