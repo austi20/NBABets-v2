@@ -187,3 +187,42 @@ async def test_deliver_fills_no_fills_does_not_call_on_fill():
 
     await router.deliver_fills(handle, on_fill)
     assert not called
+
+
+# ---------------------------------------------------------------------------
+# CRITICAL fixes: symmetric semaphore + idempotent client_order_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rps_permit_released_in_finally_even_on_error():
+    """Semaphore must be released even when the call raises."""
+    client = MagicMock()
+    client.create_order = MagicMock(side_effect=RuntimeError("boom"))
+    router = KalshiOrderRouter(client=client, rps_cap=2)
+    with pytest.raises(RuntimeError):
+        await router.place_buy(ticker="X", qty=1, limit_price_cents=10)
+    # After the failed call, both permits must be available immediately.
+    assert router._rps_sem._value == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_reuses_same_client_order_id():
+    """client_order_id must be stable across retries."""
+    client = MagicMock()
+    seen_ids: list = []
+    call_count = 0
+
+    def stub(**kwargs):
+        nonlocal call_count
+        seen_ids.append(kwargs.get("client_order_id"))
+        call_count += 1
+        if call_count == 1:
+            raise TimeoutError("first call timeout")
+        return {"order_id": "abc"}
+
+    client.create_order = MagicMock(side_effect=stub)
+    router = KalshiOrderRouter(client=client, rps_cap=4)
+    await router.place_buy(ticker="X", qty=1, limit_price_cents=10)
+    assert len(seen_ids) == 2
+    assert seen_ids[0] == seen_ids[1], "client_order_id must be stable across retries"

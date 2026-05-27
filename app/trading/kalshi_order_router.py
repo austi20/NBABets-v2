@@ -52,6 +52,8 @@ class KalshiOrderRouter:
     # ------------------------------------------------------------------ write ops
 
     async def place_buy(self, ticker: str, qty: int, limit_price_cents: int) -> OrderHandle:
+        client_order_id = str(uuid4())
+
         async def _call() -> dict[str, Any]:
             return await asyncio.to_thread(
                 self._client.create_order,
@@ -59,7 +61,7 @@ class KalshiOrderRouter:
                 side="bid",
                 count=qty,
                 price_dollars=limit_price_cents / 100,
-                client_order_id=str(uuid4()),
+                client_order_id=client_order_id,
                 time_in_force="immediate_or_cancel",
             )
 
@@ -67,6 +69,8 @@ class KalshiOrderRouter:
         return OrderHandle(order_id=_extract_order_id(resp), ticker=ticker, side="buy")
 
     async def place_sell(self, ticker: str, qty: int, limit_price_cents: int) -> OrderHandle:
+        client_order_id = str(uuid4())
+
         async def _call() -> dict[str, Any]:
             return await asyncio.to_thread(
                 self._client.create_exit_order,
@@ -74,7 +78,7 @@ class KalshiOrderRouter:
                 held_side="yes",
                 count=qty,
                 exit_price_dollars=limit_price_cents / 100,
-                client_order_id=str(uuid4()),
+                client_order_id=client_order_id,
             )
 
         resp = await self._guarded(_call, is_sell=True)
@@ -117,28 +121,39 @@ class KalshiOrderRouter:
         *,
         is_sell: bool,
     ) -> _T:
-        """Acquire RPS token, call, retry on 429/5xx up to _MAX_RETRIES times."""
-        await self._rps_sem.acquire()
-        asyncio.get_event_loop().call_later(1.0, self._rps_sem.release)
+        """Acquire RPS token per attempt, retry on 429/5xx/timeout up to _MAX_RETRIES times.
 
+        The semaphore is held only for the duration of each individual call via
+        ``async with``, guaranteeing symmetric release even on exception.
+        Backoff sleeps happen outside the semaphore scope so the permit is not
+        held while waiting.
+        """
         last_exc: Exception | None = None
+        wait: float = 0.0
         for attempt in range(_MAX_RETRIES + 1):
-            try:
-                return await call()
-            except KalshiRateLimited as exc:
-                last_exc = exc
-                if attempt >= _MAX_RETRIES:
-                    break
-                wait = max(float(exc.retry_after), 0.0)
-                _log.warning("rate limited (attempt %d/%d), sleeping %.1fs", attempt + 1, _MAX_RETRIES, wait)
+            if wait > 0:
                 await asyncio.sleep(wait)
-            except KalshiServerError as exc:
-                last_exc = exc
-                if attempt >= _MAX_RETRIES:
-                    break
-                wait = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**attempt) * (0.5 + random.random()))
-                _log.warning("5xx error (attempt %d/%d), backoff %.1fs", attempt + 1, _MAX_RETRIES, wait)
-                await asyncio.sleep(wait)
+            async with self._rps_sem:
+                try:
+                    return await call()
+                except KalshiRateLimited as exc:
+                    last_exc = exc
+                    if attempt >= _MAX_RETRIES:
+                        break
+                    wait = max(float(exc.retry_after), 0.0)
+                    _log.warning("rate limited (attempt %d/%d), sleeping %.1fs", attempt + 1, _MAX_RETRIES, wait)
+                except KalshiServerError as exc:
+                    last_exc = exc
+                    if attempt >= _MAX_RETRIES:
+                        break
+                    wait = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**attempt) * (0.5 + random.random()))
+                    _log.warning("5xx error (attempt %d/%d), backoff %.1fs", attempt + 1, _MAX_RETRIES, wait)
+                except TimeoutError as exc:
+                    last_exc = exc
+                    if attempt >= _MAX_RETRIES:
+                        break
+                    wait = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**attempt) * (0.5 + random.random()))
+                    _log.warning("timeout (attempt %d/%d), backoff %.1fs", attempt + 1, _MAX_RETRIES, wait)
 
         assert last_exc is not None
         if is_sell:
