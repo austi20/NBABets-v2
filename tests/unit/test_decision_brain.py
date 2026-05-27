@@ -716,15 +716,13 @@ def test_consistency_table_reloads_when_file_mtime_changes(tmp_path: Path, monke
     import os
     import time
 
-    import joblib
-
     from app.trading.decision_brain import _consistency_table, _consistency_table_cached
-    from app.training.artifacts import ArtifactPaths
+    from app.training.artifacts import ArtifactPaths, dump_artifact
 
     _consistency_table_cached.cache_clear()
 
     artifact_path = tmp_path / "consistency_scores.joblib"
-    joblib.dump({("p1", "points"): {"consistency_score": 0.5}}, artifact_path)
+    dump_artifact(artifact_path, {("p1", "points"): {"consistency_score": 0.5}})
 
     fake_paths = ArtifactPaths(
         root=tmp_path,
@@ -742,7 +740,7 @@ def test_consistency_table_reloads_when_file_mtime_changes(tmp_path: Path, monke
 
     # Rewrite with a different score and bump mtime so the cache key changes
     time.sleep(0.05)
-    joblib.dump({("p1", "points"): {"consistency_score": 0.9}}, artifact_path)
+    dump_artifact(artifact_path, {("p1", "points"): {"consistency_score": 0.9}})
     new_mtime = artifact_path.stat().st_mtime + 1
     os.utime(artifact_path, (new_mtime, new_mtime))
 

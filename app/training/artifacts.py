@@ -4,6 +4,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import joblib
 
@@ -36,12 +37,44 @@ def artifact_paths(model_version: str, namespace: str | None = None) -> Artifact
     )
 
 
-def dump_artifact(path: Path, payload: object) -> None:
+class ArtifactIntegrityError(RuntimeError):
+    pass
+
+
+def _manifest_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".sha256")
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def dump_artifact(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(payload, path)
+    _manifest_path(path).write_text(_sha256_file(path))
 
 
-def load_artifact(path: Path) -> object:
+def load_artifact(path: Path) -> Any:
+    manifest = _manifest_path(path)
+    if not manifest.exists():
+        raise ArtifactIntegrityError(f"missing sha256 manifest for {path}")
+    expected = manifest.read_text().strip()
+    actual = _sha256_file(path)
+    if expected != actual:
+        raise ArtifactIntegrityError(
+            f"sha256 mismatch for {path}: {expected[:8]}.. != {actual[:8]}.."
+        )
     return joblib.load(path)
+
+
+def reseal_existing_artifact(path: Path) -> None:
+    """Write a manifest for an already-trusted on-disk artifact (operator-initiated)."""
+    _manifest_path(path).write_text(_sha256_file(path))
 
 
 def artifact_exists(path: Path) -> bool:
