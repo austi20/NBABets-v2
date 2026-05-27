@@ -59,11 +59,13 @@ llm-train = [
 ]
 dev = [
   "mypy>=1.18.0",
+  "pandas-stubs",
   "pyinstaller>=6.10.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=0.23",
   "pytest-cov>=6.2.0",
   "ruff>=0.13.0",
+  "types-requests",
 ]
 
 [tool.hatch.build.targets.wheel]
