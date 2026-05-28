@@ -25,8 +25,26 @@ random.seed(42)
 ROWS_PATH = "grading_2026-05-10_to_15.csv"
 
 
+def _get_db_path() -> str:
+    """Derive the SQLite database path from settings (avoids hardcoded path)."""
+    try:
+        from app.config.settings import get_settings
+        url = get_settings().database_url
+        if url.startswith("sqlite:///"):
+            return url[len("sqlite:///"): ]
+        return url
+    except Exception:  # noqa: BLE001
+        import os
+        app_data = os.environ.get(
+            "LOCALAPPDATA",
+            os.path.join(os.path.expanduser("~"), "AppData", "Local"),
+        )
+        return os.path.join(app_data, "NBAPropEngine", "data", "processed", "nba_props.sqlite")
+
+
 def load_rows() -> list[dict]:
-    rows = list(csv.DictReader(open(ROWS_PATH, encoding="utf-8")))
+    with open(ROWS_PATH, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     for r in rows:
         r["line"] = float(r["line"])
         r["proj"] = float(r["proj"])
@@ -38,12 +56,22 @@ def load_rows() -> list[dict]:
 
 
 def attach_volatility(rows: list[dict]) -> None:
-    con = sqlite3.connect("C:/Users/gunna/AppData/Local/NBAPropEngine/data/processed/nba_props.sqlite")
-    cur = con.cursor()
-    pred_ids = ",".join(r["prediction_id"] for r in rows)
-    cur.execute(f"SELECT prediction_id, player_id FROM predictions WHERE prediction_id IN ({pred_ids})")
-    pred_to_pid = {pid: ppid for pid, ppid in cur.fetchall()}
-    con.close()
+    numeric_ids: list[int] = []
+    for r in rows:
+        try:
+            numeric_ids.append(int(r["prediction_id"]))
+        except (ValueError, TypeError):
+            continue
+    pred_to_pid: dict[int, int] = {}
+    if numeric_ids:
+        placeholders = ",".join("?" * len(numeric_ids))
+        with sqlite3.connect(_get_db_path()) as con:
+            cur = con.cursor()
+            cur.execute(
+                f"SELECT prediction_id, player_id FROM predictions WHERE prediction_id IN ({placeholders})",
+                numeric_ids,
+            )
+            pred_to_pid = {pid: ppid for pid, ppid in cur.fetchall()}
 
     from app.db.session import session_scope
     from app.services.volatility import build_feature_snapshot, compute_volatility
@@ -51,7 +79,11 @@ def attach_volatility(rows: list[dict]) -> None:
     tier_cache: dict = {}
     with session_scope() as session:
         for r in rows:
-            ppid = pred_to_pid.get(int(r["prediction_id"]))
+            try:
+                _pred_id = int(r["prediction_id"])
+            except (ValueError, TypeError):
+                continue
+            ppid = pred_to_pid.get(_pred_id)
             if ppid is None:
                 continue
             key = (ppid, r["market"], r["date"])

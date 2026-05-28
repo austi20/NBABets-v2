@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "created_at": "2026-05-10T18:59:52Z",
+  "decisions": [],
+  "state": "blocked",
+  "board_date": "2026-05-10",
+  "mode": "startup",
+  "blocked_reason": "startup data refresh in progress",
+  "brain": {
+    "policy_version": null,
+    "policy_hash": null,
+    "selected_candidate_id": null
+  }
+}
