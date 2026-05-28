@@ -71,17 +71,12 @@ def test_exposure_risk_rejects_market_cap_hit() -> None:
 def test_exposure_risk_rejects_daily_loss_cap_hit() -> None:
     ledger = InMemoryPortfolioLedger()
     market = MarketRef(exchange="paper", symbol="paper:points:over:24.5", market_key="points", side="OVER", line_value=24.5)
+    # Buy 80 contracts at 0.90, then sell at 0.20 -> AVCO loss = (0.20-0.90)*80 = -56 > cap=50
     ledger.record_fill(
-        Fill(
-            fill_id="f2",
-            intent_id="i2",
-            market=market,
-            side="buy",
-            stake=10.0,
-            price=0.5,
-            realized_pnl=-80.0,
-            timestamp=datetime.now(UTC),
-        )
+        Fill(fill_id="f1", intent_id="i1", market=market, side="buy", stake=80.0, price=0.9, timestamp=datetime.now(UTC))
+    )
+    ledger.record_fill(
+        Fill(fill_id="f2", intent_id="i2", market=market, side="sell", stake=80.0, price=0.2, timestamp=datetime.now(UTC))
     )
     engine = ExposureRiskEngine(
         RiskLimits(
