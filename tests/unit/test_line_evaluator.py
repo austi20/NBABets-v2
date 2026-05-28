@@ -127,3 +127,111 @@ def test_ev_reflects_push_mass_not_zero_push() -> None:
     decimal = 1.0 + 100.0 / 110.0  # -110 decimal
     expected_ev = compute_ev(hit_prob=hit_prob, push_prob=result.push_probability, decimal_odds=decimal)
     assert abs(result.ev - expected_ev) < 1e-6, f"EV mismatch: got {result.ev}, expected {expected_ev}"
+
+
+# Task 3.6 tests
+
+def test_can_reuse_summary_rejects_different_mean() -> None:
+    """Passing a summary built from a different projected_mean must trigger re-computation."""
+    base = evaluate_projection_line(
+        projected_mean=20.0,
+        projected_variance=16.0,
+        line_value=20.5,
+        market_key="points",
+        simulations=3000,
+    )
+    # Supply summary from mean=20 but claim projected_mean=30 — must NOT reuse
+    reused = evaluate_projection_line(
+        projected_mean=30.0,
+        projected_variance=16.0,
+        line_value=20.5,
+        market_key="points",
+        summary=base.summary,
+        summary_line_value=20.5,
+        simulations=3000,
+    )
+    # If the summary is (incorrectly) reused it returns base.over_probability, not fresh's
+    assert abs(reused.over_probability - base.over_probability) > 0.05, (
+        "summary was incorrectly reused when projected_mean changed"
+    )
+
+
+def test_can_reuse_summary_rejects_different_market_key() -> None:
+    """Passing a summary built for a different market_key must trigger re-computation."""
+    base = evaluate_projection_line(
+        projected_mean=10.0,
+        projected_variance=4.0,
+        line_value=10.5,
+        market_key="rebounds",
+        simulations=3000,
+    )
+    # Same line, same mean/variance but different market_key
+    result = evaluate_projection_line(
+        projected_mean=10.0,
+        projected_variance=4.0,
+        line_value=10.5,
+        market_key="points",
+        summary=base.summary,
+        summary_line_value=10.5,
+        summary_market_key="rebounds",
+        simulations=3000,
+    )
+    fresh = evaluate_projection_line(
+        projected_mean=10.0,
+        projected_variance=4.0,
+        line_value=10.5,
+        market_key="points",
+        simulations=3000,
+    )
+    # After fix both should agree (re-computed for points, not reused from rebounds)
+    assert abs(result.over_probability - fresh.over_probability) < 0.05
+
+
+# Task 3.8 tests
+
+def test_count_cdf_matches_evaluator_within_tolerance() -> None:
+    """over_probability must agree with Poisson CDF within 0.03 (count-dist engine)."""
+    from scipy.stats import poisson
+
+    mean, var, line = 20.0, 4.0, 22.0
+    # var < mean => Poisson regime; expected = P(X > line) = 1 - CDF(line)
+    expected_over = float(1.0 - poisson.cdf(int(line), mu=mean))
+    res = evaluate_projection_line(
+        projected_mean=mean,
+        projected_variance=var,
+        line_value=line,
+        market_key="points",
+        over_odds=-110,
+        under_odds=-110,
+        simulations=50_000,
+    )
+    assert abs(res.over_probability - expected_over) < 0.03, (
+        f"over_probability {res.over_probability:.4f} too far from Poisson CDF {expected_over:.4f}"
+    )
+
+
+def test_push_positive_for_integer_market_whole_line() -> None:
+    res = evaluate_projection_line(
+        projected_mean=10.0,
+        projected_variance=2.0,
+        line_value=10.0,
+        market_key="rebounds",
+        over_odds=-110,
+        under_odds=-110,
+    )
+    assert res.push_probability > 0, "push_probability should be > 0 on an integer line"
+
+
+def test_recommendation_observe_when_ev_negative() -> None:
+    # Both sides -300 => heavy vig on both => EV < 0 => observe_only
+    res = evaluate_projection_line(
+        projected_mean=10.0,
+        projected_variance=2.0,
+        line_value=10.0,
+        market_key="points",
+        over_odds=-300,
+        under_odds=-300,
+    )
+    assert res.recommendation == "observe_only", (
+        f"expected observe_only for heavy-vig negative-EV bet, got {res.recommendation!r}"
+    )

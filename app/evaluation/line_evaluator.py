@@ -38,6 +38,7 @@ def evaluate_projection_line(
     threshold_value: float | None = None,
     summary: DistributionSummary | None = None,
     summary_line_value: float | None = None,
+    summary_market_key: str | None = None,
     minutes_mean: float | None = None,
     minutes_std: float | None = None,
     context: dict[str, float] | None = None,
@@ -57,6 +58,9 @@ def evaluate_projection_line(
         summary is not None
         and summary_line_value is not None
         and abs(float(summary_line_value) - line) < 1e-9
+        and abs(summary.mean - float(projected_mean)) < 1e-9
+        and abs(summary.variance - float(projected_variance)) < 1e-9
+        and (summary_market_key is None or summary_market_key == market_key)
     )
     dist_summary = summary if can_reuse_summary else summarize_line_probability(
         mean=float(projected_mean),
