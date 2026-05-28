@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,6 +37,14 @@ def _market_side_from_symbol(symbol: str, fallback: str) -> str:
     if len(parts) >= 3 and parts[2].lower() in {"over", "under", "yes", "no"}:
         return parts[2].upper()
     return fallback.upper()
+
+
+_EASTERN = ZoneInfo("America/New_York")
+
+
+def _trading_date_key(utc_dt: datetime) -> date:
+    """Return the calendar date in Eastern time for the given UTC datetime."""
+    return utc_dt.astimezone(_EASTERN).date()
 
 
 class SqlPortfolioLedger:
@@ -170,7 +179,7 @@ class SqlPortfolioLedger:
         position.realized_pnl += realized
         position.updated_at = fill.timestamp
 
-        fill_day = fill.timestamp.astimezone(UTC).date()
+        fill_day = _trading_date_key(fill.timestamp)
         daily = session.get(TradingDailyPnL, fill_day)
         if daily is None:
             daily = TradingDailyPnL(date=fill_day, realized_pnl=0.0)
@@ -247,6 +256,11 @@ class SqlPortfolioLedger:
 
     def daily_realized_pnl(self) -> float:
         with self._session_factory() as session:
-            today = datetime.now(UTC).date()
+            today = _trading_date_key(datetime.now(UTC))
             row = session.get(TradingDailyPnL, today)
             return float(row.realized_pnl) if row else 0.0
+
+    def unrealized_pnl(self) -> float:
+        # No mark prices tracked at ledger layer; returns 0.0.
+        # Override in a subclass that receives live quote updates.
+        return 0.0

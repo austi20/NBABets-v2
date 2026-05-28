@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from app.trading.ledger import InMemoryPortfolioLedger
 from app.trading.risk import ExposureRiskEngine, RiskLimits
+from app.trading.sql_ledger import _trading_date_key
 from app.trading.types import ExecutionIntent, Fill, MarketRef, Signal
 
 
@@ -113,3 +115,51 @@ def test_exposure_risk_reject_cooldown_blocks_followup() -> None:
     second_ok, second_reason = engine.evaluate(_make_intent(stake=1.0), ledger)
     assert second_ok is False
     assert "cooldown active" in second_reason
+
+
+# ---- Task 2.7: unrealized PnL + trading-date key --------------------------
+
+class _LedgerWithUnrealized(InMemoryPortfolioLedger):
+    """Stub that injects a fixed unrealized loss."""
+    def __init__(self, unrealized: float) -> None:
+        super().__init__()
+        self._unrealized = unrealized
+
+    def unrealized_pnl(self) -> float:
+        return self._unrealized
+
+
+def test_exposure_risk_blocks_when_unrealized_exceeds_cap() -> None:
+    # realized=0, unrealized=-60 => total=-60 > cap=50
+    ledger = _LedgerWithUnrealized(unrealized=-60.0)
+    engine = ExposureRiskEngine(
+        RiskLimits(
+            per_order_cap=25.0,
+            per_market_cap=75.0,
+            max_open_notional=200.0,
+            daily_loss_cap=50.0,
+            reject_cooldown_seconds=0,
+        )
+    )
+    ok, reason = engine.evaluate(_make_intent(stake=5.0), ledger)
+    assert ok is False
+    assert "daily loss cap" in reason
+
+
+def test_trading_date_key_uses_eastern_timezone() -> None:
+    """11pm UTC on Dec 31 = 6pm ET = same slate, not Jan 1."""
+    # 23:00 UTC = 18:00 ET (EST = UTC-5) on same calendar day
+    dt_utc = datetime(2026, 12, 31, 23, 0, 0, tzinfo=UTC)
+    et_date = _trading_date_key(dt_utc)
+    eastern = ZoneInfo("America/New_York")
+    expected = dt_utc.astimezone(eastern).date()
+    assert et_date == expected
+
+
+def test_trading_date_key_crosses_midnight_in_utc() -> None:
+    """2am UTC Jan 1 = 9pm ET Dec 31 = previous day slate."""
+    dt_utc = datetime(2027, 1, 1, 2, 0, 0, tzinfo=UTC)
+    eastern = ZoneInfo("America/New_York")
+    expected = dt_utc.astimezone(eastern).date()
+    result = _trading_date_key(dt_utc)
+    assert result == expected

@@ -69,9 +69,10 @@ class ExposureRiskEngine(RiskEngine):
                 f"open exposure cap exceeded ({open_notional:.2f} > {self.limits.max_open_notional:.2f})",
                 now,
             )
-        if ledger.daily_realized_pnl() <= -self.limits.daily_loss_cap:
+        total_daily_pnl = ledger.daily_realized_pnl() + getattr(ledger, "unrealized_pnl", lambda: 0.0)()
+        if total_daily_pnl <= -self.limits.daily_loss_cap:
             return self._reject(
-                f"daily loss cap reached ({ledger.daily_realized_pnl():.2f})",
+                f"daily loss cap reached ({total_daily_pnl:.2f})",
                 now,
             )
         return True, "accepted"

@@ -99,3 +99,8 @@ class InMemoryPortfolioLedger(PortfolioLedger):
     def daily_realized_pnl(self) -> float:
         today = datetime.now(UTC).date()
         return float(self._daily_realized.get(today, 0.0))
+
+    def unrealized_pnl(self) -> float:
+        # No mark prices available at ledger layer; callers that track
+        # current bid prices should subclass and override.
+        return 0.0
