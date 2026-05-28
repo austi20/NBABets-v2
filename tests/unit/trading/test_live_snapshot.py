@@ -268,3 +268,53 @@ def test_observe_rows_stay_visible_but_do_not_allocate_or_start(builder, selecti
     assert picks["observe"].state == "excluded"
     assert picks["observe"].blocker_reason == "observe-only decision"
     assert snapshot.bet_slip.total_stake == pytest.approx(picks["live"].alloc)
+
+
+# ---------------------------------------------------------------------------
+# 2.11b: _estimated_profit — no division by (1-payout)
+# ---------------------------------------------------------------------------
+
+def test_estimated_profit_high_payout_is_finite(builder, selections) -> None:
+    """payout=0.99 must not produce a catastrophic blowup (old formula: /0.01)."""
+    pack = _decision_pack(
+        candidates=[
+            _row(
+                "a",
+                model_prob=0.55,
+                kalshi={"ticker": "KX-TEST-PTS"},
+            )
+        ]
+    )
+    # Inject a near-1 yes_ask into the market book so payout = 1 - 0.99 = 0.01 ... wait,
+    # payout = 1.0 - entry and entry=yes_ask. Set yes_ask=0.01 so payout=0.99.
+    inputs = _inputs(
+        builder,
+        selections,
+        decision_pack=pack,
+        mode="supervised-live",
+        market_book_snapshot={
+            "KX-TEST-PTS": {
+                "yes_bid": 0.005,
+                "yes_ask": 0.01,
+                "spread": 0.005,
+                "ts": None,
+            }
+        },
+    )
+    snapshot = builder.build(inputs)
+    pick = snapshot.picks[0]
+    # With stake~3.5 and prob=0.55 and payout=0.99:
+    # expected EV = 0.55*3.5*0.99 - 0.45*3.5 = 1.9058 - 1.575 = 0.3308
+    # Old formula would give: 0.55*(3.5*0.99/0.01) - 0.45*3.5 = 190.575 - 1.575 = 189.0
+    assert pick.est_profit < 10.0, (
+        f"est_profit={pick.est_profit} looks blown up; 1-payout division bug still present"
+    )
+    assert pick.est_profit > -10.0
+
+
+def test_estimated_profit_normal_payout() -> None:
+    """Sanity check: payout=0.5, prob=0.6, stake=10 → EV = 0.6*5 - 0.4*10 = -1.0."""
+    from app.trading.live_snapshot import TradingLiveSnapshotBuilder
+    b = TradingLiveSnapshotBuilder()
+    result = b._estimated_profit(prob=0.6, stake=10.0, payout_per_unit=0.5)
+    assert result == pytest.approx(3.0 - 4.0)  # 0.6*10*0.5 - 0.4*10 = 3-4 = -1

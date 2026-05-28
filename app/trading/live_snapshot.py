@@ -230,7 +230,9 @@ class TradingLiveSnapshotBuilder:
     def _estimated_profit(self, prob: float, stake: float, payout_per_unit: float) -> float:
         if stake <= 0:
             return 0.0
-        win = prob * (stake * payout_per_unit / max(0.01, 1.0 - payout_per_unit))
+        # EV = prob * profit_if_win - (1-prob) * stake_at_risk
+        # profit_if_win = stake * payout_per_unit (no division by 1-payout)
+        win = prob * stake * payout_per_unit
         lose = (1 - prob) * stake
         return win - lose
 
