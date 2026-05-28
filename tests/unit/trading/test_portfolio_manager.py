@@ -342,3 +342,44 @@ async def test_no_double_down_in_active_states() -> None:
         await pm.open_position("KX-A", qty=5, limit_price_cents=50, model_prob=0.70)
         is False
     )
+
+
+# --- Task 2.8: no 1c dump when bid is missing --------------------------------
+
+@pytest.mark.asyncio
+async def test_partial_sell_retry_holds_when_no_bid() -> None:
+    """Partial sell retry must NOT place a 1c order when last_bid_cents is None."""
+    pm, router, _ = _mgr(config=_config(tp_pct=0.5, sl_pct=0.5))
+    await pm.open_position("KX-A", qty=10, limit_price_cents=50, model_prob=0.7)
+    bh = pm.position("KX-A").buy_handle  # type: ignore[union-attr]
+    assert bh is not None
+    await pm.on_fill(bh, filled_qty=10, avg_price_cents=50)
+    # Trigger a sell
+    await pm.on_quote("KX-A", yes_bid_cents=80, yes_ask_cents=82)
+    sh = pm.position("KX-A").sell_handle  # type: ignore[union-attr]
+    assert sh is not None
+    # Partial fill (5 of 10) - position still sell-pending with no bid known
+    # Force last_bid_cents to None to simulate no quote seen after partial
+    from dataclasses import replace as dc_replace
+    pm._positions["KX-A"] = dc_replace(pm._positions["KX-A"], last_bid_cents=None)  # type: ignore[attr-defined]
+    router.sells.clear()
+    await pm.on_fill(sh, filled_qty=5, avg_price_cents=80)
+    # Retry should NOT have placed a 1c sell
+    assert all(s.price_cents != 1 for s in router.sells), "must not sell at 1c when bid is missing"
+
+
+@pytest.mark.asyncio
+async def test_flatten_all_skips_positions_with_no_bid() -> None:
+    """flatten_all must NOT issue sells at 1c when last_bid_cents is None."""
+    pm, router, _ = _mgr(config=_config(tp_pct=0.5, sl_pct=0.5))
+    await pm.open_position("KX-A", qty=10, limit_price_cents=50, model_prob=0.7)
+    bh = pm.position("KX-A").buy_handle  # type: ignore[union-attr]
+    assert bh is not None
+    await pm.on_fill(bh, filled_qty=10, avg_price_cents=50)
+    # Ensure last_bid_cents is None (no quote received yet)
+    from dataclasses import replace as dc_replace
+    pm._positions["KX-A"] = dc_replace(pm._positions["KX-A"], last_bid_cents=None)  # type: ignore[attr-defined]
+    issued = await pm.flatten_all()
+    # Should issue 0 sells (skip the position) instead of selling at 1c
+    assert issued == 0
+    assert router.sells == []

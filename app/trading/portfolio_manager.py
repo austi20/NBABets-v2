@@ -302,8 +302,13 @@ class PortfolioManager:
             )
             self._mark_closed(pos.ticker, residual_qty=remaining)
             return
-        bid = pos.last_bid_cents or 1
-        handle = await self._router.place_sell(pos.ticker, remaining, bid)
+        if not pos.last_bid_cents:
+            logger.warning(
+                "partial sell retry skipped for %s: no bid observed; will retry on next quote",
+                pos.ticker,
+            )
+            return
+        handle = await self._router.place_sell(pos.ticker, remaining, pos.last_bid_cents)
         self._positions[pos.ticker] = replace(
             pos,
             sell_remaining_qty=remaining,
@@ -335,15 +340,13 @@ class PortfolioManager:
             for ticker, pos in list(self._positions.items()):
                 if pos.state != FSMState.HOLDING:
                     continue
-                if pos.last_bid_cents is None:
+                if pos.last_bid_cents is None or pos.last_bid_cents == 0:
                     logger.warning(
-                        "flatten_all: no bid observed for %s, falling back to 1c",
+                        "flatten_all: no bid observed for %s; holding until quote arrives",
                         ticker,
                     )
-                    bid = 1
-                else:
-                    bid = pos.last_bid_cents
-                await self._enqueue_sell_at_bid(ticker, bid)
+                    continue
+                await self._enqueue_sell_at_bid(ticker, pos.last_bid_cents)
                 issued += 1
             return issued
 
