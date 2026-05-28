@@ -507,7 +507,6 @@ def _sample_points(
     three_rate = max(raw_three_rate, 0.01)
     free_throw_rate = max(raw_free_throw_rate, 0.02)
     two_point_rate = np.maximum(shot_rate - three_rate, 0.02)
-    shared_latent = np.maximum(_context_value(context, "shared_latent", 1.0), 0.6)
     usage_rate = np.clip(_context_value(context, "usage_rate", 0.22), 0.08, 0.45)
     true_shooting = np.clip(_context_value(context, "true_shooting_percentage", 0.58), 0.35, 0.80)
     three_make = np.clip(_context_value(context, "three_point_make_rate", 0.36), 0.18, 0.60)

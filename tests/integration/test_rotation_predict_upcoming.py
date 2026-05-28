@@ -4,13 +4,11 @@ from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from app.schemas.domain import PropPrediction
-from app.training.distributions import DistributionSummary, _summarize_samples
+from app.training.distributions import _summarize_samples
 from app.training.pipeline import (
     TrainingPipeline,
-    _apply_dnp_correction,
     _availability_branch_context,
     _lookup_availability_context,
 )
@@ -92,66 +90,6 @@ def test_summarize_samples_zero_line_no_boom() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DNP correction: mixture model correctness
-# ---------------------------------------------------------------------------
-
-def test_dnp_correction_zero_risk_is_identity() -> None:
-    summary = DistributionSummary(
-        mean=20.0, variance=9.0, median=20.0,
-        p10=14.0, p25=17.0, p75=23.0, p90=26.0,
-        over_probability=0.5, under_probability=0.5,
-        ci_low=14.0, ci_high=26.0,
-        boom_probability=0.4, bust_probability=0.05,
-    )
-    boom, bust, p25, p75 = _apply_dnp_correction(summary, dnp_risk=0.0, line=20.0)
-
-    assert boom == pytest.approx(summary.boom_probability)
-    assert bust == pytest.approx(summary.bust_probability)
-    assert p25 == pytest.approx(summary.p25)
-    assert p75 == pytest.approx(summary.p75)
-
-
-def test_dnp_correction_bust_respects_dnp_floor() -> None:
-    # With dnp_risk=0.30 and bust_threshold=line*0.70, a DNP (stat=0) is always a bust.
-    # So bust_mixture >= dnp_risk regardless of the conditional distribution shape.
-    rng = np.random.default_rng(42)
-    samples = rng.normal(loc=20.0, scale=3.0, size=10_000)
-    summary = _summarize_samples(samples, line=20.0)
-    dnp_risk = 0.30
-
-    _, bust, _, _ = _apply_dnp_correction(summary, dnp_risk=dnp_risk, line=20.0)
-
-    assert bust >= dnp_risk - 1e-6
-    assert 0.0 <= bust <= 1.0
-
-
-def test_dnp_correction_boom_bounded_by_play_probability() -> None:
-    # boom_mixture = p_play * P(boom | plays), so it can never exceed p_play.
-    rng = np.random.default_rng(42)
-    samples = rng.normal(loc=20.0, scale=3.0, size=10_000)
-    summary = _summarize_samples(samples, line=20.0)
-    dnp_risk = 0.30
-
-    boom, _, _, _ = _apply_dnp_correction(summary, dnp_risk=dnp_risk, line=20.0)
-
-    assert boom <= (1.0 - dnp_risk) + 1e-6
-    assert 0.0 <= boom
-
-
-def test_dnp_correction_high_risk_zeroes_p25() -> None:
-    summary = DistributionSummary(
-        mean=10.0, variance=4.0, median=10.0,
-        p10=8.0, p25=9.0, p75=11.0, p90=12.0,
-        over_probability=0.5, under_probability=0.5,
-        ci_low=8.0, ci_high=12.0,
-        boom_probability=0.2, bust_probability=0.1,
-    )
-    _, _, p25, _ = _apply_dnp_correction(summary, dnp_risk=0.40, line=10.0)
-    # 40% DNP mass at 0 → combined p25 should be 0 (DNP mass covers the first quartile)
-    assert p25 == 0.0
-
-
-# ---------------------------------------------------------------------------
 # Availability branch context: DNP risk monotone with play probability
 # ---------------------------------------------------------------------------
 
@@ -188,19 +126,3 @@ def test_branch_simulation_frames_disabled_when_rotation_off(monkeypatch) -> Non
         sampled_branch_count=100,
     ) == {}
 
-
-# ---------------------------------------------------------------------------
-# Clean-roster parity: no uncertain players → defaults preserved
-# ---------------------------------------------------------------------------
-
-def test_clean_roster_dnp_correction_is_identity() -> None:
-    rng = np.random.default_rng(7)
-    samples = rng.normal(loc=25.0, scale=4.0, size=10_000)
-    summary = _summarize_samples(samples, line=24.5)
-
-    boom, bust, p25, p75 = _apply_dnp_correction(summary, dnp_risk=0.0, line=24.5)
-
-    assert boom == pytest.approx(summary.boom_probability, abs=1e-9)
-    assert bust == pytest.approx(summary.bust_probability, abs=1e-9)
-    assert p25 == pytest.approx(summary.p25, abs=1e-9)
-    assert p75 == pytest.approx(summary.p75, abs=1e-9)

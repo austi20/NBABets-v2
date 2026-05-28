@@ -428,7 +428,8 @@ class TrainingPipeline:
         metadata_feature_version = str(metadata.get("feature_version") or self._settings.feature_version)
         market_rows = {market.key: market.market_id for market in self._session.query(PropMarket).all()}
         timestamp = datetime.now(UTC)
-        total_prediction_rows = int(sum((frame["market_key"] == market_key).sum() for market_key in stat_models.models))
+        _market_row_counts = frame["market_key"].value_counts()
+        total_prediction_rows = int(_market_row_counts.reindex(list(stat_models.models), fill_value=0).sum())
         processed_prediction_rows = 0
 
         for market_key, market_model in stat_models.models.items():
@@ -1212,8 +1213,7 @@ class TrainingPipeline:
 
         # Per-market ECE monitoring against the finite-sample null floor for this run's OOF.
         _N_BINS = 10
-        import logging as _logging
-        _calib_logger = _logging.getLogger(__name__)
+        _calib_logger = _log
         _ece_rng = np.random.default_rng(self._settings.training_seed)
         diagnostics: dict[str, Any] = {}
         for market_key in MARKET_TARGETS:
@@ -1998,53 +1998,6 @@ def _projection_quantile_cdf(summary: DistributionSummary, threshold: float) -> 
     tail_slope = (qs[-1] - qs[-2]) / tail_width
     extrapolated = qs[-1] + tail_slope * (threshold - xs[-1])
     return float(np.clip(extrapolated, qs[-1], 1.0))
-
-
-def _apply_dnp_correction(
-    summary: DistributionSummary,
-    dnp_risk: float,
-    line: float,
-) -> tuple[float, float, float, float]:
-    """Return (boom_prob, bust_prob, p25, p75) with DNP mixture correction.
-
-    The simulator runs on expected-value adjusted features so summary.mean is
-    already the branch-weighted mean. Percentiles and tail probs treat the player
-    as always playing. This function applies the availability-mixture correction:
-
-        F_combined(x) = d * I(x >= 0) + (1-d) * F_play(x)
-
-    where d = dnp_risk and F_play is approximated from the simulation summary.
-    """
-    d = float(np.clip(dnp_risk, 0.0, 1.0))
-    if d <= 1e-6:
-        return summary.boom_probability, summary.bust_probability, summary.p25, summary.p75
-
-    p_play = 1.0 - d
-    # Conditional-on-playing stats from the expected-value-adjusted summary.
-    # adjusted_minutes ≈ baseline_minutes * p_play, so:
-    #   conditional_mean ≈ summary.mean / p_play
-    #   conditional_std  ≈ sqrt(summary.variance / p_play)
-    cond_mean = summary.mean / max(p_play, 1e-9)
-    cond_std = float(np.sqrt(max(summary.variance, 1e-9) / max(p_play, 1e-9)))
-
-    from scipy.stats import norm  # local to avoid top-level cost when scipy absent
-
-    # Boom: P(stat >= 1.10*line) = p_play * P(stat >= 1.10*line | plays)
-    boom_threshold = line * 1.10 if line > 0 else float("inf")
-    boom = float(p_play * norm.sf(boom_threshold, loc=cond_mean, scale=cond_std)) if np.isfinite(boom_threshold) else 0.0
-
-    # Bust: P(stat <= 0.70*line) = d + p_play * P(stat <= 0.70*line | plays)
-    bust_threshold = max(line * 0.70, 0.0)
-    bust = float(np.clip(d + p_play * norm.cdf(bust_threshold, loc=cond_mean, scale=cond_std), 0.0, 1.0))
-
-    # Combined quantile: F_combined^-1(q).  If q <= d the mass at 0 covers it.
-    def _cq(q: float) -> float:
-        if q <= d:
-            return 0.0
-        q_play = (q - d) / p_play
-        return float(max(norm.ppf(min(q_play, 1.0 - 1e-9), loc=cond_mean, scale=cond_std), 0.0))
-
-    return boom, bust, _cq(0.25), _cq(0.75)
 
 
 def _mixture_simulation_result(branch_results: list[tuple[float, Any]]) -> Any:
