@@ -245,7 +245,8 @@ class TradingIntentRequestModel(BaseModel):
     line: float
     side: str
     sportsbook_key: str
-    stake: float
+    stake: float = Field(gt=0, le=10_000)
+    confirm_live: str | None = None
 
 
 class TradingIntentResponseModel(BaseModel):

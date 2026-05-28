@@ -645,6 +645,9 @@ def trading_intent(request: Request, payload: TradingIntentRequestModel) -> Trad
     adapter = request.app.state.trading_adapter
     exchange = str(getattr(request.app.state, "trading_exchange", "paper"))
 
+    if exchange != "paper" and payload.confirm_live != "LIVE":
+        raise HTTPException(status_code=400, detail='confirm_live="LIVE" required for live submissions')
+
     side = payload.side.strip().upper()
     if side not in {"OVER", "UNDER"}:
         raise HTTPException(status_code=422, detail="side must be 'over' or 'under'")
