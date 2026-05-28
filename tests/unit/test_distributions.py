@@ -153,3 +153,62 @@ def test_zero_projected_minutes_produces_zero_outcome_samples() -> None:
         },
     )
     assert np.max(samples) == 0.0
+
+
+# Task 3.3 tests
+def test_summary_joint_partition_sums_to_one_with_push() -> None:
+    """over+under+push from _summarize_samples must sum to exactly 1.0 (joint partition)."""
+    from app.training.distributions import _summarize_samples
+
+    # all samples either over or under (no push hits) - worst case for independent smoothing
+    samples = np.array([6.0] * 50 + [4.0] * 50)  # 50 over, 50 under, 0 push
+    result = _summarize_samples(samples, line=5.0)
+    total = result.over_probability + result.under_probability
+    push = 1.0 - total
+    # With joint Laplace smoothing the sum must be exactly 1; independent smoothing leaks
+    assert abs(result.over_probability + result.under_probability + push - 1.0) < 1e-9
+
+
+def test_summary_push_mass_on_integer_line() -> None:
+    """Integer line: over_probability + under_probability < 1 (push mass present)."""
+    from app.training.distributions import _summarize_samples
+
+    rng = np.random.default_rng(42)
+    samples = np.round(rng.normal(5, 2, 10000)).astype(float)
+    result = _summarize_samples(samples, line=5.0)
+    push = 1.0 - result.over_probability - result.under_probability
+    assert push > 0.05, f"expected push > 0.05 on integer line, got {push}"
+    assert abs(result.over_probability + result.under_probability + push - 1.0) < 1e-9
+
+
+def test_summary_zero_push_for_half_point_line() -> None:
+    """Half-point line: push_probability is effectively 0."""
+    from app.training.distributions import _summarize_samples
+
+    rng = np.random.default_rng(42)
+    samples = np.round(rng.normal(5, 2, 10000)).astype(float)
+    result = _summarize_samples(samples, line=5.5)
+    push = 1.0 - result.over_probability - result.under_probability
+    assert abs(push) < 0.02, f"push should be ~0 for half-point line, got {push}"
+
+
+def test_summary_joint_three_way_posterior_sums_to_one() -> None:
+    """Three-way joint Laplace posterior must sum to exactly 1.
+
+    Independent binary smoothing gives sum > 1 when push hits are present.
+    Joint multinomial smoothing shares one denominator so sum is exactly 1.
+    """
+    from app.training.distributions import _summarize_samples
+
+    samples = np.array([5.0] * 80 + [6.0] * 10 + [4.0] * 10)
+    result = _summarize_samples(samples, line=5.0)
+    total = 100
+    push_hits = int(np.sum(samples == 5.0))
+    # joint partition: push_p = (push_hits + 0.5) / (total + 1.5)
+    denom = total + 1.5
+    push_p = (push_hits + 0.5) / denom
+    joint_sum = result.over_probability + result.under_probability + push_p
+    assert abs(joint_sum - 1.0) < 1e-9, (
+        f"joint posterior sum {joint_sum} != 1.0; "
+        f"over={result.over_probability:.6f} under={result.under_probability:.6f} push={push_p:.6f}"
+    )

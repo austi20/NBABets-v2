@@ -1100,6 +1100,10 @@ def _summarize_samples(samples: np.ndarray, line: float) -> DistributionSummary:
     bust_threshold = line * 0.70 if line > 0 else 0.0
     boom_hits = int(np.sum(samples >= boom_threshold)) if np.isfinite(boom_threshold) else 0
     bust_hits = int(np.sum(samples <= bust_threshold))
+    # Joint three-way Laplace smoothing: over, under, push share one denominator
+    # so probabilities sum to exactly 1.  Independent binary smoothing causes
+    # (over_p + under_p + push_p) > 1 when push mass is present.
+    over_prob, under_prob = _joint_partition_probability(over_hits, under_hits, total)
     return DistributionSummary(
         mean=float(np.mean(samples)),
         variance=float(np.var(samples)),
@@ -1108,8 +1112,8 @@ def _summarize_samples(samples: np.ndarray, line: float) -> DistributionSummary:
         p25=float(np.quantile(samples, 0.25)),
         p90=float(np.quantile(samples, 0.9)),
         p75=float(np.quantile(samples, 0.75)),
-        over_probability=_posterior_probability(over_hits, total),
-        under_probability=_posterior_probability(under_hits, total),
+        over_probability=over_prob,
+        under_probability=under_prob,
         ci_low=float(np.quantile(samples, 0.1)),
         ci_high=float(np.quantile(samples, 0.9)),
         boom_probability=float(boom_hits / total),
@@ -1119,6 +1123,17 @@ def _summarize_samples(samples: np.ndarray, line: float) -> DistributionSummary:
 
 def _posterior_probability(successes: int, total: int) -> float:
     return float((successes + 0.5) / (total + 1.0))
+
+
+def _joint_partition_probability(over_hits: int, under_hits: int, total: int) -> tuple[float, float]:
+    """Multinomial Laplace smoothing for a three-way partition (over / push / under).
+
+    Uses a shared denominator so over_p + push_p + under_p == 1 exactly.
+    """
+    denom = float(total + 1.5)  # 3 categories * alpha=0.5
+    over_p = (over_hits + 0.5) / denom
+    under_p = (under_hits + 0.5) / denom
+    return float(over_p), float(under_p)
 
 
 def _mean_anchor_multiplier(target_mean: float, expected_values: np.ndarray) -> float:
