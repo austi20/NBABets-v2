@@ -17,6 +17,8 @@ class ProbabilityCalibrator:
         self.design_width: int = 1
         self.support_min_probability: float | None = None
         self.support_max_probability: float | None = None
+        self.calibrated_min: float | None = None
+        self.calibrated_max: float | None = None
 
     def fit(
         self,
@@ -69,6 +71,9 @@ class ProbabilityCalibrator:
             self.strategy = "sigmoid"
         self.isotonic = isotonic
         self.sigmoid = sigmoid
+        # Store training-set calibrated boundaries for out-of-support clamping
+        self.calibrated_min = float(iso_pred.min()) if iso_pred.size else None
+        self.calibrated_max = float(iso_pred.max()) if iso_pred.size else None
         if priors is not None:
             correlation = _safe_correlation(probabilities, priors)
             self.market_prior_weight = min(0.35, max(0.05, correlation if len(priors) > 1 else 0.10))
@@ -106,6 +111,8 @@ class ProbabilityCalibrator:
                 calibrated=calibrated,
                 support_min=support_min,
                 support_max=support_max,
+                calibrated_min=getattr(self, "calibrated_min", None),
+                calibrated_max=getattr(self, "calibrated_max", None),
             )
             if not _is_calibration_order_valid(bounded_raw, calibrated):
                 return _blend_with_prior(bounded_raw, priors, 0.0, self.sample_size)
@@ -187,6 +194,8 @@ def _restore_out_of_support_raw_probabilities(
     calibrated: np.ndarray,
     support_min: float | None,
     support_max: float | None,
+    calibrated_min: float | None = None,
+    calibrated_max: float | None = None,
 ) -> np.ndarray:
     if support_min is None or support_max is None or raw_probabilities.shape != calibrated.shape:
         return calibrated
@@ -196,8 +205,24 @@ def _restore_out_of_support_raw_probabilities(
     # Clamp out-of-support values to the calibrated boundary instead of
     # passing through raw extremes.  This prevents uncalibrated 0.9999
     # values from surviving when the training data never saw them.
+    in_support_mask = ~(below_mask | above_mask)
+    # Prefer the stored training-set calibrated boundaries; fall back to the
+    # in-support min/max of this batch, and finally to the batch global min/max.
+    # Never pass through the raw uncalibrated extreme.
+    if calibrated_min is not None:
+        fit_calib_min = float(calibrated_min)
+    elif np.any(in_support_mask):
+        fit_calib_min = float(calibrated[in_support_mask].min())
+    else:
+        fit_calib_min = float(calibrated.min())
+    if calibrated_max is not None:
+        fit_calib_max = float(calibrated_max)
+    elif np.any(in_support_mask):
+        fit_calib_max = float(calibrated[in_support_mask].max())
+    else:
+        fit_calib_max = float(calibrated.max())
     if np.any(below_mask):
-        restored[below_mask] = calibrated[~(below_mask | above_mask)].min() if np.any(~(below_mask | above_mask)) else raw_probabilities[below_mask]
+        restored[below_mask] = fit_calib_min
     if np.any(above_mask):
-        restored[above_mask] = calibrated[~(below_mask | above_mask)].max() if np.any(~(below_mask | above_mask)) else raw_probabilities[above_mask]
+        restored[above_mask] = fit_calib_max
     return restored
