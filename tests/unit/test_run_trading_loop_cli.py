@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import pytest
 
-from scripts.run_trading_loop import _load_live_decisions
+from scripts.run_trading_loop import _confirm, _load_live_decisions
 
 
 def test_load_live_decisions_rejects_symbol_map_payload(tmp_path: Path) -> None:
@@ -169,3 +170,28 @@ def test_load_live_decisions_live_mode_requires_rich_blocks(tmp_path: Path) -> N
     )
     with pytest.raises(ValueError, match="no live-executable decisions found"):
         _load_live_decisions(path)
+
+
+# --- Task 2.9: --yes bypass guard -------------------------------------------
+
+def test_confirm_rejects_yes_with_live_without_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--yes with --live must fail unless KALSHI_ALLOW_UNATTENDED=true."""
+    monkeypatch.delenv("KALSHI_ALLOW_UNATTENDED", raising=False)
+    args = argparse.Namespace(yes=True, live=True)
+    result = _confirm(args)
+    assert result is False
+
+
+def test_confirm_allows_yes_with_live_when_unattended_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--yes with --live is permitted when KALSHI_ALLOW_UNATTENDED=true."""
+    monkeypatch.setenv("KALSHI_ALLOW_UNATTENDED", "true")
+    args = argparse.Namespace(yes=True, live=True)
+    result = _confirm(args)
+    assert result is True
+
+
+def test_confirm_allows_yes_without_live() -> None:
+    """--yes without --live (paper mode) is always permitted."""
+    args = argparse.Namespace(yes=True, live=False)
+    result = _confirm(args)
+    assert result is True

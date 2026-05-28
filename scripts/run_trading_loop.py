@@ -76,7 +76,14 @@ def _ensure_tables() -> None:
 
 
 def _confirm(args: argparse.Namespace) -> bool:
+    import os
     if args.yes:
+        if getattr(args, "live", False) and os.environ.get("KALSHI_ALLOW_UNATTENDED", "").lower() != "true":
+            print(
+                "ABORT: --yes is not permitted with --live unless KALSHI_ALLOW_UNATTENDED=true.",
+                file=sys.stderr,
+            )
+            return False
         return True
     try:
         return input("Type 'LIVE' to place at most one Kalshi order: ").strip() == "LIVE"
