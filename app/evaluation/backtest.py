@@ -779,7 +779,6 @@ def _finalize_bet_rows(frame: pd.DataFrame) -> pd.DataFrame:
     )
     result["edge_vs_implied"] = result["hit_probability"] - result["implied_side_probability"].fillna(0.0)
     result["edge_vs_no_vig"] = result["hit_probability"] - result["no_vig_side_probability"].fillna(0.0)
-    result["decimal_odds"] = result["recommended_side"].where(result["recommended_side"] == "OVER", "UNDER")
     result["decimal_odds"] = np.where(
         result["recommended_side"] == "OVER",
         result["over_odds"].apply(_american_to_decimal),

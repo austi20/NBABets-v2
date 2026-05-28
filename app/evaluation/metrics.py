@@ -47,9 +47,17 @@ def compute_regression_metrics(actual: np.ndarray, predicted: np.ndarray) -> Reg
 
 
 def compute_probability_metrics(labels: np.ndarray, probabilities: np.ndarray, bins: int = 10) -> ProbabilityMetrics:
+    try:
+        ll = float(log_loss(labels, probabilities, labels=[0, 1]))
+    except ValueError:
+        ll = float("nan")
+    try:
+        bs = float(brier_score_loss(labels, probabilities))
+    except ValueError:
+        bs = float("nan")
     return ProbabilityMetrics(
-        log_loss=float(log_loss(labels, probabilities, labels=[0, 1])),
-        brier_score=float(brier_score_loss(labels, probabilities)),
+        log_loss=ll,
+        brier_score=bs,
         expected_calibration_error=float(expected_calibration_error(labels, probabilities, bins=bins)),
     )
 
