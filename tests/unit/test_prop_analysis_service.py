@@ -296,3 +296,84 @@ def test_merge_quote_groups_prefers_evaluations_per_quote_and_keeps_legacy_gaps(
     assert by_book["book"].hit_probability == 0.62
     assert by_book["book"].stat_projection_id == 101
     assert by_book["other"].probability_source == "legacy_prediction"
+
+
+# ---------------------------------------------------------------------------
+# Task 4.1: merge dedupes on 5-tuple prefix — line_group_key mismatch
+# ---------------------------------------------------------------------------
+
+def _make_base_row(**overrides) -> _QuotePredictionRow:
+    defaults = dict(
+        game_id=10,
+        player_id=20,
+        player_name="Player",
+        player_team_abbreviation="AAA",
+        player_position="G",
+        market_key="player_points",
+        game_label="AAA @ BBB",
+        game_start_time="2026-05-01T00:00:00",
+        projected_mean=25.4,
+        line_value=24.5,
+        over_odds=-110,
+        under_odds=-110,
+        timestamp="2026-05-01T00:00:00",
+        sportsbook_key="book",
+        sportsbook_name="Book",
+        is_live_quote=True,
+        is_alternate_line=False,
+        source_market_key="player_points",
+        verification_status="provider_live",
+        odds_source_provider="balldontlie",
+        predicted_at="2026-05-01T00:00:00",
+        projected_variance=9.0,
+        confidence_interval_low=18.0,
+        confidence_interval_high=31.0,
+        over_probability=0.56,
+        under_probability=0.36,
+        push_probability=0.08,
+        calibration_adjusted_probability=0.58,
+        calibrated_under_probability=0.34,
+        recommended_side="OVER",
+        hit_probability=0.58,
+        no_vig_market_probability=0.50,
+        top_features=["usage_up"],
+        data_sufficiency_tier="A",
+        data_confidence_score=0.9,
+    )
+    defaults.update(overrides)
+    return _QuotePredictionRow(**defaults)
+
+
+def test_merge_dedupes_on_5_tuple_prefix_projection_wins_over_different_line_group_key() -> None:
+    """Preferred (projection) uses line_group_key=24.5; fallback (legacy) uses -1.0.
+    After merge the projection row survives and the legacy row for the same
+    (sportsbook, source_market, line) is dropped."""
+    d = date(2026, 5, 1)
+    five_prefix = (d, 1, 2, 20, "player_points")
+
+    legacy_row = _make_base_row(probability_source="legacy_prediction")
+    proj_row = _make_base_row(
+        hit_probability=0.65,
+        stat_projection_id=101,
+        prop_line_evaluation_id=202,
+        probability_source="projection_distribution",
+    )
+
+    # Preferred path: line_group_key == line_value (alternate-line style)
+    preferred_key = (*five_prefix, 24.5)
+    # Fallback path: same prop but grouped under -1.0
+    fallback_key = (*five_prefix, -1.0)
+
+    merged = _merge_quote_groups(
+        preferred={preferred_key: [proj_row]},
+        fallback={fallback_key: [legacy_row]},
+    )
+
+    # The projection row must appear; the legacy duplicate must be gone.
+    all_rows = [row for rows in merged.values() for row in rows]
+    assert any(r.probability_source == "projection_distribution" for r in all_rows)
+    proj_rows = [r for r in all_rows if r.probability_source == "projection_distribution"]
+    legacy_rows = [r for r in all_rows if r.probability_source == "legacy_prediction"]
+    # Same (sportsbook_key, source_market_key, line_value) triple — projection wins.
+    assert len(proj_rows) == 1
+    assert len(legacy_rows) == 0

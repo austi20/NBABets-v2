@@ -717,18 +717,40 @@ def _merge_quote_groups(
         return fallback
     if not fallback:
         return preferred
+
+    # Build a mutable copy of fallback, then overlay preferred rows.
+    # Use the 5-tuple prefix (drop line_group_key) to find fallback buckets
+    # whose key differs only in line_group_key - those hold the same prop.
+    fallback_by_prefix: dict[tuple[date, int, int, int, str], list[tuple[date, int, int, int, str, float]]] = {}
+    for key in fallback:
+        prefix = key[:5]
+        fallback_by_prefix.setdefault(prefix, []).append(key)
+
     merged: dict[tuple[date, int, int, int, str, float], list[_QuotePredictionRow]] = {
         key: list(rows)
         for key, rows in fallback.items()
     }
-    for key, rows in preferred.items():
-        by_quote = {
+    for pref_key, pref_rows in preferred.items():
+        prefix = pref_key[:5]
+        # Collect all fallback rows for the same 5-tuple prefix.
+        fallback_rows: list[_QuotePredictionRow] = []
+        fallback_keys_for_prefix = fallback_by_prefix.get(prefix, [])
+        for fb_key in fallback_keys_for_prefix:
+            fallback_rows.extend(merged.get(fb_key, []))
+
+        by_quote: dict[tuple[str, str, float], _QuotePredictionRow] = {
             (row.sportsbook_key, row.source_market_key, row.line_value): row
-            for row in merged.get(key, [])
+            for row in fallback_rows
         }
-        for row in rows:
+        for row in pref_rows:
             by_quote[(row.sportsbook_key, row.source_market_key, row.line_value)] = row
-        merged[key] = list(by_quote.values())
+
+        combined = list(by_quote.values())
+        # Remove all fallback keys that were merged into pref_key, then write
+        # the combined result under pref_key.
+        for fb_key in fallback_keys_for_prefix:
+            merged.pop(fb_key, None)
+        merged[pref_key] = combined
     return merged
 
 
