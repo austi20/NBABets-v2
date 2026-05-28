@@ -60,7 +60,7 @@ def test_snapshot_live_returns_valid_payload(tmp_path, monkeypatch) -> None:
         app = create_app(app_token="test-token")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-            response = await client.get("/api/trading/snapshot-live")
+            response = await client.get("/api/trading/snapshot-live", headers={"X-App-Token": "test-token"})
             assert response.status_code == 200
             payload = response.json()
             assert "kpis" in payload

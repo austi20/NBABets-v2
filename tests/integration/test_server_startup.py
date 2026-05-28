@@ -81,19 +81,20 @@ class _FakeStartupCoordinator:
 def test_startup_run_and_snapshot_endpoints() -> None:
     async def _run() -> None:
         coordinator = _FakeStartupCoordinator()
-        app = create_app(startup_coordinator=coordinator)
+        app = create_app(startup_coordinator=coordinator, app_token="test-startup-token")
+        token_headers = {"X-App-Token": "test-startup-token"}
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-            run_response = await client.post("/api/startup/run")
+            run_response = await client.post("/api/startup/run", headers=token_headers)
             assert run_response.status_code == 202
             assert run_response.json() == {"run_id": "run-123"}
             assert coordinator.last_full_refresh is False
 
-            full_run = await client.post("/api/startup/run", json={"full_refresh": True})
+            full_run = await client.post("/api/startup/run", json={"full_refresh": True}, headers=token_headers)
             assert full_run.status_code == 202
             assert coordinator.last_full_refresh is True
 
-            snapshot_response = await client.get("/api/startup/snapshot")
+            snapshot_response = await client.get("/api/startup/snapshot", headers=token_headers)
             assert snapshot_response.status_code == 200
             body = snapshot_response.json()
             assert body["current_step"] == "Refresh data feeds"
@@ -104,11 +105,12 @@ def test_startup_run_and_snapshot_endpoints() -> None:
 
 def test_startup_stream_emits_snapshot_diffs() -> None:
     async def _run() -> None:
-        app = create_app(startup_coordinator=_FakeStartupCoordinator())
+        app = create_app(startup_coordinator=_FakeStartupCoordinator(), app_token="test-startup-token")
         transport = ASGITransport(app=app)
         events: list[dict[str, object]] = []
+        token_headers = {"X-App-Token": "test-startup-token"}
         async with AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
-            async with client.stream("GET", "/api/startup/stream") as response:
+            async with client.stream("GET", "/api/startup/stream", headers=token_headers) as response:
                 assert response.status_code == 200
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):

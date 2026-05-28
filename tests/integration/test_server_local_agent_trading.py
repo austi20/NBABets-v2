@@ -118,20 +118,20 @@ def test_local_agent_and_trading_endpoints_with_app_token(monkeypatch, tmp_path:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver", timeout=5.0) as client:
-            status = await client.get("/api/local-agent/status")
+            status = await client.get("/api/local-agent/status", headers={"X-App-Token": "secret-token"})
             assert status.status_code == 200
             assert status.json()["enabled"] is True
 
-            positions = await client.get("/api/trading/positions")
+            positions = await client.get("/api/trading/positions", headers={"X-App-Token": "secret-token"})
             assert positions.status_code == 200
             assert positions.json()[0]["market_key"] == "points"
 
-            pnl = await client.get("/api/trading/pnl")
+            pnl = await client.get("/api/trading/pnl", headers={"X-App-Token": "secret-token"})
             assert pnl.status_code == 200
             assert pnl.json()["kill_switch_active"] is False
             assert pnl.json()["active_limits"]["per_order_cap"] == 0.25
 
-            fills = await client.get("/api/trading/fills/recent?limit=10")
+            fills = await client.get("/api/trading/fills/recent?limit=10", headers={"X-App-Token": "secret-token"})
             assert fills.status_code == 200
             assert fills.json()[0]["fill_id"] == "f1"
 

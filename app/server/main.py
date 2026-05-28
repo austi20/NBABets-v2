@@ -364,8 +364,7 @@ def create_app(
     app.state.app_token = app_token or secrets.token_urlsafe(24)
     app.add_middleware(
         AppTokenMiddleware,
-        protected_prefixes=("/api/local-agent", "/api/trading"),
-        exempt_paths=("/api/startup/run",),
+        protected_prefixes=("/api/local-agent", "/api/startup", "/api/trading"),
     )
     app.include_router(startup_router)
     app.include_router(board_router)
