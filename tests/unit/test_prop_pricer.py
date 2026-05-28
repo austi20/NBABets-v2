@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.evaluation.prop_pricer import price_prop
 
 
@@ -38,9 +40,8 @@ def test_price_prop_handles_missing_under_price() -> None:
     assert decision.market_prob > 0.5
 
 
-# Task 3.1 tests
-import pytest
 
+# Task 3.1 tests
 
 def test_ev_subtracts_only_loss_mass_not_push() -> None:
     from app.evaluation.prop_pricer import compute_ev
@@ -56,3 +57,26 @@ def test_ev_zero_push_matches_legacy() -> None:
     # over=0.55, push=0.0, loss=0.45, decimal=2.0
     # ev = 0.55 * 1 - 0.45 * 1 = 0.10
     assert compute_ev(hit_prob=0.55, push_prob=0.0, decimal_odds=2.0) == pytest.approx(0.10)
+
+
+# Task 3.4 tests
+def test_no_odds_returns_observe_only_with_none_edge() -> None:
+    dec = price_prop(
+        prediction={"calibration_adjusted_probability": 0.6, "under_probability": 0.4},
+        line_snapshot={"market_key": "p", "line_value": 10, "over_odds": None, "under_odds": None},
+    )
+    assert dec.recommendation == "observe_only"
+    assert dec.ev is None
+    assert dec.market_prob is None
+
+
+# Task 3.5 tests
+def test_negative_ev_recommends_observe_only() -> None:
+    # over prob 0.50, fair price 0.50, book odds -150/+130 => negative EV on both sides
+    dec = price_prop(
+        prediction={"calibration_adjusted_probability": 0.50, "under_probability": 0.50},
+        line_snapshot={"market_key": "p", "line_value": 10, "over_odds": -150, "under_odds": +130},
+    )
+    assert dec.recommendation == "observe_only"
+    assert dec.ev is not None
+    assert dec.ev < 0

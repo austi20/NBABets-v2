@@ -73,9 +73,8 @@ def test_line_evaluation_does_not_reuse_summary_for_a_different_line() -> None:
     assert mismatched_summary.over_probability != low_line.over_probability
 
 
-# Task 3.2 tests
-import pytest
 
+# Task 3.2 tests
 
 def test_push_probability_threaded_into_pricer() -> None:
     """push_probability must be passed to price_prop; probabilities must sum to 1."""
