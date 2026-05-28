@@ -56,11 +56,11 @@ class InMemoryPortfolioLedger(PortfolioLedger):
         else:
             position.open_stake += fill_stake
             position.weighted_price_total += float(fill.price) * fill_stake
-        effective_realized = float(fill.realized_pnl) + computed_realized
-        position.realized_pnl += effective_realized - float(fill.fee)
+        effective_realized = computed_realized - float(fill.fee)
+        position.realized_pnl += effective_realized
         position.updated_at = fill.timestamp
         fill_day = fill.timestamp.astimezone(UTC).date()
-        self._daily_realized[fill_day] += effective_realized - float(fill.fee)
+        self._daily_realized[fill_day] += effective_realized
 
     def open_positions(self) -> list[Position]:
         rows: list[Position] = []
