@@ -239,3 +239,59 @@ def test_place_order_under_uses_v2_ask_and_no_price() -> None:
     assert any(event.status == "filled" for event in events)
     assert fills[0].price == pytest.approx(0.62)
     assert fills[0].market.symbol.endswith(":under:25.5:g1:p237")
+
+
+# ---------------------------------------------------------------------------
+# 2.11d: cents-integer contract count — no float drift at boundary values
+# ---------------------------------------------------------------------------
+
+def test_contract_count_at_exact_boundary_no_float_drift() -> None:
+    """stake=0.40, price=0.40 → exactly 1 contract (float 0.40/0.40 can drift)."""
+    client = _FakeClient(
+        market={
+            "market": {
+                "yes_ask_dollars": "0.4000",
+                "yes_bid_dollars": "0.3800",
+                "no_ask_dollars": "0.6200",
+                "status": "open",
+            }
+        }
+    )
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+    events, fills = adapter.place_order(_intent(stake=0.40))
+    # Exactly 1 contract: 40 cents stake / 40 cents cost = 1
+    assert client.create_calls[0]["count"] == 1
+
+
+def test_contract_count_stake_slightly_below_two_contracts() -> None:
+    """stake=0.79, price=0.40 → 1 contract (79 cents // 40 cents = 1)."""
+    client = _FakeClient(
+        market={
+            "market": {
+                "yes_ask_dollars": "0.4000",
+                "yes_bid_dollars": "0.3800",
+                "no_ask_dollars": "0.6200",
+                "status": "open",
+            }
+        }
+    )
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+    events, fills = adapter.place_order(_intent(stake=0.79))
+    assert client.create_calls[0]["count"] == 1
+
+
+def test_contract_count_stake_at_two_contracts() -> None:
+    """stake=0.80, price=0.40 → 2 contracts (80 cents // 40 cents = 2)."""
+    client = _FakeClient(
+        market={
+            "market": {
+                "yes_ask_dollars": "0.4000",
+                "yes_bid_dollars": "0.3800",
+                "no_ask_dollars": "0.6200",
+                "status": "open",
+            }
+        }
+    )
+    adapter = KalshiAdapter(client=client, resolver=_resolver_with("KX-T1"))
+    events, fills = adapter.place_order(_intent(stake=0.80))
+    assert client.create_calls[0]["count"] == 2

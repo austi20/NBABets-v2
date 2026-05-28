@@ -103,7 +103,10 @@ class KalshiAdapter:
                 )],
                 [],
             )
-        count = int(intent.stake // quote.contract_cost_dollars)
+        # Integer cents arithmetic avoids float drift at boundary values
+        stake_cents = int(round(float(intent.stake) * 100))
+        cost_cents = int(round(float(quote.contract_cost_dollars) * 100))
+        count = stake_cents // cost_cents if cost_cents > 0 else 0
         max_contracts = self._max_contract_count(intent.signal.metadata)
         if max_contracts is not None:
             count = min(count, max_contracts)
