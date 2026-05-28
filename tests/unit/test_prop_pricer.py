@@ -36,3 +36,23 @@ def test_price_prop_handles_missing_under_price() -> None:
 
     assert decision.recommendation == "OVER"
     assert decision.market_prob > 0.5
+
+
+# Task 3.1 tests
+import pytest
+
+
+def test_ev_subtracts_only_loss_mass_not_push() -> None:
+    from app.evaluation.prop_pricer import compute_ev
+
+    # over=0.55, push=0.05, loss=0.40, decimal=2.0
+    # ev = 0.55 * (2.0 - 1) - 0.40 * 1 = 0.55 - 0.40 = 0.15
+    assert compute_ev(hit_prob=0.55, push_prob=0.05, decimal_odds=2.0) == pytest.approx(0.15)
+
+
+def test_ev_zero_push_matches_legacy() -> None:
+    from app.evaluation.prop_pricer import compute_ev
+
+    # over=0.55, push=0.0, loss=0.45, decimal=2.0
+    # ev = 0.55 * 1 - 0.45 * 1 = 0.10
+    assert compute_ev(hit_prob=0.55, push_prob=0.0, decimal_odds=2.0) == pytest.approx(0.10)

@@ -8,9 +8,9 @@ from typing import Any
 @dataclass(frozen=True)
 class PropDecision:
     model_prob: float
-    market_prob: float
-    no_vig_market_prob: float
-    ev: float
+    market_prob: float | None
+    no_vig_market_prob: float | None
+    ev: float | None
     recommendation: str
     confidence: str
     driver: str

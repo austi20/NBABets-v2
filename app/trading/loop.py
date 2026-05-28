@@ -130,12 +130,12 @@ class TradingLoop:
             "signal_id": signal_id,
             "market_prob": float(
                 decision.market_prob
-                if decision.market_prob > 0
+                if (decision.market_prob or 0) > 0
                 else american_to_prob(decision.over_odds if decision.recommendation.upper() == "OVER" else decision.under_odds)
             ),
             "no_vig_market_prob": float(
                 decision.no_vig_market_prob
-                if decision.no_vig_market_prob > 0
+                if (decision.no_vig_market_prob or 0) > 0
                 else no_vig_over_probability(decision.over_odds, decision.under_odds)
             ),
             "driver": decision.driver,
@@ -156,7 +156,7 @@ class TradingLoop:
             market_key=decision.market_key,
             side=decision.recommendation.upper(),
             confidence=decision.confidence.lower(),
-            edge=float(decision.ev),
+            edge=float(decision.ev or 0.0),
             model_probability=float(decision.model_prob),
             line_value=float(decision.line_value),
             metadata=metadata,

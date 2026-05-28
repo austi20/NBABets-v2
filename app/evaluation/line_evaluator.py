@@ -73,6 +73,11 @@ def evaluate_projection_line(
     under_probability = _clip_probability(dist_summary.under_probability)
     push_probability = _clip_probability(1.0 - over_probability - under_probability)
 
+    assert abs(over_probability + under_probability + push_probability - 1.0) < 1e-6, (
+        f"probability partition does not sum to 1: "
+        f"over={over_probability} under={under_probability} push={push_probability}"
+    )
+
     # Calibration can still be layered on later, but the primary architecture is
     # projection CDF -> line probability.
     calibrated_over = over_probability
@@ -89,7 +94,7 @@ def evaluate_projection_line(
             "under_odds": under_odds,
         },
     )
-    edge_bps = int(round((decision.model_prob - decision.no_vig_market_prob) * 10000))
+    edge_bps = int(round((decision.model_prob - (decision.no_vig_market_prob or 0.0)) * 10000))
     return LineEvaluationResult(
         line_value=line,
         threshold_value=float(threshold_value) if threshold_value is not None else None,
@@ -100,9 +105,9 @@ def evaluate_projection_line(
         calibrated_under_probability=calibrated_under,
         fair_over_price=over_probability,
         fair_under_price=under_probability,
-        market_probability=float(decision.market_prob),
-        no_vig_market_probability=float(decision.no_vig_market_prob),
-        ev=float(decision.ev),
+        market_probability=float(decision.market_prob or 0.0),
+        no_vig_market_probability=float(decision.no_vig_market_prob or 0.0),
+        ev=float(decision.ev or 0.0),
         edge_bps=edge_bps,
         recommendation=str(decision.recommendation),
         hit_probability=float(decision.model_prob),

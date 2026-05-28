@@ -6,6 +6,12 @@ from app.evaluation.no_vig import additive_no_vig, multiplicative_no_vig
 from app.evaluation.prop_decision import PropDecision
 
 
+def compute_ev(*, hit_prob: float, push_prob: float, decimal_odds: float) -> float:
+    """EV = hit * profit - loss * stake. Push mass is excluded from loss."""
+    loss_prob = max(0.0, 1.0 - hit_prob - push_prob)
+    return hit_prob * (decimal_odds - 1.0) - loss_prob * 1.0
+
+
 def price_prop(prediction: Any, line_snapshot: Any) -> PropDecision:
     over_odds = _read_value(line_snapshot, "over_odds")
     under_odds = _read_value(line_snapshot, "under_odds")
@@ -15,6 +21,23 @@ def price_prop(prediction: Any, line_snapshot: Any) -> PropDecision:
     model_over = float(_read_value(prediction, "calibration_adjusted_probability") or 0.0)
     raw_under = _read_value(prediction, "under_probability")
     model_under = float(raw_under) if raw_under is not None else max(0.0, 1.0 - model_over)
+    push_prob = max(0.0, 1.0 - model_over - model_under)
+
+    # Short-circuit: no odds on either side => observe only, no edge
+    if over_odds is None and under_odds is None:
+        return PropDecision(
+            model_prob=model_over,
+            market_prob=None,
+            no_vig_market_prob=None,
+            ev=None,
+            recommendation="observe_only",
+            confidence=_confidence(model_over),
+            driver="no_odds",
+            market_key=market_key,
+            line_value=line_value,
+            over_odds=None,
+            under_odds=None,
+        )
 
     recommendation, hit_prob = _recommend_side(
         model_over=model_over,
@@ -28,15 +51,18 @@ def price_prop(prediction: Any, line_snapshot: Any) -> PropDecision:
         under_odds=under_odds,
     )
     decimal = _american_to_decimal(over_odds if recommendation == "OVER" else under_odds)
-    ev = hit_prob * (decimal - 1.0) - max(0.0, 1.0 - hit_prob)
+    ev = compute_ev(hit_prob=hit_prob, push_prob=push_prob, decimal_odds=decimal)
     edge = hit_prob - no_vig_market_prob
+
+    # Downgrade to observe_only when EV is non-positive
+    final_rec = recommendation if ev > 0.0 else "observe_only"
 
     return PropDecision(
         model_prob=hit_prob,
         market_prob=market_prob,
         no_vig_market_prob=no_vig_market_prob,
         ev=ev,
-        recommendation=recommendation,
+        recommendation=final_rec,
         confidence=_confidence(hit_prob),
         driver=f"edge_vs_no_vig={edge:.3f}",
         market_key=market_key,
