@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.evaluation.no_vig import additive_no_vig, multiplicative_no_vig
+from app.evaluation.no_vig import multiplicative_no_vig
 from app.evaluation.prop_decision import PropDecision
 
 
@@ -88,10 +88,7 @@ def _market_probabilities(*, recommendation: str, over_odds: Any, under_odds: An
     under_implied = _american_to_probability(under_odds)
 
     if over_odds is not None and under_odds is not None:
-        try:
-            over_no_vig, under_no_vig = multiplicative_no_vig(int(over_odds), int(under_odds))
-        except ValueError:
-            over_no_vig, under_no_vig = additive_no_vig(int(over_odds), int(under_odds))
+        over_no_vig, under_no_vig = multiplicative_no_vig(int(over_odds), int(under_odds))
     else:
         over_no_vig = over_implied
         under_no_vig = under_implied
