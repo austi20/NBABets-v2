@@ -103,6 +103,7 @@ class PropOpportunity:
 class PropAnalysisService:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self.last_diagnostics: dict[str, object] = {}
 
     def top_opportunities(self, limit: int | None = None, target_date: date | None = None) -> list[PropOpportunity]:
         target_date = target_date or date.today()
@@ -283,6 +284,8 @@ class PropAnalysisService:
         )
         rows = self._session.execute(query).all()
         latest: dict[tuple[date, int, int, int, str, str, float], _QuotePredictionRow] = {}
+        _total_snapshot_rows = 0
+        _dropped_snapshot_rows = 0
         for (
             prediction,
             player_name,
@@ -306,8 +309,10 @@ class PropAnalysisService:
             board_date = to_local_board_date(game_date, start_time)
             if target_date is not None and board_date != target_date:
                 continue
+            _total_snapshot_rows += 1
             snapshot_payload = _coerce_snapshot_meta(snapshot_meta)
             if not _is_prediction_snapshot_usable(snapshot_payload, over_odds, under_odds):
+                _dropped_snapshot_rows += 1
                 continue
             push_probability = _push_probability(prediction.over_probability, prediction.under_probability)
             calibrated_under = _calibrated_under_probability(
@@ -422,6 +427,13 @@ class PropAnalysisService:
                 (board_date, home_team_id, away_team_id, player_id, market_key, line_group_key),
                 [],
             ).append(row)
+        self.last_diagnostics["snapshot_drop_count"] = _dropped_snapshot_rows
+        if _total_snapshot_rows > 0 and _dropped_snapshot_rows > _total_snapshot_rows // 2:
+            _log.warning(
+                "provider_live gate dropped %d/%d snapshot rows; board may be empty",
+                _dropped_snapshot_rows,
+                _total_snapshot_rows,
+            )
         return grouped
 
     def _latest_line_evaluation_quotes(

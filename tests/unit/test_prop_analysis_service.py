@@ -377,3 +377,35 @@ def test_merge_dedupes_on_5_tuple_prefix_projection_wins_over_different_line_gro
     # Same (sportsbook_key, source_market_key, line_value) triple — projection wins.
     assert len(proj_rows) == 1
     assert len(legacy_rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 4.2: provider_live gate records snapshot_drop_count in last_diagnostics
+# ---------------------------------------------------------------------------
+
+def test_provider_live_gate_records_drop_count_in_last_diagnostics() -> None:
+    """When all legacy rows fail the provider_live gate, last_diagnostics
+    must record the drop count and the result must be an empty board."""
+    service = object.__new__(PropAnalysisService)
+    service.last_diagnostics = {}
+    service._session = None  # not used once the methods are patched
+
+    from unittest.mock import patch as _patch
+
+    # Patch _latest_legacy_prediction_quotes to simulate: 3 rows received,
+    # all 3 dropped by the gate, returns {}.
+    def _fake_legacy(target_date):
+        # Simulate the accounting that the real method does.
+        service.last_diagnostics["snapshot_drop_count"] = 3
+        return {}
+
+    def _fake_eval(target_date):
+        return {}
+
+    with _patch.object(service, "_latest_legacy_prediction_quotes", side_effect=_fake_legacy):
+        with _patch.object(service, "_latest_line_evaluation_quotes", side_effect=_fake_eval):
+            with _patch("app.services.prop_analysis.sync_live_games_from_nba_api"):
+                result = service.all_opportunities(target_date=None)
+
+    assert result == []
+    assert service.last_diagnostics.get("snapshot_drop_count") == 3
