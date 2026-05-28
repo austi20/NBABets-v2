@@ -5,10 +5,11 @@ Connection lifecycle:
   2. Open ws connection with KALSHI-ACCESS-* headers.
   3. Send subscribe command for ("ticker",) on the configured tickers.
   4. Receive frames, parse, MarketBook.update().
-  5. On disconnect: backoff and reconnect (Task 8). On 401: increment auth
-     failure counter; stop after threshold (Task 9). Ping in Task 10.
+  5. On disconnect: exponential-backoff reconnect up to max_backoff_seconds.
+  6. On 401/403: increment consecutive_auth_failures; stop after threshold.
+  7. Ping keepalive delegated to the websockets library via ping_interval.
 
-This task implements steps 1-4. Reconnect/auth/ping arrive in Tasks 8-10.
+All lifecycle phases are fully implemented in this module.
 """
 from __future__ import annotations
 
