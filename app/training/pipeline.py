@@ -32,7 +32,7 @@ from app.training.artifacts import (
 )
 from app.training.baseline import RecencyBaseline
 from app.training.calibration import ProbabilityCalibrator
-from app.training.calibration_ece import dump_calibration_oof, market_ece_gate
+from app.training.calibration_ece import dump_calibration_oof, market_ece_gate, select_folds
 from app.training.constants import MARKET_TARGETS
 from app.training.data import DatasetLoader
 from app.training.data_sufficiency import annotate_tiers
@@ -1159,8 +1159,8 @@ class TrainingPipeline:
             n_folds = self._settings.calibration_fold_table.get(
                 market_key, self._settings.calibration_max_folds
             )
-            raw_chunks = oof_raw[market_key][-n_folds:]
-            label_chunks = oof_labels[market_key][-n_folds:]
+            raw_chunks = select_folds(oof_raw[market_key], n_folds)
+            label_chunks = select_folds(oof_labels[market_key], n_folds)
             reason = "ECE-table" if market_key in self._settings.calibration_fold_table else "default"
             fold_plan["markets"][market_key] = {
                 "configured_folds": int(n_folds),
@@ -1179,7 +1179,7 @@ class TrainingPipeline:
                 labels = np.concatenate(label_chunks)
                 if raw_probabilities.size and len(np.unique(labels)) >= 2:
                     calibrator = ProbabilityCalibrator()
-                    prior_chunks = oof_priors[market_key][-n_folds:]
+                    prior_chunks = select_folds(oof_priors[market_key], n_folds)
                     market_priors = (
                         np.concatenate(prior_chunks)
                         if priors_complete[market_key] and prior_chunks

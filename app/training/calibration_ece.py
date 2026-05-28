@@ -9,6 +9,18 @@ import numpy as np
 DEFAULT_N_BINS = 10
 
 
+def select_folds(fold_arrays: list, n_folds: int) -> list:
+    """Return the n_folds most-recent arrays from fold_arrays (tail slice).
+
+    Both the production calibration pipeline and the ECE sweep must use the
+    same direction so that the fold_count table produced by the sweep matches
+    what production actually trains on.
+    """
+    if n_folds <= 0:
+        return []
+    return fold_arrays[-n_folds:]
+
+
 def compute_ece(probs: np.ndarray, labels: np.ndarray, n_bins: int = DEFAULT_N_BINS) -> float:
     """Count-weighted absolute calibration gap over equal-width bins on [0, 1]."""
     if n_bins <= 0:
@@ -142,8 +154,8 @@ def summarize_fold_subsets(
             probs = np.array([], dtype=float)
             labels = np.array([], dtype=float)
         else:
-            probs = np.concatenate([np.asarray(array, dtype=float) for array in fold_probs[:fold_count]])
-            labels = np.concatenate([np.asarray(array, dtype=float) for array in fold_labels[:fold_count]])
+            probs = np.concatenate([np.asarray(array, dtype=float) for array in select_folds(fold_probs, fold_count)])
+            labels = np.concatenate([np.asarray(array, dtype=float) for array in select_folds(fold_labels, fold_count)])
         gate = market_ece_gate(
             probs,
             labels,
