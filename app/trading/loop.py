@@ -50,7 +50,7 @@ class TradingLoop:
             return False
         with self._session_factory() as session:
             row = session.get(TradingKillSwitch, 1)
-            return bool(row and row.killed)
+            return bool(row and (row.killed or row.flatten))
 
     def run_signals(
         self,
@@ -195,7 +195,7 @@ def make_kill_switch_callable(
     def _check() -> bool:
         with session_factory() as session:
             row = session.get(TradingKillSwitch, 1)
-            return bool(row and row.killed)
+            return bool(row and (row.killed or row.flatten))
     return _check
 
 

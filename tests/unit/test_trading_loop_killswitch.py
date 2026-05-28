@@ -118,3 +118,17 @@ def test_decision_to_signal_does_not_invent_resolution_metadata() -> None:
     assert "player_id" not in sig.metadata
     assert "game_id" not in sig.metadata
     assert "game_date" not in sig.metadata
+
+
+def test_loop_halts_when_flatten_set_in_db(session_factory) -> None:
+    # flatten=True (killed=False) must also block new entries
+    set_kill_switch(session_factory, killed=False, flatten=True, set_by="test")
+    loop = TradingLoop(
+        risk_engine=ExposureRiskEngine(),
+        ledger=InMemoryPortfolioLedger(),
+        adapter=FakePaperAdapter(),
+        session_factory=session_factory,
+    )
+    result = loop.run_decisions([_decision(), _decision("rebounds")], stake=1.0)
+    assert result.accepted == 0
+    assert result.rejected == 2
