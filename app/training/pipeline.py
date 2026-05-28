@@ -351,6 +351,11 @@ class TrainingPipeline:
         stat_models = load_artifact(paths.stat_models)
         metadata = load_artifact(paths.metadata)
         population_priors = load_artifact(paths.population_priors) if artifact_exists(paths.population_priors) else None
+        calibrators: dict[str, ProbabilityCalibrator] = (
+            load_artifact(paths.calibrators)
+            if artifact_exists(paths.calibrators)
+            else {}
+        )
         if not isinstance(metadata, dict):
             raise ValueError("Model metadata is invalid or corrupted")
         if "model_run_id" not in metadata:
@@ -492,6 +497,14 @@ class TrainingPipeline:
                     summary=summary,
                     summary_line_value=float(row["line_value"]),
                 )
+                _calibrator = calibrators.get(market_key)
+                if _calibrator is not None:
+                    import numpy as _np
+                    _calib_over = float(_calibrator.transform(_np.array([line_evaluation.over_probability]))[0])
+                    _calib_under = float(_calibrator.transform(_np.array([line_evaluation.under_probability]))[0])
+                else:
+                    _calib_over = line_evaluation.calibration_adjusted_probability
+                    _calib_under = line_evaluation.calibrated_under_probability
                 feature_summary = {
                     "signal_summary": signal_summary,
                     "top_features": signal_summary,
@@ -566,8 +579,8 @@ class TrainingPipeline:
                             "over_probability": line_evaluation.over_probability,
                             "under_probability": line_evaluation.under_probability,
                             "push_probability": line_evaluation.push_probability,
-                            "calibration_adjusted_probability": line_evaluation.calibration_adjusted_probability,
-                            "calibrated_under_probability": line_evaluation.calibrated_under_probability,
+                            "calibration_adjusted_probability": _calib_over,
+                            "calibrated_under_probability": _calib_under,
                             "fair_over_price": line_evaluation.fair_over_price,
                             "fair_under_price": line_evaluation.fair_under_price,
                             "market_probability": line_evaluation.market_probability,
@@ -599,7 +612,7 @@ class TrainingPipeline:
                         under_probability=line_evaluation.under_probability,
                         confidence_interval_low=summary.ci_low,
                         confidence_interval_high=summary.ci_high,
-                        calibration_adjusted_probability=line_evaluation.calibration_adjusted_probability,
+                        calibration_adjusted_probability=_calib_over,
                         feature_attribution_summary={**feature_summary, "legacy_prediction_surface": True},
                     )
                 )
