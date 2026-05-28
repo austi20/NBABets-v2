@@ -484,6 +484,7 @@ class PropAnalysisService:
                 "Projection-backed prop line evaluation query failed; falling back to legacy predictions",
                 exc_info=True,
             )
+            self.last_diagnostics["projection_query_failed"] = True
             return {}
         latest: dict[tuple[date, int, int, int, str, str, float], _QuotePredictionRow] = {}
         for (

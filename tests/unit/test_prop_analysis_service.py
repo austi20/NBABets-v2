@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config.settings import get_settings
 from app.evaluation.prop_decision import PropDecision
@@ -409,3 +410,22 @@ def test_provider_live_gate_records_drop_count_in_last_diagnostics() -> None:
 
     assert result == []
     assert service.last_diagnostics.get("snapshot_drop_count") == 3
+
+
+# ---------------------------------------------------------------------------
+# Task 4.3: SQLAlchemy error sets projection_query_failed in last_diagnostics
+# ---------------------------------------------------------------------------
+
+def test_projection_query_failure_sets_health_signal() -> None:
+    """When _latest_line_evaluation_quotes raises SQLAlchemyError,
+    last_diagnostics['projection_query_failed'] must be True."""
+    session = MagicMock()
+    session.execute.side_effect = SQLAlchemyError("boom")
+
+    service = PropAnalysisService(session)
+
+    # Call the private method directly to isolate the health-signal logic.
+    result = service._latest_line_evaluation_quotes(target_date=None)
+
+    assert result == {}
+    assert service.last_diagnostics.get("projection_query_failed") is True
