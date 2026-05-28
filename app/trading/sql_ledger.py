@@ -175,7 +175,7 @@ class SqlPortfolioLedger:
             position.open_stake += fill_stake
             position.weighted_price_total += float(fill.price) * fill_stake
 
-        realized = computed_realized - fill.fee
+        realized = float(fill.realized_pnl) + computed_realized - float(fill.fee)
         position.realized_pnl += realized
         position.updated_at = fill.timestamp
 
