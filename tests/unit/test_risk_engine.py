@@ -163,3 +163,89 @@ def test_trading_date_key_crosses_midnight_in_utc() -> None:
     expected = dt_utc.astimezone(eastern).date()
     result = _trading_date_key(dt_utc)
     assert result == expected
+
+
+# ---- Task 2.12: explicit per_order_cap / max_open_notional / cooldown-expiry ----
+
+def test_per_order_cap_rejects() -> None:
+    """stake > per_order_cap → blocked, 'per_order_cap' reflected in reason."""
+    ledger = InMemoryPortfolioLedger()
+    engine = ExposureRiskEngine(
+        RiskLimits(
+            per_order_cap=10.0,
+            per_market_cap=75.0,
+            max_open_notional=200.0,
+            daily_loss_cap=100.0,
+            reject_cooldown_seconds=0,
+        )
+    )
+    ok, reason = engine.evaluate(_make_intent(stake=11.0), ledger)
+    assert ok is False
+    assert "per-order cap" in reason
+
+
+def test_max_open_notional_rejects() -> None:
+    """open notional near limit + new stake → blocked with exposure cap reason."""
+    ledger = InMemoryPortfolioLedger()
+    market = MarketRef(
+        exchange="paper", symbol="paper:points:over:24.5",
+        market_key="points", side="OVER", line_value=24.5,
+    )
+    # Open position that uses most of notional
+    ledger.record_fill(
+        Fill(
+            fill_id="f1",
+            intent_id="i1",
+            market=market,
+            side="buy",
+            stake=90.0,
+            price=0.5,
+            timestamp=datetime.now(UTC),
+        )
+    )
+    engine = ExposureRiskEngine(
+        RiskLimits(
+            per_order_cap=25.0,
+            per_market_cap=150.0,
+            max_open_notional=100.0,
+            daily_loss_cap=200.0,
+            reject_cooldown_seconds=0,
+        )
+    )
+    # 90 open + 15 new = 105 > 100 notional cap
+    ok, reason = engine.evaluate(_make_intent(stake=15.0), ledger)
+    assert ok is False
+    assert "open exposure cap" in reason
+
+
+def test_cooldown_clears_after_window_passes() -> None:
+    """Record a triggering rejection → engine is in cooldown → advance clock past
+    the cooldown window → next evaluation is NOT rejected by cooldown."""
+    ledger = InMemoryPortfolioLedger()
+    engine = ExposureRiskEngine(
+        RiskLimits(
+            per_order_cap=5.0,  # intentionally low to trigger rejection
+            per_market_cap=75.0,
+            max_open_notional=200.0,
+            daily_loss_cap=100.0,
+            reject_cooldown_seconds=60,
+        )
+    )
+    # Trigger rejection → sets cooldown
+    ok, reason = engine.evaluate(_make_intent(stake=10.0), ledger)
+    assert ok is False
+    assert "per-order cap" in reason
+
+    # Immediately after: cooldown blocks even a valid stake
+    ok2, reason2 = engine.evaluate(_make_intent(stake=1.0), ledger)
+    assert ok2 is False
+    assert "cooldown active" in reason2
+
+    # Advance the engine's internal cooldown_until to the past
+    from datetime import timedelta
+    engine._cooldown_until = datetime.now(UTC) - timedelta(seconds=1)
+
+    # Now a valid order should be accepted
+    ok3, reason3 = engine.evaluate(_make_intent(stake=1.0), ledger)
+    assert ok3 is True
+    assert reason3 == "accepted"
