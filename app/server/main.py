@@ -54,7 +54,11 @@ from app.trading.stream_publisher import TradingStreamPublisher
 from app.trading.ws_consumer import KalshiWsCredentials
 from app.trading.ws_service import KalshiMarketService
 
-_ALLOWED_ORIGINS = ("*",)
+_ALLOWED_ORIGINS = (
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://127.0.0.1:1420",  # Vite dev origin for tauri dev
+)
 
 
 def _build_market_service() -> KalshiMarketService:
