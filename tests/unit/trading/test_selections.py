@@ -70,3 +70,28 @@ def test_bulk_update_replaces_selections_for_date(store_path: Path) -> None:
     store.bulk_set(today, {"a": False, "b": False})
     assert store.is_selected(today, "a") is False
     assert store.is_selected(today, "b") is False
+
+
+# ---------------------------------------------------------------------------
+# 2.11c: _write_temp_replace does NOT swallow KeyboardInterrupt
+# ---------------------------------------------------------------------------
+
+def test_write_temp_replace_does_not_swallow_keyboard_interrupt(tmp_path: Path) -> None:
+    """KeyboardInterrupt must propagate out of _write_temp_replace, not be caught."""
+    from unittest.mock import patch
+
+    from app.trading.selections import _write_temp_replace
+
+    target = tmp_path / "test.json"
+
+    # Patch os.replace to raise KeyboardInterrupt to simulate mid-write interrupt
+    with patch("app.trading.selections.os.replace", side_effect=KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            _write_temp_replace(target, '{"test": true}')
+
+    # Temp file should be cleaned up (not left on disk)
+    leftovers = list(tmp_path.glob(f"{target.name}*"))
+    # The lock file (if present) is allowed; only the tmp file should be gone
+    assert not any(f.suffix != ".lock" and f != target for f in leftovers), (
+        f"Temp file was not cleaned up: {leftovers}"
+    )

@@ -136,7 +136,18 @@ def _write_temp_replace(path: Path, text: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
         os.replace(tmp_name, path)
-    except BaseException:
+    except Exception:
         if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+            try:
+                os.remove(tmp_name)
+            except OSError:
+                pass
+        raise
+    except BaseException:
+        # KeyboardInterrupt / SystemExit: clean up then let it propagate
+        if os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except OSError:
+                pass
         raise
