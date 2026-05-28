@@ -12,6 +12,7 @@ from app.trading.live_snapshot import LiveSnapshotInputs, TradingLiveSnapshotBui
 from app.trading.market_book import MarketBook
 from app.trading.selections import SelectionStore
 from app.trading.stream_publisher import TradingStreamPublisher
+from app.trading.ws_consumer import KalshiWebSocketConsumer
 
 
 class TradingSnapshotService:
@@ -24,11 +25,13 @@ class TradingSnapshotService:
         market_book: MarketBook,
         selections_path: Path,
         publisher: TradingStreamPublisher,
+        ws_consumer: KalshiWebSocketConsumer | None = None,
     ) -> None:
         self._settings = settings
         self._market_book = market_book
         self._selections_path = selections_path
         self._publisher = publisher
+        self._ws_consumer = ws_consumer
         self._builder = TradingLiveSnapshotBuilder()
 
     @property
@@ -96,8 +99,8 @@ class TradingSnapshotService:
         return result
 
     def _is_connected(self) -> bool:
-        # MarketBook itself has no connection state; check the ws_service via settings attribute
-        # Falls back to False when no WS service is wired up
+        if self._ws_consumer is not None:
+            return self._ws_consumer.is_connected
         return False
 
     def _read_decision_pack(self) -> dict[str, Any]:
