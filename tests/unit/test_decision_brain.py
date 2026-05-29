@@ -902,3 +902,153 @@ def test_decision_brain_passes_candidate_below_max_volatility(tmp_path: Path) ->
 
     candidates = candidates_from_board(board, policy=policy, limit=25)
     assert len(candidates) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 5.1 — _reprice_enumerated_kalshi_row bails when chosen side has no ask
+# ---------------------------------------------------------------------------
+
+def _make_reprice_candidate(
+    *,
+    projected_mean: float = 20.0,
+    projected_variance: float = 25.0,
+) -> Any:
+    from app.trading.decision_brain import DecisionBrainCandidate
+
+    return DecisionBrainCandidate(
+        stable_id="2026-05-08_1_237_points_18.5_buy_yes",
+        source="board",
+        board_date=date(2026, 5, 8),
+        candidate_status="candidate",
+        market_key="points",
+        player_id="237",
+        player_name="Player",
+        game_id="1",
+        game_date=date(2026, 5, 8),
+        line_value=18.5,
+        recommendation="buy_yes",
+        outcome_side="yes",
+        book_side="bid",
+        model_prob=0.60,
+        market_prob=0.50,
+        no_vig_market_prob=0.50,
+        edge_bps=1000,
+        ev=0.10,
+        confidence=0.70,
+        contracts=1.0,
+        max_price_dollars=0.57,
+        post_only=True,
+        time_in_force="good_till_canceled",
+        title_contains_all=[],
+        player_name_contains_any=[],
+        stat_contains_any=[],
+        acceptable_line_values=[18.5],
+        event_or_page_hint=None,
+        exclude_multivariate=False,
+        driver="board",
+        projected_mean=projected_mean,
+        projected_variance=projected_variance,
+    )
+
+
+def _make_quote(*, yes_ask: float | None, no_ask: float | None, side: str = "OVER", error: str | None = None):
+    from datetime import UTC
+
+    from app.trading.monitoring import QuoteSnapshot
+
+    return QuoteSnapshot(
+        ticker="KX-UNDER",
+        market_key="points",
+        side=side,
+        line_value=18.5,
+        player_id="237",
+        game_date="2026-05-08",
+        title=None,
+        status="open",
+        yes_bid=0.55 if yes_ask is not None else None,
+        yes_ask=yes_ask,
+        no_bid=0.40 if no_ask is not None else None,
+        no_ask=no_ask,
+        last_price=None,
+        entry_price=yes_ask,
+        exit_price=None,
+        spread=None,
+        observed_at=datetime.now(UTC),
+        error=error,
+    )
+
+
+def _reprice_row(line_value: float = 18.5) -> dict:
+    return {
+        "kalshi_ticker": "KX-UNDER",
+        "target_id": "2026-05-08_1_237_points_18.5_buy_yes::KX-UNDER",
+        "base_target_id": "2026-05-08_1_237_points_18.5_buy_yes",
+        "market_key": "points",
+        "line_value": line_value,
+        "kalshi_threshold_value": line_value,
+        "match_quality": "enumerated_threshold",
+        "pricing_source": "projection_distribution",
+        "recommendation": "buy_yes",
+        "side": "over",
+        "outcome_side": "over",
+        "player_id": "237",
+        "game_date": "2026-05-08",
+    }
+
+
+def test_reprice_bails_when_yes_ask_none_projection_above_line() -> None:
+    """yes_ask=None with projection above line → original candidate returned unchanged."""
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    candidate = _make_reprice_candidate(projected_mean=25.0, projected_variance=9.0)
+    quote = _make_quote(yes_ask=None, no_ask=0.45)
+    row = _reprice_row(line_value=18.5)
+
+    result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
+
+    # Must return the ORIGINAL candidate unchanged — not flipped to buy_no with edge_bps=None
+    assert result_candidate is candidate
+    assert result_candidate.recommendation == "buy_yes"
+    assert result_candidate.edge_bps == 1000  # original, not None
+
+
+def test_reprice_bails_when_no_ask_none_projection_below_line() -> None:
+    """no_ask=None with projection below line → original candidate returned unchanged."""
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    # projected_mean=10 << line=18.5 → under_prob wins → buy_no chosen → no_ask checked
+    candidate = _make_reprice_candidate(projected_mean=10.0, projected_variance=4.0)
+    quote = _make_quote(yes_ask=0.70, no_ask=None, side="UNDER")
+    row = _reprice_row(line_value=18.5)
+
+    result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
+
+    assert result_candidate is candidate
+    assert result_candidate.edge_bps == 1000
+
+
+def test_reprice_bails_when_both_asks_none() -> None:
+    """Both asks None → original candidate returned unchanged."""
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    candidate = _make_reprice_candidate()
+    quote = _make_quote(yes_ask=None, no_ask=None)
+    row = _reprice_row()
+
+    result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
+
+    assert result_candidate is candidate
+    assert result_candidate.edge_bps == 1000
+
+
+def test_reprice_bails_on_quote_error() -> None:
+    """quote.error is set → original candidate returned unchanged."""
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    candidate = _make_reprice_candidate()
+    quote = _make_quote(yes_ask=0.55, no_ask=0.45, error="timeout")
+    row = _reprice_row()
+
+    result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
+
+    assert result_candidate is candidate

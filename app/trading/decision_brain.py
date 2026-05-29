@@ -1436,23 +1436,16 @@ def _reprice_enumerated_kalshi_row(
     )
     yes_entry = _float_or_none(getattr(quote, "yes_ask", None))
     no_entry = _float_or_none(getattr(quote, "no_ask", None))
-    yes_edge = evaluation.over_probability - yes_entry if yes_entry is not None else None
-    no_edge = evaluation.under_probability - no_entry if no_entry is not None else None
-    if yes_edge is None and no_edge is None:
-        buy_yes = evaluation.over_probability >= evaluation.under_probability
-    elif yes_edge is None:
-        buy_yes = False
-    elif no_edge is None:
-        buy_yes = True
-    else:
-        buy_yes = yes_edge >= no_edge
-
+    # Determine side from projection probabilities; bail if that side has no ask.
+    buy_yes = evaluation.over_probability >= evaluation.under_probability
+    entry_price = yes_entry if buy_yes else no_entry
+    if entry_price is None:
+        return candidate, quote
     recommendation = "buy_yes" if buy_yes else "buy_no"
     outcome_side = "over" if buy_yes else "under"
     model_prob = evaluation.over_probability if buy_yes else evaluation.under_probability
-    entry_price = yes_entry if buy_yes else no_entry
-    edge = model_prob - entry_price if entry_price is not None else None
-    edge_bps = int(round(edge * 10000)) if edge is not None else None
+    edge = model_prob - entry_price
+    edge_bps = int(round(edge * 10000))
     ev = edge
     row.update(
         {
