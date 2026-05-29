@@ -83,3 +83,41 @@ def test_stable_market_no_penalty() -> None:
     # rebounds and assists should have zero penalty
     assert _score_for("rebounds") == _score_for("points")
     assert _score_for("assists") == _score_for("points")
+
+
+# ---------------------------------------------------------------------------
+# Task 4.6d: build_parlay_insight guards most_common on empty legs
+# ---------------------------------------------------------------------------
+
+def test_build_parlay_insight_empty_legs_no_index_error() -> None:
+    """build_parlay_insight must not raise IndexError when parlay.legs is empty."""
+    from app.services.insights import build_parlay_insight
+    from app.services.parlays import ParlayRecommendation
+
+    parlay = ParlayRecommendation(
+        rank=1,
+        game_id=1,
+        matchup="HME @ AWY",
+        sportsbook_key="dk",
+        sportsbook_name="DraftKings",
+        sportsbook_icon="DK",
+        leg_count=0,
+        game_count=0,
+        game_ids=(),
+        game_labels=(),
+        joint_probability=1.0,
+        combined_decimal_odds=1.0,
+        combined_american_odds=-100,
+        expected_profit_per_unit=0.0,
+        implied_probability=1.0,
+        edge=0.0,
+        all_legs_live=True,
+        verification_status="provider_live",
+        odds_source_provider="balldontlie",
+        correlation_penalty=1.0,
+        average_leg_hit_probability=0.0,
+        weakest_leg_hit_probability=0.0,
+        legs=[],
+    )
+    insight = build_parlay_insight(parlay)
+    assert insight is not None

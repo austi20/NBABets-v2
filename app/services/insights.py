@@ -408,9 +408,10 @@ def build_parlay_insight(parlay: ParlayRecommendation) -> ParlayInsight:
     if parlay.weakest_leg_hit_probability < 0.56:
         warnings.append("At least one leg is materially weaker than the rest of the ticket.")
     market_counts = Counter(leg.market_key for leg in parlay.legs)
-    dominant_market, dominant_count = market_counts.most_common(1)[0]
-    if dominant_count >= max(3, parlay.leg_count // 2):
-        warnings.append(f"{dominant_count} legs come from {dominant_market.upper()}, which concentrates market risk.")
+    if market_counts:
+        dominant_market, dominant_count = market_counts.most_common(1)[0]
+        if dominant_count >= max(3, parlay.leg_count // 2):
+            warnings.append(f"{dominant_count} legs come from {dominant_market.upper()}, which concentrates market risk.")
     if parlay.game_count == 1 and parlay.leg_count >= 5:
         warnings.append("Large same-game stacks lean on heuristic correlation handling, not joint modeling.")
     if parlay.game_count > 1 and parlay.game_count < min(3, parlay.leg_count):
