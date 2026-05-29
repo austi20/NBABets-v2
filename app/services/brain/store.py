@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -101,10 +102,12 @@ class BrainStore:
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False, timeout=5)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._write_lock = threading.Lock()
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
@@ -136,27 +139,28 @@ class BrainStore:
     # -- Correction Log -------------------------------------------------------
 
     def store_correction(self, record: CorrectionRecord) -> int:
-        cursor = self._conn.execute(
-            """INSERT INTO correction_log
-               (signal_type, action_type, market, params_before, params_after,
-                ece_before, ece_after, outcome, confidence, created_at, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                record.signal_type,
-                record.action_type,
-                record.market,
-                json.dumps(record.params_before),
-                json.dumps(record.params_after),
-                record.ece_before,
-                record.ece_after,
-                record.outcome,
-                record.confidence,
-                (record.created_at or datetime.now(UTC)).isoformat(),
-                record.notes,
-            ),
-        )
-        self._conn.commit()
-        return cursor.lastrowid or 0
+        with self._write_lock:
+            cursor = self._conn.execute(
+                """INSERT INTO correction_log
+                   (signal_type, action_type, market, params_before, params_after,
+                    ece_before, ece_after, outcome, confidence, created_at, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    record.signal_type,
+                    record.action_type,
+                    record.market,
+                    json.dumps(record.params_before),
+                    json.dumps(record.params_after),
+                    record.ece_before,
+                    record.ece_after,
+                    record.outcome,
+                    record.confidence,
+                    (record.created_at or datetime.now(UTC)).isoformat(),
+                    record.notes,
+                ),
+            )
+            self._conn.commit()
+            return cursor.lastrowid or 0
 
     def resolve_correction(
         self,
@@ -164,13 +168,14 @@ class BrainStore:
         outcome: CorrectionOutcome,
         ece_after: float | None = None,
     ) -> None:
-        self._conn.execute(
-            """UPDATE correction_log
-               SET outcome = ?, ece_after = ?, resolved_at = ?
-               WHERE correction_id = ?""",
-            (outcome, ece_after, datetime.now(UTC).isoformat(), correction_id),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """UPDATE correction_log
+                   SET outcome = ?, ece_after = ?, resolved_at = ?
+                   WHERE correction_id = ?""",
+                (outcome, ece_after, datetime.now(UTC).isoformat(), correction_id),
+            )
+            self._conn.commit()
 
     def recall_corrections(
         self,
@@ -218,23 +223,24 @@ class BrainStore:
         )
 
     def save_market_profile(self, profile: MarketProfile) -> None:
-        self._conn.execute(
-            """INSERT OR REPLACE INTO market_profile
-               (market, optimal_weights, calibration_strategy, failure_modes,
-                ece_history, correction_count, avg_improvement, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                profile.market,
-                json.dumps(profile.optimal_weights),
-                profile.calibration_strategy,
-                json.dumps(list(profile.failure_modes)),
-                json.dumps([list(e) for e in profile.ece_history]),
-                profile.correction_count,
-                profile.avg_improvement,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO market_profile
+                   (market, optimal_weights, calibration_strategy, failure_modes,
+                    ece_history, correction_count, avg_improvement, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    profile.market,
+                    json.dumps(profile.optimal_weights),
+                    profile.calibration_strategy,
+                    json.dumps(list(profile.failure_modes)),
+                    json.dumps([list(e) for e in profile.ece_history]),
+                    profile.correction_count,
+                    profile.avg_improvement,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            self._conn.commit()
 
     # -- Strategy Memory ------------------------------------------------------
 
@@ -260,78 +266,81 @@ class BrainStore:
         return [_row_to_strategy(row) for row in rows]
 
     def upsert_strategy(self, strategy: StrategyMemory) -> int:
-        # Try to find existing strategy for same problem+action+market
-        existing = self._conn.execute(
-            """SELECT strategy_id FROM strategy_memory
-               WHERE problem_type = ? AND action_template = ? AND market IS ?""",
-            (strategy.problem_type, strategy.action_template, strategy.market),
-        ).fetchone()
-        if existing:
-            self._conn.execute(
-                """UPDATE strategy_memory
-                   SET parameters = ?, success_rate = ?, avg_ece_improvement = ?,
-                       sample_count = ?, last_used_at = ?
-                   WHERE strategy_id = ?""",
+        with self._write_lock:
+            # Try to find existing strategy for same problem+action+market
+            existing = self._conn.execute(
+                """SELECT strategy_id FROM strategy_memory
+                   WHERE problem_type = ? AND action_template = ? AND market IS ?""",
+                (strategy.problem_type, strategy.action_template, strategy.market),
+            ).fetchone()
+            if existing:
+                self._conn.execute(
+                    """UPDATE strategy_memory
+                       SET parameters = ?, success_rate = ?, avg_ece_improvement = ?,
+                           sample_count = ?, last_used_at = ?
+                       WHERE strategy_id = ?""",
+                    (
+                        json.dumps(strategy.parameters),
+                        strategy.success_rate,
+                        strategy.avg_ece_improvement,
+                        strategy.sample_count,
+                        (strategy.last_used_at or datetime.now(UTC)).isoformat(),
+                        existing["strategy_id"],
+                    ),
+                )
+                self._conn.commit()
+                return existing["strategy_id"]
+            cursor = self._conn.execute(
+                """INSERT INTO strategy_memory
+                   (problem_type, action_template, market, parameters,
+                    success_rate, avg_ece_improvement, sample_count, last_used_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    strategy.problem_type,
+                    strategy.action_template,
+                    strategy.market,
                     json.dumps(strategy.parameters),
                     strategy.success_rate,
                     strategy.avg_ece_improvement,
                     strategy.sample_count,
                     (strategy.last_used_at or datetime.now(UTC)).isoformat(),
-                    existing["strategy_id"],
                 ),
             )
             self._conn.commit()
-            return existing["strategy_id"]
-        cursor = self._conn.execute(
-            """INSERT INTO strategy_memory
-               (problem_type, action_template, market, parameters,
-                success_rate, avg_ece_improvement, sample_count, last_used_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                strategy.problem_type,
-                strategy.action_template,
-                strategy.market,
-                json.dumps(strategy.parameters),
-                strategy.success_rate,
-                strategy.avg_ece_improvement,
-                strategy.sample_count,
-                (strategy.last_used_at or datetime.now(UTC)).isoformat(),
-            ),
-        )
-        self._conn.commit()
-        return cursor.lastrowid or 0
+            return cursor.lastrowid or 0
 
     def prune_weak_strategies(self, min_samples: int = 5, max_success_rate: float = 0.30) -> int:
-        cursor = self._conn.execute(
-            "DELETE FROM strategy_memory WHERE sample_count >= ? AND success_rate < ?",
-            (min_samples, max_success_rate),
-        )
-        self._conn.commit()
-        return cursor.rowcount
+        with self._write_lock:
+            cursor = self._conn.execute(
+                "DELETE FROM strategy_memory WHERE sample_count >= ? AND success_rate < ?",
+                (min_samples, max_success_rate),
+            )
+            self._conn.commit()
+            return cursor.rowcount
 
     # -- Prediction Outcomes --------------------------------------------------
 
     def store_outcome(self, outcome: PredictionOutcome) -> int:
-        cursor = self._conn.execute(
-            """INSERT INTO prediction_outcome
-               (prediction_id, player_name, market, line_value,
-                predicted_probability, calibrated_probability, actual_value, hit, game_date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                outcome.prediction_id,
-                outcome.player_name,
-                outcome.market,
-                outcome.line_value,
-                outcome.predicted_probability,
-                outcome.calibrated_probability,
-                outcome.actual_value,
-                1 if outcome.hit else (0 if outcome.hit is not None else None),
-                outcome.game_date,
-            ),
-        )
-        self._conn.commit()
-        return cursor.lastrowid or 0
+        with self._write_lock:
+            cursor = self._conn.execute(
+                """INSERT INTO prediction_outcome
+                   (prediction_id, player_name, market, line_value,
+                    predicted_probability, calibrated_probability, actual_value, hit, game_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    outcome.prediction_id,
+                    outcome.player_name,
+                    outcome.market,
+                    outcome.line_value,
+                    outcome.predicted_probability,
+                    outcome.calibrated_probability,
+                    outcome.actual_value,
+                    1 if outcome.hit else (0 if outcome.hit is not None else None),
+                    outcome.game_date,
+                ),
+            )
+            self._conn.commit()
+            return cursor.lastrowid or 0
 
     def recall_outcomes(
         self,
