@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, date, datetime
 from typing import Any, cast
@@ -59,13 +60,20 @@ class BallDontLieOddsProvider(HttpProviderMixin, OddsProvider):
 
         raw_rows: list[dict[str, Any]] = []
         snapshots: list[LineSnapshotPayload] = []
-        for game in games:
+        sem = asyncio.Semaphore(8)
+
+        async def _fetch_one(game: dict[str, Any]) -> tuple[list[dict[str, Any]], list[LineSnapshotPayload]]:
             gid = game.get("id")
             if gid is None:
-                continue
-            props = await self._fetch_all_player_props(int(gid))
+                return [], []
+            async with sem:
+                props = await self._fetch_all_player_props(int(gid))
+            return props, parse_bdl_player_props(game, props)
+
+        results = await asyncio.gather(*(_fetch_one(g) for g in games))
+        for props, snaps in results:
             raw_rows.extend(props)
-            snapshots.extend(parse_bdl_player_props(game, props))
+            snapshots.extend(snaps)
 
         merged = {
             "data": raw_rows,
