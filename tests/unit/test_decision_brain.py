@@ -1052,3 +1052,35 @@ def test_reprice_bails_on_quote_error() -> None:
     result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
 
     assert result_candidate is candidate
+
+
+# ---------------------------------------------------------------------------
+# Task 5.2 — side-flip refetch happens BEFORE edge computation
+# ---------------------------------------------------------------------------
+
+def test_reprice_refetches_side_correct_quote_before_edge_computation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the quote's side doesn't match the chosen side, refetch happens first;
+    the returned candidate uses prices from the refreshed quote, not the stale one."""
+    from unittest.mock import patch
+
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    # projected_mean=25 >> line=18.5 → buy_yes=True (over side)
+    candidate = _make_reprice_candidate(projected_mean=25.0, projected_variance=9.0)
+    # Original quote is for the UNDER (NO) side — stale yes_ask=0.60
+    stale_quote = _make_quote(yes_ask=0.60, no_ask=0.35, side="UNDER")
+    row = _reprice_row(line_value=18.5)
+
+    # Refreshed quote has yes_ask=0.40 (better/different price for the OVER side)
+    fresh_quote = _make_quote(yes_ask=0.40, no_ask=0.60, side="OVER")
+
+    with patch("app.trading.decision_brain.fetch_quote_snapshot", return_value=fresh_quote) as mock_fetch:
+        result_candidate, returned_quote = _reprice_enumerated_kalshi_row(
+            row=row, candidate=candidate, quote=stale_quote, client=object()
+        )
+
+    # fetch_quote_snapshot must have been called (side mismatch triggers refetch)
+    assert mock_fetch.called
+    # market_prob must come from the FRESH quote's yes_ask (0.40), not stale (0.60)
+    assert result_candidate.market_prob == pytest.approx(0.40)
+    assert returned_quote is fresh_quote

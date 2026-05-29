@@ -1434,16 +1434,31 @@ def _reprice_enumerated_kalshi_row(
         threshold_value=_float_or_none(row.get("kalshi_threshold_value")),
         simulations=3000,
     )
-    yes_entry = _float_or_none(getattr(quote, "yes_ask", None))
-    no_entry = _float_or_none(getattr(quote, "no_ask", None))
-    # Determine side from projection probabilities; bail if that side has no ask.
+    # 1. Determine side from projection probabilities.
     buy_yes = evaluation.over_probability >= evaluation.under_probability
-    entry_price = yes_entry if buy_yes else no_entry
-    if entry_price is None:
-        return candidate, quote
     recommendation = "buy_yes" if buy_yes else "buy_no"
     outcome_side = "over" if buy_yes else "under"
     model_prob = evaluation.over_probability if buy_yes else evaluation.under_probability
+    desired_quote_side = "OVER" if buy_yes else "UNDER"
+
+    # 2. Refetch if the current quote is for the wrong side (do this BEFORE reading prices).
+    if getattr(quote, "side", None) != desired_quote_side:
+        # Temporarily set the correct outcome side so row_to_monitored builds the right symbol.
+        row["side"] = outcome_side
+        monitored = row_to_monitored(row)
+        if monitored is not None:
+            quote = fetch_quote_snapshot(monitored, client)
+    if getattr(quote, "error", None):
+        return candidate, quote
+
+    # 3. Read entry prices from the (possibly refreshed) quote; bail if chosen side has no ask.
+    yes_entry = _float_or_none(getattr(quote, "yes_ask", None))
+    no_entry = _float_or_none(getattr(quote, "no_ask", None))
+    entry_price = yes_entry if buy_yes else no_entry
+    if entry_price is None:
+        return candidate, quote
+
+    # 4. Compute edge from the fresh quote.
     edge = model_prob - entry_price
     edge_bps = int(round(edge * 10000))
     ev = edge
@@ -1478,9 +1493,6 @@ def _reprice_enumerated_kalshi_row(
         ev=ev,
         prop_line_evaluation_id=None,
     )
-    monitored = row_to_monitored(row)
-    if monitored is not None and getattr(quote, "side", None) != monitored.side:
-        quote = fetch_quote_snapshot(monitored, client)
     return repriced_candidate, quote
 
 
