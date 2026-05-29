@@ -427,14 +427,19 @@ class CachedInjuriesProvider(InjuriesProvider):
         self.provider_name = getattr(self._provider, "provider_name", self.provider_name)
         write_provider_name = _active_provider_cache_name(self._provider)
         deduped = dedupe_injury_payloads(injuries)
-        self._cache.put_collection(
-            provider_type="injuries",
-            provider_name=write_provider_name,
-            method_name="fetch_injuries",
-            scope_key=scope_key,
-            result=result,
-            items=deduped,
+        is_degraded = bool(
+            not deduped
+            or (isinstance(result.payload, dict) and result.payload.get("meta", {}).get("reason"))
         )
+        if not is_degraded:
+            self._cache.put_collection(
+                provider_type="injuries",
+                provider_name=write_provider_name,
+                method_name="fetch_injuries",
+                scope_key=scope_key,
+                result=result,
+                items=deduped,
+            )
         self._cache_provider_name = write_provider_name
         return result, deduped
 
