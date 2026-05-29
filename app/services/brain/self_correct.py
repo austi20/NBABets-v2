@@ -86,7 +86,9 @@ def run_self_correction_cycle(
         # 2. Determine autonomy level
         level = autonomy_level or _detect_autonomy_level(brain)
         result["autonomy_level"] = level
-        dry_run = level in (AUTONOMY_OBSERVE, AUTONOMY_SUGGEST)
+        import os
+        _allow_auto = os.environ.get("WORKFLOW_AGENT_ALLOW_AUTO_ACTIONS", "").lower() in ("1", "true", "yes")
+        dry_run = level in (AUTONOMY_OBSERVE, AUTONOMY_SUGGEST) or not _allow_auto
         result["dry_run"] = dry_run
 
         # 3. Plan corrections
@@ -109,17 +111,21 @@ def run_self_correction_cycle(
             logger.info("No corrections planned")
             return result
 
-        # 4. For semi-auto, filter to only proven strategies
+        # 4. For semi-auto, filter to only proven strategies with pre-validation gate
         if level == AUTONOMY_SEMI_AUTO:
-            proven = tuple(c for c in plan.corrections if c.strategy_source is not None)
             from app.services.brain.contracts import CorrectionPlan
 
+            proven = tuple(
+                c for c in plan.corrections
+                if c.strategy_source is not None and c.confidence >= 0.6
+            )
+            semi_dry_run = not proven or dry_run
             plan = CorrectionPlan(
-                corrections=proven,
+                corrections=proven if proven else plan.corrections,
                 max_corrections_per_run=plan.max_corrections_per_run,
                 max_weight_change_pct=plan.max_weight_change_pct,
                 revert_after_runs=plan.revert_after_runs,
-                dry_run=False,
+                dry_run=semi_dry_run,
             )
 
         # 5. Execute
