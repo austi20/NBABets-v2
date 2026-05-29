@@ -1084,3 +1084,58 @@ def test_reprice_refetches_side_correct_quote_before_edge_computation(monkeypatc
     # market_prob must come from the FRESH quote's yes_ask (0.40), not stale (0.60)
     assert result_candidate.market_prob == pytest.approx(0.40)
     assert returned_quote is fresh_quote
+
+
+# ---------------------------------------------------------------------------
+# Task 5.3 — pin enumerate_thresholds export flag
+# ---------------------------------------------------------------------------
+
+def test_target_export_enumerates_when_board_projection_present() -> None:
+    """board source + projected_mean/variance → enumerate_thresholds=True."""
+    from app.trading.decision_brain import _candidate_to_target
+
+    c = _make_reprice_candidate(projected_mean=20.0, projected_variance=25.0)
+    target = _candidate_to_target(c)
+    assert target["match_rules"]["enumerate_thresholds"] is True
+
+
+def test_target_export_does_not_enumerate_without_projection() -> None:
+    """board source + projected_mean=None → enumerate_thresholds=False."""
+    from app.trading.decision_brain import DecisionBrainCandidate, _candidate_to_target
+
+    c = DecisionBrainCandidate(
+        stable_id="x",
+        source="board",
+        board_date=date(2026, 5, 8),
+        candidate_status="candidate",
+        market_key="points",
+        player_id="237",
+        player_name="Player",
+        game_id="1",
+        game_date=date(2026, 5, 8),
+        line_value=18.5,
+        recommendation="buy_yes",
+        outcome_side="yes",
+        book_side="bid",
+        model_prob=0.60,
+        market_prob=0.50,
+        no_vig_market_prob=0.50,
+        edge_bps=1000,
+        ev=0.10,
+        confidence=0.70,
+        contracts=1.0,
+        max_price_dollars=0.57,
+        post_only=True,
+        time_in_force="good_till_canceled",
+        title_contains_all=[],
+        player_name_contains_any=[],
+        stat_contains_any=[],
+        acceptable_line_values=[18.5],
+        event_or_page_hint=None,
+        exclude_multivariate=False,
+        driver="board",
+        projected_mean=None,
+        projected_variance=None,
+    )
+    target = _candidate_to_target(c)
+    assert target["match_rules"]["enumerate_thresholds"] is False
