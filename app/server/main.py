@@ -151,7 +151,14 @@ def _sanitize_settings() -> dict[str, Any]:
         "local_autonomy_enabled": settings.local_autonomy_enabled,
         "model_version": settings.model_version,
         "feature_version": settings.feature_version,
+        "balldontlie_api_key": _redact_secret(settings.balldontlie_api_key),
+        "kalshi_api_key_id": _redact_secret(settings.kalshi_api_key_id),
     }
+
+
+def _redact_secret(value: Any) -> str | None:
+    """Return ``"***"`` when a secret is set, otherwise ``None``. Never leaks the value."""
+    return "***" if value is not None else None
 
 
 def _configure_sidecar_logging() -> None:
