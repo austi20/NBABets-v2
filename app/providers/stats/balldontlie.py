@@ -11,6 +11,7 @@ import httpx
 from dateutil.parser import isoparse
 
 from app.config.settings import get_settings
+from app.providers._utils import safe_int
 from app.providers.base import StatsProvider
 from app.providers.http import HttpProviderMixin
 from app.schemas.domain import (
@@ -107,9 +108,9 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             for item in deduped.values()
         ]
         self._team_lookup = {
-            int(item["id"]): item["abbreviation"]
+            team_id: item["abbreviation"]
             for item in deduped.values()
-            if item.get("id") is not None and item.get("abbreviation")
+            if item.get("abbreviation") and (team_id := safe_int(item.get("id"))) is not None
         }
         return result, teams
 
@@ -138,9 +139,9 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             for item in result.payload.get("data", [])
         ]
         self._active_roster_player_ids = {
-            int(item["id"])
+            player_id
             for item in result.payload.get("data", [])
-            if item.get("id") is not None
+            if (player_id := safe_int(item.get("id"))) is not None
         }
         return result, players
 
@@ -186,9 +187,9 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
                 continue
             self._remember_team(item.get("home_team"), team_ids)
             self._remember_team(item.get("visitor_team"), team_ids)
-            game_id = item.get("id")
+            game_id = safe_int(item.get("id"))
             if game_id is not None:
-                game_ids.add(int(game_id))
+                game_ids.add(game_id)
         return result, games, team_ids, game_ids
 
     async def fetch_player_game_logs(
@@ -225,15 +226,15 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             player = item.get("player", {})
             game = item.get("game", {})
             team = item.get("team", {})
-            team_id = team.get("id") or item.get("team_id")
-            home_team_id = game.get("home_team_id") or item.get("home_team_id")
-            visitor_team_id = game.get("visitor_team_id") or item.get("visitor_team_id")
+            team_id = safe_int(team.get("id") or item.get("team_id"))
+            home_team_id = safe_int(game.get("home_team_id") or item.get("home_team_id"))
+            visitor_team_id = safe_int(game.get("visitor_team_id") or item.get("visitor_team_id"))
             opponent_team_id = None
             if team_id is not None and home_team_id is not None and visitor_team_id is not None:
-                if int(team_id) == int(home_team_id):
-                    opponent_team_id = int(visitor_team_id)
-                elif int(team_id) == int(visitor_team_id):
-                    opponent_team_id = int(home_team_id)
+                if team_id == home_team_id:
+                    opponent_team_id = visitor_team_id
+                elif team_id == visitor_team_id:
+                    opponent_team_id = home_team_id
             logs.append(
                 PlayerGameLogPayload(
                     provider_game_id=str(game["id"]),
@@ -331,25 +332,24 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
     def _team_abbreviation(self, team: dict[str, Any] | None) -> str | None:
         if not team:
             return None
+        team_id = safe_int(team.get("id"))
         abbreviation = team.get("abbreviation")
         if abbreviation:
-            team_id = team.get("id")
             if team_id is not None:
-                self._team_lookup[int(team_id)] = abbreviation
+                self._team_lookup[team_id] = abbreviation
             return str(abbreviation)
-        team_id = team.get("id")
         if team_id is None:
             return None
-        return self._team_lookup.get(int(team_id))
+        return self._team_lookup.get(team_id)
 
     def _remember_team(self, team: dict[str, Any] | None, team_ids: set[int]) -> None:
         if not team:
             return
-        team_id = team.get("id")
+        team_id = safe_int(team.get("id"))
         abbreviation = team.get("abbreviation")
         if team_id is not None and abbreviation:
-            self._team_lookup[int(team_id)] = str(abbreviation)
-            team_ids.add(int(team_id))
+            self._team_lookup[team_id] = str(abbreviation)
+            team_ids.add(team_id)
 
     def set_team_scope(self, team_abbreviations: set[str]) -> None:
         self._team_scope_abbreviations = {value.upper() for value in team_abbreviations if value}

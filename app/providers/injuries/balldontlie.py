@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config.settings import get_settings
+from app.providers._utils import safe_int
 from app.providers.base import InjuriesProvider
 from app.providers.http import HttpProviderMixin
 from app.schemas.domain import InjuryPayload, ProviderFetchResult
@@ -54,11 +55,11 @@ class BallDontLieInjuriesProvider(HttpProviderMixin, InjuriesProvider):
                     continue
                 for side_key in ("home_team", "visitor_team"):
                     team = item.get(side_key) or {}
-                    team_id = team.get("id")
+                    team_id = safe_int(team.get("id"))
                     if team_id is None:
                         continue
-                    scheduled_team_ids.add(int(team_id))
-                    game_lookup[int(team_id)] = str(game_id)
+                    scheduled_team_ids.add(team_id)
+                    game_lookup[team_id] = str(game_id)
             if scheduled_team_ids:
                 params["team_ids[]"] = sorted(scheduled_team_ids)
 
@@ -74,10 +75,10 @@ class BallDontLieInjuriesProvider(HttpProviderMixin, InjuriesProvider):
         for item in result.payload.get("data", []):
             player = item.get("player") or {}
             player_id = player.get("id")
-            team_id = player.get("team_id")
+            team_id = safe_int(player.get("team_id"))
             if player_id is None or team_id is None:
                 continue
-            team_abbreviation = self._team_lookup.get(int(team_id))
+            team_abbreviation = self._team_lookup.get(team_id)
             if not team_abbreviation:
                 continue
             status = str(item.get("status") or "unknown").strip() or "unknown"
@@ -92,7 +93,7 @@ class BallDontLieInjuriesProvider(HttpProviderMixin, InjuriesProvider):
                     body_part=_extract_body_part(description),
                     notes=description,
                     expected_availability_flag=_expected_availability_flag(status),
-                    provider_game_id=game_lookup.get(int(team_id)),
+                    provider_game_id=game_lookup.get(team_id),
                 )
             )
         return result, injuries
@@ -108,9 +109,9 @@ class BallDontLieInjuriesProvider(HttpProviderMixin, InjuriesProvider):
             return
         result = await self._get_paginated("/teams")
         self._team_lookup = {
-            int(item["id"]): str(item["abbreviation"])
+            team_id: str(item["abbreviation"])
             for item in result.payload.get("data", [])
-            if item.get("id") is not None and item.get("abbreviation")
+            if item.get("abbreviation") and (team_id := safe_int(item.get("id"))) is not None
         }
 
     async def _get_paginated(

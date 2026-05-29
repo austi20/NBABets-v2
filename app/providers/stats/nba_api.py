@@ -21,6 +21,7 @@ from nba_api.stats.endpoints import (
 from nba_api.stats.static import teams as static_teams
 
 from app.config.settings import get_settings
+from app.providers._utils import safe_int
 from app.providers.base import StatsProvider
 from app.providers.canonical_schema import (
     NBA_API_ADVANCED_FIELD_MAP,
@@ -147,8 +148,11 @@ class NbaApiStatsProvider(StatsProvider):
             )
         players: list[PlayerPayload] = []
         for row in roster_rows:
+            team_id = safe_int(row.get("TeamID"))
+            if team_id is None:
+                continue
             provider_player_id = str(row["PLAYER_ID"])
-            team_abbreviation = self._team_abbreviation_by_id.get(int(row["TeamID"]))
+            team_abbreviation = self._team_abbreviation_by_id.get(team_id)
             player_name = str(row["PLAYER"]).strip()
             position = self._normalize_position(row.get("POSITION"))
             self._player_name_lookup[provider_player_id] = player_name
@@ -228,8 +232,8 @@ class NbaApiStatsProvider(StatsProvider):
                     provider_game_id=game_id,
                     provider_player_id=str(row["PLAYER_ID"]),
                     player_name=f"{row.get('FIRST_NAME', '')} {row.get('LAST_NAME', '')}".strip() or None,
-                    team_abbreviation=self._team_abbreviation_by_id.get(int(row["TEAM_ID"]))
-                    if row.get("TEAM_ID") else row.get("TEAM_ABBREVIATION"),
+                    team_abbreviation=self._team_abbreviation_by_id.get(safe_int(row.get("TEAM_ID")))
+                    if safe_int(row.get("TEAM_ID")) is not None else row.get("TEAM_ABBREVIATION"),
                     is_active=False,
                     reason=str(row["JERSEY_NUM"]).strip() if row.get("JERSEY_NUM") is not None else None,
                     fetched_at=fetched_at,
