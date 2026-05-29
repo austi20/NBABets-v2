@@ -726,6 +726,31 @@ class StartupRunner:
             pass
 
 
+    # ------------------------------------------------------------------
+    # Public surface used by StartupCoordinator (avoids _private access)
+    # ------------------------------------------------------------------
+
+    @property
+    def steps(self) -> list[StartupStep]:
+        return self._steps
+
+    @property
+    def optional_steps(self) -> set[str]:
+        return self._optional_steps
+
+    def append_log_line(self, message: str) -> None:
+        self._append_log_line(message)
+
+    def set_metric(self, key: str, value: Any) -> None:
+        self._set_metric(key, value)
+
+    def calculate_progress(self, steps: list[StartupStep]) -> float:
+        return self._calculate_progress(steps)
+
+    def calculate_eta(self, steps: list[StartupStep], progress_percent: float) -> float | None:
+        return self._calculate_eta(steps, progress_percent)
+
+
 class StartupCoordinator:
     # Lineup poll window: 3:00 PM - 11:00 PM Eastern Time (game-day active window)
     _POLL_INTERVAL_SECONDS: int = 900
@@ -744,8 +769,8 @@ class StartupCoordinator:
         self._poll_thread: threading.Thread | None = None
         self._poll_stop_event = threading.Event()
         self._runner = StartupRunner()
-        self._steps = self._runner._steps
-        self._optional_steps = self._runner._optional_steps
+        self._steps = self._runner.steps
+        self._optional_steps = self._runner.optional_steps
         self._last_result: StartupRunResult | None = None
         self._active_run_id: str | None = None
         self._pending_full_refresh = False
@@ -757,21 +782,21 @@ class StartupCoordinator:
             if full_refresh:
                 with self._state_lock:
                     self._pending_full_refresh = True
-                self._runner._append_log_line(
+                self._runner.append_log_line(
                     "Full refresh requested while startup is running; scheduling a hard refresh rerun."
                 )
             return
         self._stop_lineup_poll()
         self._poll_stop_event = threading.Event()
         self._runner = StartupRunner()
-        self._steps = self._runner._steps
-        self._optional_steps = self._runner._optional_steps
+        self._steps = self._runner.steps
+        self._optional_steps = self._runner.optional_steps
         self._last_result = None
         if full_refresh:
             today = date.today()
             with session_scope() as session:
                 reset = StartupCacheResetService(session).hard_reset(target_date=today, board_date=today)
-            self._runner._append_log_line(
+            self._runner.append_log_line(
                 "Manual full refresh: cleared same-day provider caches, lines, and model artifacts "
                 f"(raw_payloads={reset.deleted_raw_payloads}, line_snapshots={reset.deleted_line_snapshots}, "
                 f"artifact_files={len(reset.deleted_artifacts)})"
@@ -782,7 +807,7 @@ class StartupCoordinator:
             except Exception as exc:  # pragma: no cover - defensive logging path
                 _startup_log.warning("startup on_start hook failed: %s", exc)
         self._active_run_id = uuid.uuid4().hex
-        self._runner._append_log_line("Launching startup worker")
+        self._runner.append_log_line("Launching startup worker")
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -806,7 +831,7 @@ class StartupCoordinator:
             pending_full_refresh = self._pending_full_refresh
             self._pending_full_refresh = False
         if pending_full_refresh:
-            self._runner._append_log_line("Running queued hard refresh request.")
+            self._runner.append_log_line("Running queued hard refresh request.")
             self._thread = None
             self.start(full_refresh=True)
             return
@@ -816,7 +841,7 @@ class StartupCoordinator:
             try:
                 self._on_success(self._last_result)
             except Exception as exc:  # pragma: no cover - defensive logging path
-                self._runner._append_log_line(f"Board cache warmup failed: {exc}")
+                self._runner.append_log_line(f"Board cache warmup failed: {exc}")
                 _startup_log.warning("Board cache warmup failed: %s", exc, exc_info=True)
         self._start_lineup_poll()
 
@@ -824,10 +849,10 @@ class StartupCoordinator:
         self._stop_lineup_poll()
 
     def _calculate_progress(self, steps: list[StartupStep]) -> float:
-        return self._runner._calculate_progress(steps)
+        return self._runner.calculate_progress(steps)
 
     def _calculate_eta(self, steps: list[StartupStep], progress_percent: float) -> float | None:
-        return self._runner._calculate_eta(steps, progress_percent)
+        return self._runner.calculate_eta(steps, progress_percent)
 
     def _start_lineup_poll(self) -> None:
         import asyncio as _asyncio
@@ -862,22 +887,22 @@ class StartupCoordinator:
                     result = _asyncio.run(poll_lineup_changes(target_date=_target_date))
                     repredicted = result.get("repredicted_games", 0)
                     if repredicted:
-                        self._runner._append_log_line(
+                        self._runner.append_log_line(
                             f"[lineup-poll] {repredicted} game(s) re-predicted after inactive list update"
                         )
-                        self._runner._set_metric("lineup_poll_repredictions", repredicted)
-                        self._runner._set_metric("analysis_refresh_requested_at", datetime.now(UTC).isoformat())
+                        self._runner.set_metric("lineup_poll_repredictions", repredicted)
+                        self._runner.set_metric("analysis_refresh_requested_at", datetime.now(UTC).isoformat())
 
                     now_ts = time.time()
                     if now_ts - last_full_refresh_at >= _full_refresh_interval:
                         refresh_metrics = _asyncio.run(refresh_all(target_date=_target_date))
-                        self._runner._set_metric("scheduled_full_refresh", refresh_metrics)
+                        self._runner.set_metric("scheduled_full_refresh", refresh_metrics)
                         with session_scope() as _session:
                             report_path = generate_daily_automation_report(_session, target_date=_target_date)
-                        self._runner._set_metric("automation_report_path", str(report_path))
-                        self._runner._set_metric("analysis_refresh_requested_at", datetime.now(UTC).isoformat())
+                        self._runner.set_metric("automation_report_path", str(report_path))
+                        self._runner.set_metric("analysis_refresh_requested_at", datetime.now(UTC).isoformat())
                         last_full_refresh_at = now_ts
-                        self._runner._append_log_line("[lineup-poll] Scheduled full refresh completed")
+                        self._runner.append_log_line("[lineup-poll] Scheduled full refresh completed")
                 except Exception as _poll_exc:
                     _startup_log.debug("[lineup-poll] poll cycle error: %s", _poll_exc)
 

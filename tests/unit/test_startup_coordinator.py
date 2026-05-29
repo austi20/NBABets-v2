@@ -54,7 +54,7 @@ def test_startup_coordinator_queues_full_refresh_when_running() -> None:
         def __init__(self) -> None:
             self.messages: list[str] = []
 
-        def _append_log_line(self, message: str) -> None:
+        def append_log_line(self, message: str) -> None:
             self.messages.append(message)
 
     runner_stub = _RunnerStub()
