@@ -30,6 +30,7 @@ class PlayerMatcher:
     def __init__(self, session: Session, threshold: float = 0.9) -> None:
         self._session = session
         self._threshold = threshold
+        self._players: list[Player] = self._session.query(Player).all()
 
     def match(self, provider: str, provider_entity_id: str, provider_name: str) -> MatchResult:
         override = (
@@ -45,7 +46,7 @@ class PlayerMatcher:
             return MatchResult(player_id=override.canonical_player_id, confidence=1.0, matched_name=player.full_name if player else None)
 
         normalized_target = normalize_name(provider_name)
-        players = self._session.query(Player).all()
+        players = self._players
         exact = next((player for player in players if player.normalized_name == normalized_target), None)
         if exact:
             return MatchResult(player_id=exact.player_id, confidence=1.0, matched_name=exact.full_name)
