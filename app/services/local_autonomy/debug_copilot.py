@@ -64,15 +64,15 @@ def build_debug_hints(
         )
 
     # --- Extreme prediction sentinel ---
-    from app.models.all import Prediction  # noqa: E402 — deferred to avoid circular import
+    from app.models.all import StatProjection  # noqa: E402 — deferred to avoid circular import
 
     extreme_prediction_count = session.scalar(
-        select(Prediction.prediction_id)
+        select(StatProjection.stat_projection_id)
         .where(
-            Prediction.predicted_at >= since,
-            (Prediction.over_probability > 0.97) | (Prediction.over_probability < 0.03),
+            StatProjection.predicted_at >= since,
+            StatProjection.dnp_risk > 0.95,
         )
-        .with_only_columns(Prediction.prediction_id)
+        .with_only_columns(StatProjection.stat_projection_id)
         .limit(1)
     )
     if extreme_prediction_count is not None:
