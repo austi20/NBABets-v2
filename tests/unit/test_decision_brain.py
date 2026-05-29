@@ -1222,3 +1222,46 @@ def test_loop_controller_blocks_live_arm_on_synced_stale() -> None:
     )
     # loop_controller gate: brain_result.state not in {"synced", "synced_fresh"} → blocked
     assert stale_result.state not in {"synced", "synced_fresh"}
+
+
+# ---------------------------------------------------------------------------
+# Task 5.5 — reprice does not drop other candidate fields
+# ---------------------------------------------------------------------------
+
+def test_reprice_does_not_drop_other_candidate_fields() -> None:
+    """After a successful reprice, only the 8 known fields may change.
+    All others must be identical to the input candidate."""
+    import dataclasses
+
+    from app.trading.decision_brain import _reprice_enumerated_kalshi_row
+
+    # projected_mean=25 >> line=18.5 → buy_yes=True, yes_ask=0.55 available
+    candidate = _make_reprice_candidate(projected_mean=25.0, projected_variance=9.0)
+    quote = _make_quote(yes_ask=0.55, no_ask=0.45, side="OVER")
+    row = _reprice_row(line_value=18.5)
+
+    result_candidate, _ = _reprice_enumerated_kalshi_row(row=row, candidate=candidate, quote=quote, client=None)
+
+    # Reprice must have changed something (otherwise the test is vacuous).
+    assert result_candidate is not candidate
+
+    before = dataclasses.asdict(candidate)
+    after = dataclasses.asdict(result_candidate)
+
+    _allowed_changed = {
+        "recommendation",
+        "outcome_side",
+        "model_prob",
+        "market_prob",
+        "no_vig_market_prob",
+        "edge_bps",
+        "ev",
+        "prop_line_evaluation_id",
+    }
+
+    for field, before_val in before.items():
+        if field in _allowed_changed:
+            continue
+        assert after[field] == before_val, (
+            f"field {field!r} changed unexpectedly: {before_val!r} → {after[field]!r}"
+        )
