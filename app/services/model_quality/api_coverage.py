@@ -72,7 +72,10 @@ def assess_api_coverage(session: Session, *, report_date: date) -> ApiCoverageRe
         reasons.append("No stats payloads available for target day.")
     if odds_payloads <= 0:
         reasons.append("No odds payloads available for target day.")
-    injuries_required = settings.injury_provider.lower() == "balldontlie"
+    injuries_required = (
+        settings.injury_provider.lower() == "balldontlie"
+        and settings.balldontlie_api_key is not None
+    )
     if injuries_required and injuries_payloads <= 0:
         reasons.append("Configured injuries provider has no same-day payloads.")
 

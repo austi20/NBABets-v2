@@ -224,7 +224,11 @@ class LocalAutonomyEngine:
                 continue
             try:
                 if action.action_type == "run_refresh_all":
-                    asyncio.run(refresh_all(target_date=date.today()))
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(refresh_all(target_date=date.today()))
+                    except RuntimeError:
+                        asyncio.run(refresh_all(target_date=date.today()))
                     executed.append(action.action_type)
                 elif action.action_type == "run_backtest":
                     RollingOriginBacktester(self._session).run()
