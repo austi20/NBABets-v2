@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import ctypes
 import math
 import os
@@ -68,7 +69,9 @@ def get_runtime_budget() -> RuntimeBudget:
     )
 
 
-_worker_override: int | None = None
+_worker_override: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "worker_override", default=None
+)
 
 
 def set_worker_override(value: int | None) -> None:
@@ -78,15 +81,23 @@ def set_worker_override(value: int | None) -> None:
     cap XGBoost and Monte Carlo threads to ``cpu_count // fold_workers`` so the
     total stays near the hardware thread count instead of oversubscribing it.
     Pass ``None`` to clear.
+
+    Backed by a :class:`~contextvars.ContextVar` so concurrent folds running in
+    separate threads/contexts do not stomp each other's value.
     """
-    global _worker_override
-    _worker_override = None if value is None else max(1, int(value))
+    _worker_override.set(None if value is None else max(1, int(value)))
+
+
+def get_worker_override() -> int | None:
+    """Current worker override for this context (``None`` if unset)."""
+    return _worker_override.get()
 
 
 def get_effective_worker_count() -> int:
     """Worker/thread budget honoring any active override (nested parallelism)."""
-    if _worker_override is not None:
-        return _worker_override
+    override = _worker_override.get()
+    if override is not None:
+        return override
     return get_runtime_budget().worker_count
 
 
