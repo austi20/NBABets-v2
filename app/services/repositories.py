@@ -19,10 +19,16 @@ class ReferenceRepository:
         player = self._session.scalar(select(Player).where(Player.provider_player_id == provider_player_id))
         if player is not None:
             return player
-        for candidate in self._session.scalars(select(Player)).all():
-            if str(provider_player_id) in _provider_player_aliases(candidate.meta):
-                return candidate
-        return None
+        return self._player_alias_map().get(str(provider_player_id))
+
+    def _player_alias_map(self) -> dict[str, Player]:
+        if not hasattr(self, "_cached_player_alias_map"):
+            alias_map: dict[str, Player] = {}
+            for candidate in self._session.scalars(select(Player)).all():
+                for alias in _provider_player_aliases(candidate.meta):
+                    alias_map.setdefault(alias, candidate)
+            self._cached_player_alias_map = alias_map
+        return self._cached_player_alias_map
 
     def get_player_by_normalized_name_and_team(
         self,
