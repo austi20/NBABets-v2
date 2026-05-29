@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.trading.decision_brain import (
     DecisionBrainPolicy,
     _stale_context_blockers,
@@ -119,11 +121,12 @@ def test_null_rows_return_both_blockers(tmp_path: Path) -> None:
     assert "stale_projection_context" in blockers
 
 
-def test_bad_db_path_silent_failure() -> None:
+def test_bad_db_path_raises_operational_error() -> None:
+    """Schema or file errors propagate as OperationalError instead of being swallowed."""
     s = MagicMock()
     s.database_url = "sqlite:////nonexistent/path/db.sqlite"
-    blockers = _stale_context_blockers(s, _make_policy())
-    assert isinstance(blockers, list)
+    with pytest.raises(sqlite3.OperationalError):
+        _stale_context_blockers(s, _make_policy())
 
 
 # ---------------------------------------------------------------------------

@@ -571,39 +571,41 @@ def _stale_context_blockers(settings: Settings, policy: DecisionBrainPolicy) -> 
         return blockers
     db_path = db_url[len("sqlite:///"):]
     now = datetime.now(UTC)
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    con = sqlite3.connect(db_path)
     try:
-        con = sqlite3.connect(db_path)
-        try:
-            cur = con.cursor()
-            cur.execute("SELECT MAX(report_timestamp) FROM injury_reports")
-            row = cur.fetchone()
-            latest_injury = row[0] if row and row[0] else None
-            if latest_injury is None:
+        cur = con.cursor()
+        cur.execute("SELECT MAX(report_timestamp) FROM injury_reports")
+        row = cur.fetchone()
+        latest_injury = row[0] if row and row[0] else None
+        if latest_injury is None:
+            blockers.append("stale_injury_context")
+        else:
+            ts = datetime.fromisoformat(latest_injury)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            cutoff = now - timedelta(minutes=policy.require_injury_refresh_minutes)
+            if ts < cutoff:
                 blockers.append("stale_injury_context")
-            else:
-                ts = datetime.fromisoformat(latest_injury)
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=UTC)
-                cutoff = now - timedelta(minutes=policy.require_injury_refresh_minutes)
-                if ts < cutoff:
-                    blockers.append("stale_injury_context")
 
-            cur.execute("SELECT MAX(predicted_at) FROM predictions")
-            row = cur.fetchone()
-            latest_pred = row[0] if row and row[0] else None
-            if latest_pred is None:
+        cur.execute("SELECT MAX(predicted_at) FROM predictions")
+        row = cur.fetchone()
+        latest_pred = row[0] if row and row[0] else None
+        if latest_pred is None:
+            blockers.append("stale_projection_context")
+        else:
+            ts = datetime.fromisoformat(latest_pred)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            cutoff = now - timedelta(minutes=policy.require_projection_refresh_minutes)
+            if ts < cutoff:
                 blockers.append("stale_projection_context")
-            else:
-                ts = datetime.fromisoformat(latest_pred)
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=UTC)
-                cutoff = now - timedelta(minutes=policy.require_projection_refresh_minutes)
-                if ts < cutoff:
-                    blockers.append("stale_projection_context")
-        finally:
-            con.close()
-    except Exception:  # pragma: no cover - best-effort check
-        pass
+    except sqlite3.OperationalError:
+        _log.warning("stale_context_blockers: schema error; treating as stale context", exc_info=True)
+        raise
+    finally:
+        con.close()
     return blockers
 
 
@@ -820,7 +822,18 @@ def sync_decision_brain(
         if not settings.kalshi_decision_brain_enabled:
             raise DecisionBrainError("KALSHI_DECISION_BRAIN_ENABLED is false")
         policy = load_policy(settings)
-        stale_blockers = _stale_context_blockers(settings, policy)
+        try:
+            stale_blockers = _stale_context_blockers(settings, policy)
+        except Exception:
+            stale_blockers = []
+            checks.append(
+                BrainCheck(
+                    key="stale_context_check_failed",
+                    label="Stale Context Check",
+                    status="fail",
+                    detail="stale_context_blockers raised an exception; treating context as stale",
+                )
+            )
         for stale_key in stale_blockers:
             checks.append(
                 BrainCheck(
