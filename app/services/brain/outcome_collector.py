@@ -8,7 +8,7 @@ records in the brain for learning.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,10 @@ from app.services.brain.brain import Brain
 from app.services.brain.contracts import PredictionOutcome
 
 logger = logging.getLogger(__name__)
+
+
+def _next_day(d: date) -> date:
+    return d + timedelta(days=1)
 
 
 def collect_outcomes(
@@ -34,7 +38,7 @@ def collect_outcomes(
     predictions = (
         session.query(Prediction)
         .filter(Prediction.predicted_at >= str(effective_date))
-        .filter(Prediction.predicted_at < str(date(effective_date.year, effective_date.month, effective_date.day + 1) if effective_date.day < 28 else effective_date))
+        .filter(Prediction.predicted_at < str(_next_day(effective_date)))
         .all()
     )
     if not predictions:
