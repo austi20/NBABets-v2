@@ -1016,8 +1016,9 @@ def sync_decision_brain(
         if deterministic_failure:
             state = "blocked"
         elif existing_pack_valid:
-            # Same-day pack preserved on disk; report synced so callers don't bail.
-            state = "synced"
+            # Same-day pack preserved on disk but this sync failed; callers must not
+            # treat this as a live-arm green light.
+            state = "synced_stale"
         else:
             state = "failed"
 
@@ -1036,7 +1037,7 @@ def sync_decision_brain(
         selected_ticker=_selected_ticker(symbols_payload, selected),
         selected_candidate_ids=selected_candidate_ids,
         selected_tickers=selected_tickers,
-        live_candidate_count=len(selected_tickers) if state == "synced" else 0,
+        live_candidate_count=len(selected_tickers) if state in {"synced", "synced_fresh"} else 0,
         targets_path=str(Path(settings.kalshi_resolution_targets_path)),
         symbols_path=str(Path(settings.kalshi_symbols_path)),
         decisions_path=str(Path(settings.kalshi_decisions_path)),

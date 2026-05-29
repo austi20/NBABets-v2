@@ -72,7 +72,7 @@ class TradingLoopController:
                 resolve_markets=True,
                 build_pack=True,
             )
-            if brain_result.state != "synced":
+            if brain_result.state not in {"synced", "synced_fresh"}:
                 return self._set_blocked(
                     message=f"Decision brain did not produce a live-ready pack: {brain_result.state}",
                     brain_result=brain_result,

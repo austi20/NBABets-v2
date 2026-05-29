@@ -1139,3 +1139,86 @@ def test_target_export_does_not_enumerate_without_projection() -> None:
     )
     target = _candidate_to_target(c)
     assert target["match_rules"]["enumerate_thresholds"] is False
+
+
+# ---------------------------------------------------------------------------
+# Task 5.4 — soft-failed sync reports synced_stale, not synced
+# ---------------------------------------------------------------------------
+
+def test_soft_failed_sync_state_is_synced_stale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When sync raises transiently and an existing same-day pack exists,
+    state must be 'synced_stale', not 'synced'."""
+    brain_root = tmp_path / "brain"
+    _write_policy(brain_root, allow_live_submit=True)
+    settings = _settings(tmp_path, brain_root)
+    _write_limits(settings)
+
+    # Write a valid same-day decisions pack so _existing_decisions_match_board_date returns True.
+    decisions_path = Path(settings.kalshi_decisions_path)
+    decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    decisions_path.write_text(
+        json.dumps({
+            "version": 1,
+            "state": "synced",
+            "board_date": "2026-05-08",
+            "decisions": [{"game_date": "2026-05-08", "kalshi_ticker": "KX-TEST"}],
+        }),
+        encoding="utf-8",
+    )
+
+    # Also write a valid symbols file so we get past early checks.
+    Path(settings.kalshi_symbols_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps({"version": 1, "symbols": [], "unresolved": []}), encoding="utf-8"
+    )
+
+    def _raise_transient(**_kwargs: Any) -> None:
+        raise RuntimeError("simulated Kalshi 429")
+
+    monkeypatch.setattr("app.trading.decision_brain.write_live_decision_pack", _raise_transient)
+    # Also make rank_and_enrich_symbols raise to force the except branch
+    monkeypatch.setattr("app.trading.decision_brain.rank_and_enrich_symbols", _raise_transient)
+
+    result = sync_decision_brain(
+        settings=settings,
+        board_entry=_board_entry(),
+        board_date=date(2026, 5, 8),
+        mode="supervised-live",
+        resolve_markets=False,
+        build_pack=True,
+        today=date(2026, 5, 8),
+    )
+
+    assert result.state == "synced_stale", f"expected synced_stale, got {result.state!r}"
+    assert any(c.key == "resync_preserved" for c in result.checks)
+
+
+def test_loop_controller_blocks_live_arm_on_synced_stale() -> None:
+    """synced_stale must NOT be treated as a green light for live arm."""
+    from app.trading.decision_brain import TradingBrainSyncResult
+
+    stale_result = TradingBrainSyncResult(
+        state="synced_stale",
+        policy_version=None,
+        policy_hash=None,
+        board_date="2026-05-08",
+        mode="supervised-live",
+        generated_candidate_count=0,
+        manual_candidate_count=0,
+        exported_target_count=0,
+        resolved_symbol_count=0,
+        unresolved_symbol_count=0,
+        selected_candidate_id=None,
+        selected_ticker=None,
+        selected_candidate_ids=[],
+        selected_tickers=[],
+        live_candidate_count=0,
+        targets_path="",
+        symbols_path="",
+        decisions_path="",
+        snapshot_dir=None,
+        checks=[],
+        synced_at=datetime.now(),
+    )
+    # loop_controller gate: brain_result.state not in {"synced", "synced_fresh"} → blocked
+    assert stale_result.state not in {"synced", "synced_fresh"}
