@@ -100,11 +100,10 @@ def _grade_finding(
     csv_dataset: LabeledPropDataset | None,
     graded_day: date,
 ) -> str:
-    """Coarse outcome label; expand when richer ground truth joins exist."""
-
     if csv_dataset is None:
         return "neutral"
     market = item.get("market")
+    line_value = item.get("line_value")
     if not market:
         return "neutral"
     for ex in csv_dataset.examples:
@@ -112,5 +111,16 @@ def _grade_finding(
             continue
         if ex.market != str(market):
             continue
+        if line_value is not None and ex.line_value is not None:
+            if abs(float(line_value) - ex.line_value) > 0.5:
+                continue
+        if ex.push:
+            return "push"
+        if ex.hit_over is True:
+            return "over_hit"
+        if ex.hit_under is True:
+            return "under_hit"
+        if ex.actual is None:
+            return "missing"
         return "neutral"
     return "neutral"

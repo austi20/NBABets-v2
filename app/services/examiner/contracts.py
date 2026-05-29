@@ -131,7 +131,7 @@ class LessonCard:
     body: str
     ece_before: float | None
     ece_after: float | None
-    outcome: Literal["improved", "worsened", "neutral", "pending"]
+    outcome: Literal["over_hit", "under_hit", "push", "missing", "neutral", "improved", "worsened", "pending"]
 
 
 @dataclass(frozen=True)
