@@ -522,8 +522,6 @@ class _BaseParlayService:
         pricing_multiplier = float(np.clip(pricing_multiplier, 0.015, 1.0))
         return 1.0 + payout_component * pricing_multiplier
 
-    def _correlation_penalty(self, combo: list[_CandidateLeg]) -> float:
-        return 1.0
 
     def _joint_probability(self, combo: list[_CandidateLeg]) -> float:
         independent_probability = prod(candidate.quote.hit_probability for candidate in combo)

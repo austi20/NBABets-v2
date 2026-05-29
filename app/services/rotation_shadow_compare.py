@@ -171,7 +171,7 @@ def compare_legacy_and_rotation(
         f"- Report date (slate target): `{report_date.isoformat()}`",
         f"- Overlap predictions (paired): **{len(overlap_keys)}**",
         f"- Legacy-only tuples (game/player/market/line): {legacy_only}",
-        f"- Shadow-only triples: {shadow_only}",
+        f"- Shadow-only tuples (game/player/market/line): {shadow_only}",
         (
             f"- Mean abs Δ calibrated-over: `{dac:.4f}`"
             if dac is not None
