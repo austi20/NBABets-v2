@@ -65,7 +65,7 @@ def build_overfit_intel_snapshot(
         )
 
     ranked = sorted(signals, key=lambda item: item.score, reverse=True)
-    risk_score = sum(item.score for item in ranked[:5]) / min(5, len(ranked))
+    risk_score = ranked[0].score
     mitigations = _mitigation_actions(ranked)
     return OverfitIntelSnapshot(risk_score=risk_score, signals=tuple(ranked), mitigations=tuple(mitigations))
 
