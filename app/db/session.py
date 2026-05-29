@@ -32,7 +32,6 @@ def _sqlite_pragmas(dbapi_conn: object, _connection_record: object) -> None:
         cursor.close()
 
 
-settings = get_settings()
 SessionLocal = sessionmaker(autoflush=False, autocommit=False, future=True)
 engine: Engine | None = None
 database_selection: DatabaseSelection | None = None
@@ -40,7 +39,7 @@ database_selection: DatabaseSelection | None = None
 
 def configure_engine(database_url: str | None = None) -> DatabaseSelection:
     global engine, database_selection
-    database_selection = select_best_database(database_url or settings.database_url)
+    database_selection = select_best_database(database_url or get_settings().database_url)
     connect_args = {"check_same_thread": False} if database_selection.url.startswith("sqlite") else {}
     engine = create_engine(
         database_selection.url,
@@ -80,6 +79,3 @@ def session_scope() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
-
-
-configure_engine()
