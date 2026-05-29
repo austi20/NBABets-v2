@@ -10,6 +10,21 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _discover_env_files(start: Path) -> list[Path]:
+    """Return ``.env`` paths from ``start`` upward, stopping at the project root.
+
+    The walk halts at the first directory containing ``pyproject.toml`` so that
+    unrelated ancestor ``.env`` files (e.g. one in the user's home directory)
+    cannot override project settings.
+    """
+    found: list[Path] = []
+    for directory in (start, *start.parents):
+        found.append(directory / ".env")
+        if (directory / "pyproject.toml").is_file():
+            break
+    return found
+
+
 def _resolve_env_files() -> list[str]:
     """Return an ordered list of .env candidate paths.
 
@@ -27,8 +42,8 @@ def _resolve_env_files() -> list[str]:
             candidates.append(candidate)
 
     def _add_parent_chain(start: Path) -> None:
-        for directory in (start, *start.parents):
-            _add_candidate(directory / ".env")
+        for env_path in _discover_env_files(start):
+            _add_candidate(env_path)
 
     if getattr(_sys, "frozen", False):
         # Exe directory (e.g. dist/) - highest priority when frozen
