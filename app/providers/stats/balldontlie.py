@@ -37,10 +37,8 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
         self._bdl_throttle_lock = asyncio.Lock()
         self._bdl_request_times: deque[float] = deque()
         self._team_lookup: dict[int, str] = {}
-        self._scheduled_team_ids: set[int] = set()
         self._active_roster_player_ids: set[int] = set()
         self._team_scope_abbreviations: set[str] = set()
-        self._relevant_game_ids: set[int] = set()
 
     async def _get(
         self,
@@ -126,7 +124,7 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             result = await self._get_paginated(
                 "/players",
                 params={
-                    "team_ids[]": sorted(self._scheduled_team_ids or set(self._team_lookup)),
+                    "team_ids[]": sorted(self._team_lookup),
                 },
             )
         players = [
@@ -151,6 +149,15 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
         return result, games
 
     async def fetch_schedule_range(self, start_date: date, end_date: date) -> tuple[Any, list[GamePayload]]:
+        result, games, _team_ids, _game_ids = await self._fetch_schedule_range_scoped(start_date, end_date)
+        return result, games
+
+    async def _fetch_schedule_range_scoped(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> tuple[Any, list[GamePayload], set[int], set[int]]:
+        """Fetch schedule and return call-local scope sets (team ids, game ids) for the range."""
         dates = [
             date.fromordinal(value).isoformat()
             for value in range(start_date.toordinal(), end_date.toordinal() + 1)
@@ -159,9 +166,6 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             "/games",
             params={"dates[]": dates, "per_page": 100},
         )
-        if end_date >= date.today() >= start_date:
-            self._scheduled_team_ids.clear()
-            self._relevant_game_ids.clear()
         games = [
             GamePayload(
                 provider_game_id=str(item["id"]),
@@ -175,28 +179,35 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             for item in result.payload.get("data", [])
             if self._game_in_scope(item)
         ]
+        team_ids: set[int] = set()
+        game_ids: set[int] = set()
         for item in result.payload.get("data", []):
             if not self._game_in_scope(item):
                 continue
-            self._remember_team(item.get("home_team"))
-            self._remember_team(item.get("visitor_team"))
+            self._remember_team(item.get("home_team"), team_ids)
+            self._remember_team(item.get("visitor_team"), team_ids)
             game_id = item.get("id")
             if game_id is not None:
-                self._relevant_game_ids.add(int(game_id))
-        return result, games
+                game_ids.add(int(game_id))
+        return result, games, team_ids, game_ids
 
     async def fetch_player_game_logs(
         self,
         start_date: date,
         end_date: date,
     ) -> tuple[Any, list[PlayerGameLogPayload]]:
+        relevant_game_ids: set[int] = set()
+        if end_date >= date.today() >= start_date:
+            _result, _games, _team_ids, relevant_game_ids = await self._fetch_schedule_range_scoped(
+                start_date, end_date
+            )
         result = await self._get_paginated(
             "/stats",
             params={
                 "per_page": 100,
                 **(
-                    {"game_ids[]": sorted(self._relevant_game_ids)}
-                    if self._relevant_game_ids
+                    {"game_ids[]": sorted(relevant_game_ids)}
+                    if relevant_game_ids
                     else {
                         "start_date": start_date.isoformat(),
                         "end_date": end_date.isoformat(),
@@ -331,14 +342,14 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
             return None
         return self._team_lookup.get(int(team_id))
 
-    def _remember_team(self, team: dict[str, Any] | None) -> None:
+    def _remember_team(self, team: dict[str, Any] | None, team_ids: set[int]) -> None:
         if not team:
             return
         team_id = team.get("id")
         abbreviation = team.get("abbreviation")
         if team_id is not None and abbreviation:
             self._team_lookup[int(team_id)] = str(abbreviation)
-            self._scheduled_team_ids.add(int(team_id))
+            team_ids.add(int(team_id))
 
     def set_team_scope(self, team_abbreviations: set[str]) -> None:
         self._team_scope_abbreviations = {value.upper() for value in team_abbreviations if value}
