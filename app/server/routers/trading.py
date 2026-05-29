@@ -479,12 +479,40 @@ def trading_loop_start(request: Request, payload: TradingLoopStartRequestModel |
     return _loop_status_model(status)
 
 
+_SELECTIONS_FILENAME = "trading_selections.json"
+
+
+def _resolve_under_app_data(base: str | Path, candidate: str | Path) -> Path:
+    """Resolve ``candidate`` and ensure it does not escape ``base``.
+
+    Rejects ``..`` traversal in the candidate and any resolved path that lands
+    outside ``base`` (the base itself is allowed). Use this for any path derived
+    from configuration or request input so it cannot point outside the intended
+    directory.
+    """
+    if ".." in Path(candidate).parts:
+        raise ValueError(f"path traversal not allowed: {candidate}")
+    base_resolved = Path(base).resolve()
+    cand = Path(candidate)
+    resolved = cand.resolve() if cand.is_absolute() else (base_resolved / cand).resolve()
+    if base_resolved != resolved and base_resolved not in resolved.parents:
+        raise ValueError(f"path escapes base dir: {resolved}")
+    return resolved
+
+
 def _selections_path(request: Request) -> Path:
-    return Path(get_settings().app_data_dir) / "trading_selections.json"
+    return _resolve_under_app_data(get_settings().app_data_dir, _SELECTIONS_FILENAME)
 
 
 def _limits_path() -> Path:
-    return Path(get_settings().trading_limits_path)
+    # trading_limits_path is configured/resolved as an absolute path that may
+    # legitimately live outside app_data_dir; anchor the traversal check to its
+    # own parent directory so ``..``-escapes are rejected without breaking the
+    # default location.
+    configured = Path(get_settings().trading_limits_path)
+    if ".." in configured.parts:
+        raise ValueError(f"path traversal not allowed: {configured}")
+    return _resolve_under_app_data(configured.parent, configured.name)
 
 
 @router.post("/picks/{candidate_id}/toggle", response_model=TradingLiveSnapshotModel)
