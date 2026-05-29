@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import secrets
 import sys
 import threading
@@ -204,11 +205,45 @@ def _install_exception_logging() -> None:
     threading.excepthook = _thread_hook
 
 
+def _resolve_app_token(app_token: str | None, *, rotate: bool = False) -> str:
+    """Return a stable app token, persisting it at <app_data_dir>/.app_token.
+
+    An explicit ``app_token`` always wins. Otherwise reuse the persisted token
+    when present (and not rotating); else generate, persist, and return a new one.
+    """
+    if app_token:
+        return app_token
+    token_path = Path(get_settings().app_data_dir) / ".app_token"
+    if not rotate:
+        try:
+            existing = token_path.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing
+        except OSError:
+            pass
+    token = secrets.token_urlsafe(32)
+    try:
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(token_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, token.encode("utf-8"))
+        finally:
+            os.close(fd)
+        try:
+            os.chmod(str(token_path), 0o600)  # best-effort; no-op on Windows
+        except OSError:
+            pass
+    except OSError as exc:
+        logging.getLogger("nba.sidecar").warning("app_token persist failed: %s", exc)
+    return token
+
+
 def create_app(
     *,
     startup_coordinator: StartupCoordinator | None = None,
     board_cache: BoardCache | None = None,
     app_token: str | None = None,
+    rotate_token: bool = False,
 ) -> FastAPI:
     market_service = _build_market_service()
 
@@ -372,7 +407,7 @@ def create_app(
         publisher=stream_publisher,
     )
     app.state.trading_brain_resync = brain_resync
-    app.state.app_token = app_token or secrets.token_urlsafe(24)
+    app.state.app_token = _resolve_app_token(app_token, rotate=rotate_token)
     app.add_middleware(
         AppTokenMiddleware,
         protected_prefixes=("/api/local-agent", "/api/startup", "/api/trading"),
@@ -406,6 +441,7 @@ def cli() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--app-token", default=None)
+    parser.add_argument("--rotate-token", action="store_true", default=False)
     parser.add_argument("--reload", action="store_true", default=False)
     args = parser.parse_args()
     _configure_sidecar_logging()
@@ -420,7 +456,7 @@ def cli() -> None:
             pass
 
     uvicorn.run(
-        create_app(app_token=args.app_token),
+        create_app(app_token=args.app_token, rotate_token=args.rotate_token),
         host=args.host,
         port=args.port,
         reload=args.reload,
