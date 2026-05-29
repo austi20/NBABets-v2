@@ -152,7 +152,7 @@ class Brain:
 
         if matched:
             new_count = matched.sample_count + 1
-            new_successes = (matched.success_rate * matched.sample_count) + (1 if is_success else 0)
+            new_success_count = matched.success_count + (1 if is_success else 0)
             new_avg = (matched.avg_ece_improvement * matched.sample_count + improvement) / new_count
             updated = StrategyMemory(
                 strategy_id=matched.strategy_id,
@@ -160,9 +160,10 @@ class Brain:
                 action_template=matched.action_template,
                 market=matched.market,
                 parameters=record.params_after if is_success else matched.parameters,
-                success_rate=new_successes / new_count,
+                success_rate=new_success_count / new_count,
                 avg_ece_improvement=new_avg,
                 sample_count=new_count,
+                success_count=new_success_count,
                 last_used_at=datetime.now(UTC),
             )
             self._store.upsert_strategy(updated)
@@ -175,6 +176,7 @@ class Brain:
                 success_rate=1.0 if is_success else 0.0,
                 avg_ece_improvement=improvement,
                 sample_count=1,
+                success_count=1 if is_success else 0,
                 last_used_at=datetime.now(UTC),
             )
             self._store.upsert_strategy(new_strategy)

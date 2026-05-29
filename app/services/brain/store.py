@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS strategy_memory (
     success_rate        REAL NOT NULL DEFAULT 0.0,
     avg_ece_improvement REAL NOT NULL DEFAULT 0.0,
     sample_count        INTEGER NOT NULL DEFAULT 0,
+    success_count       INTEGER NOT NULL DEFAULT 0,
     last_used_at        TEXT
 );
 
@@ -277,13 +278,14 @@ class BrainStore:
                 self._conn.execute(
                     """UPDATE strategy_memory
                        SET parameters = ?, success_rate = ?, avg_ece_improvement = ?,
-                           sample_count = ?, last_used_at = ?
+                           sample_count = ?, success_count = ?, last_used_at = ?
                        WHERE strategy_id = ?""",
                     (
                         json.dumps(strategy.parameters),
                         strategy.success_rate,
                         strategy.avg_ece_improvement,
                         strategy.sample_count,
+                        strategy.success_count,
                         (strategy.last_used_at or datetime.now(UTC)).isoformat(),
                         existing["strategy_id"],
                     ),
@@ -293,8 +295,8 @@ class BrainStore:
             cursor = self._conn.execute(
                 """INSERT INTO strategy_memory
                    (problem_type, action_template, market, parameters,
-                    success_rate, avg_ece_improvement, sample_count, last_used_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    success_rate, avg_ece_improvement, sample_count, success_count, last_used_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     strategy.problem_type,
                     strategy.action_template,
@@ -303,6 +305,7 @@ class BrainStore:
                     strategy.success_rate,
                     strategy.avg_ece_improvement,
                     strategy.sample_count,
+                    strategy.success_count,
                     (strategy.last_used_at or datetime.now(UTC)).isoformat(),
                 ),
             )
@@ -452,6 +455,7 @@ def _row_to_correction(row: sqlite3.Row) -> CorrectionRecord:
 
 
 def _row_to_strategy(row: sqlite3.Row) -> StrategyMemory:
+    keys = row.keys()
     return StrategyMemory(
         strategy_id=row["strategy_id"],
         problem_type=row["problem_type"],
@@ -461,6 +465,7 @@ def _row_to_strategy(row: sqlite3.Row) -> StrategyMemory:
         success_rate=row["success_rate"],
         avg_ece_improvement=row["avg_ece_improvement"],
         sample_count=row["sample_count"],
+        success_count=row["success_count"] if "success_count" in keys else 0,
         last_used_at=datetime.fromisoformat(row["last_used_at"]) if row["last_used_at"] else None,
     )
 

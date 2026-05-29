@@ -61,11 +61,9 @@ def learn_from_outcomes(brain: Brain) -> dict[str, int]:
                     brain.learn(correction.correction_id, "neutral", realized_ece)
                     stats["corrections_resolved"] += 1
 
-    # Step 2: Update market profiles with latest ECE
+    # Step 2: Count markets that had ECE data (brain.learn() already updated profiles above)
     market_eces = _compute_market_eces(brain)
-    for market, ece in market_eces.items():
-        brain._update_market_profile(market, ece, "neutral")
-        stats["markets_updated"] += 1
+    stats["markets_updated"] = len(market_eces)
 
     # Step 3: Sync strategies to vault
     stats["strategies_synced"] = brain.sync_strategies_to_vault()

@@ -82,6 +82,7 @@ class StrategyMemory:
     success_rate: float = 0.0
     avg_ece_improvement: float = 0.0
     sample_count: int = 0
+    success_count: int = 0
     last_used_at: datetime | None = None
 
 
