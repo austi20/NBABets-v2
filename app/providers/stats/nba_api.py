@@ -101,7 +101,7 @@ class NbaApiStatsProvider(StatsProvider):
         end_date = date.today()
         start_date = end_date - timedelta(days=1)
         await asyncio.to_thread(
-            self._player_log_rows_with_retry,
+            self._player_log_rows,
             start_date,
             end_date,
             _season_code_for_date(end_date),
@@ -346,7 +346,7 @@ class NbaApiStatsProvider(StatsProvider):
                 for window_start, window_end in _date_windows(segment_start, segment_end, LOG_WINDOW_DAYS):
                     try:
                         rows = await asyncio.to_thread(
-                            self._player_log_rows_with_retry,
+                            self._player_log_rows,
                             window_start,
                             window_end,
                             season_code,
@@ -497,15 +497,6 @@ class NbaApiStatsProvider(StatsProvider):
             retries=PLAYER_LOG_FETCH_RETRIES,
         )
         return response.get_data_frames()[0].to_dict("records")
-
-    def _player_log_rows_with_retry(
-        self,
-        start_date: date,
-        end_date: date,
-        season_code: str,
-        season_type: str,
-    ) -> list[dict[str, Any]]:
-        return self._player_log_rows(start_date, end_date, season_code, season_type)
 
     async def _enrich_logs_with_boxscore_context(self, logs: list[PlayerGameLogPayload]) -> None:
         game_ids = sorted({log.provider_game_id for log in logs})

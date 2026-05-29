@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 _PSS_SALT_LENGTH = 32  # SHA-256 digest size; matches Kalshi API PSS spec
 
 
+# lru_cache(maxsize=4) holds parsed signing keys keyed by resolved path;
+# call _load_private_key.cache_clear() after rotating Kalshi API keys.
 @lru_cache(maxsize=4)
 def _load_private_key(path_str: str) -> RSAPrivateKey:
     pem = Path(path_str).read_bytes()

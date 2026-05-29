@@ -129,6 +129,7 @@ class HttpProviderMixin:
                 )
         except Exception:
             # Network telemetry must never break ingestion.
+            logging.getLogger(__name__).debug("provider telemetry write failed", exc_info=True)
             return
 
 

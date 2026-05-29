@@ -198,6 +198,8 @@ def log_missing_canonical_fields(provider_name: str, field_names: list[str], ava
 
 
 def _coerce_scalar(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
     if isinstance(value, str):
         text = value.strip()
         if text == "":
