@@ -543,7 +543,7 @@ def _cache_provider_names(provider: Any) -> list[str]:
 
 def _active_provider_cache_name(provider: Any) -> str:
     current_name = str(getattr(provider, "provider_name", "") or "")
-    if current_name and not current_name.startswith("rotating_"):
+    if current_name:
         return current_name
     primary_name = getattr(provider, "_cache_primary_provider_name", None)
     if primary_name:

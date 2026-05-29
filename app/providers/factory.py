@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from app.config.settings import Settings, get_settings
-from app.providers.base import BaseProvider, InjuriesProvider, OddsProvider, StatsProvider
+from app.providers.base import InjuriesProvider, OddsProvider, StatsProvider
 from app.providers.cached import wrap_with_provider_cache
 from app.providers.live import BallDontLieInjuriesProvider, BallDontLieOddsProvider, BallDontLieStatsProvider
 from app.providers.stats.nba_api import NbaApiStatsProvider
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProviderCapabilityProfile:
-    """Static capability map for diagnostics, routing, and API-drift triage."""
+    """Static capability map for diagnostics and API-drift triage."""
 
     name: str
     kind: Literal["stats", "odds", "injuries"]
@@ -146,11 +145,3 @@ def _configured_odds_provider_names(settings: Settings) -> tuple[str, ...]:
     if provider == "balldontlie":
         return ("balldontlie",)
     return tuple()
-
-
-def _attach_cache_aliases(provider: BaseProvider, upstream_providers: Sequence[BaseProvider]) -> None:
-    provider_names = [item.provider_name for item in upstream_providers if item.provider_name]
-    cache_alias_provider = cast(Any, provider)
-    cache_alias_provider._cache_provider_aliases = provider_names + [provider.provider_name]
-    if provider_names:
-        cache_alias_provider._cache_primary_provider_name = provider_names[0]
