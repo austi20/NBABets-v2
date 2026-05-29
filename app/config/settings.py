@@ -388,6 +388,7 @@ class Settings(BaseSettings):
     calibration_oof_max_folds: int = Field(default=20, alias="CALIBRATION_OOF_MAX_FOLDS")
     calibration_ece_percentile: float = Field(default=99.0, alias="CALIBRATION_ECE_PERCENTILE")
     calibration_ece_n_boot: int = Field(default=2000, alias="CALIBRATION_ECE_N_BOOT")
+    calibration_ece_release_ceiling: float = Field(default=0.10, alias="CALIBRATION_ECE_RELEASE_CEILING")
     backtest_max_folds: int = Field(default=10, alias="BACKTEST_MAX_FOLDS")
     ai_local_endpoint: str = Field(
         default="http://127.0.0.1:8080/v1/chat/completions",

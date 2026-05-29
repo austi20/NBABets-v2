@@ -24,6 +24,11 @@ class ReleaseComparison:
 
 
 def compare_latest_model_runs(session: Session) -> ReleaseComparison:
+    from app.config.settings import get_settings
+
+    settings = get_settings()
+    ece_ceiling = settings.calibration_ece_release_ceiling
+
     rows = session.execute(
         select(ModelRun.model_run_id, ModelRun.completed_at, ModelRun.metrics)
         .where(ModelRun.model_version.not_like("%_backtest"))
@@ -52,6 +57,7 @@ def compare_latest_model_runs(session: Session) -> ReleaseComparison:
         champion_metrics=champion.metrics if isinstance(champion.metrics, dict) else {},
         candidate_completed_at=candidate.completed_at,
         champion_completed_at=champion.completed_at,
+        ece_ceiling=ece_ceiling,
     )
 
 
@@ -63,6 +69,7 @@ def _compare_model_metric_payloads(
     champion_metrics: dict[str, Any],
     candidate_completed_at: datetime | None = None,
     champion_completed_at: datetime | None = None,
+    ece_ceiling: float = 0.10,
 ) -> ReleaseComparison:
     candidate_ece = _avg_ece(candidate_metrics)
     champion_ece = _avg_ece(champion_metrics)
@@ -72,16 +79,19 @@ def _compare_model_metric_payloads(
     status = "HOLD"
     rationale = "Candidate does not exceed champion quality thresholds."
     if candidate_ece is not None and champion_ece is not None:
-        if candidate_ece <= champion_ece and candidate_dq != "degraded":
+        if candidate_ece > ece_ceiling:
+            status = "HOLD"
+            rationale = f"Candidate ECE {candidate_ece:.4f} exceeds ceiling {ece_ceiling:.4f}."
+        elif candidate_ece <= champion_ece and candidate_dq != "degraded":
             status = "PROMOTE_CANDIDATE"
             rationale = "Candidate has equal/better average calibration error and acceptable data quality."
         elif candidate_dq == "degraded":
             rationale = "Candidate training data quality is degraded."
         else:
             rationale = "Candidate calibration diagnostics are weaker than champion."
-    elif candidate_dq != "degraded":
-        status = "CAUTION"
-        rationale = "ECE diagnostics missing; candidate data quality appears acceptable."
+    else:
+        status = "HOLD"
+        rationale = "ECE diagnostics missing; cannot safely promote."
 
     summary = (
         f"candidate={candidate_run_id} (ece={_fmt(candidate_ece)}, dq={candidate_dq}) vs "
