@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -429,3 +429,179 @@ def test_projection_query_failure_sets_health_signal() -> None:
 
     assert result == {}
     assert service.last_diagnostics.get("projection_query_failed") is True
+
+
+# ---------------------------------------------------------------------------
+# Task 4.4: Integration-style dual-path precedence test
+# ---------------------------------------------------------------------------
+
+def test_dual_path_projection_precedence_integration() -> None:
+    """Seed a SQLite session with one StatProjection+PropLineEvaluation row
+    and one legacy Prediction row for the same (player, market, line).
+    _latest_prediction_quotes must return only the projection-backed quote."""
+    import json
+    from datetime import datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session as OrmSession
+
+    from app.db.base import Base
+    from app.models.all import (
+        Game,
+        LineSnapshot,
+        ModelRun,
+        Player,
+        Prediction,
+        PropLineEvaluation,
+        PropMarket,
+        Sportsbook,
+        StatProjection,
+        Team,
+    )
+
+    engine = create_engine("sqlite://", echo=False)
+    Base.metadata.create_all(engine)
+
+    with OrmSession(engine) as session:
+        model_run = ModelRun(model_version="test-v1", feature_version="f1", started_at=datetime(2026, 5, 28, 8, 0, tzinfo=UTC))
+        session.add(model_run)
+        session.flush()
+
+        home_team = Team(provider_team_id="HT1", abbreviation="HME", name="Home", city="H", is_active=True)
+        away_team = Team(provider_team_id="AT1", abbreviation="AWY", name="Away", city="A", is_active=True)
+        session.add_all([home_team, away_team])
+        session.flush()
+
+        player = Player(
+            provider_player_id="P1",
+            full_name="Test Player",
+            normalized_name="test player",
+            team_id=home_team.team_id,
+            position="G",
+            status="active",
+        )
+        session.add(player)
+        session.flush()
+
+        from datetime import date as _date
+        game = Game(
+            provider_game_id="G1",
+            game_date=_date(2026, 5, 28),
+            start_time=datetime(2026, 5, 28, 23, 0, tzinfo=UTC),
+            home_team_id=home_team.team_id,
+            away_team_id=away_team.team_id,
+            status="scheduled",
+        )
+        session.add(game)
+        session.flush()
+
+        market = PropMarket(key="player_points", stat_type="points", display_name="Points", is_active=True)
+        book = Sportsbook(key="testbook", display_name="TestBook", is_active=True)
+        session.add_all([market, book])
+        session.flush()
+
+        live_meta = json.dumps({
+            "is_live_quote": True,
+            "odds_verification_status": "provider_live",
+            "source_market_key": "player_points",
+        })
+        snap = LineSnapshot(
+        timestamp=datetime(2026, 5, 28, 22, 0, tzinfo=UTC),
+            game_id=game.game_id,
+            sportsbook_id=book.sportsbook_id,
+            player_id=player.player_id,
+            market_id=market.market_id,
+            line_value=24.5,
+            over_odds=-110,
+            under_odds=-110,
+            meta=live_meta,
+        )
+        session.add(snap)
+        session.flush()
+
+        # Legacy prediction row
+        legacy_pred = Prediction(
+            model_run_id=model_run.model_run_id,
+            game_id=game.game_id,
+            player_id=player.player_id,
+            market_id=market.market_id,
+            line_snapshot_id=snap.snapshot_id,
+            predicted_at=datetime(2026, 5, 28, 9, 0, tzinfo=UTC),
+            projected_mean=23.0,
+            projected_variance=25.0,
+            projected_median=23.0,
+            over_probability=0.52,
+            under_probability=0.40,
+            confidence_interval_low=14.0,
+            confidence_interval_high=32.0,
+            calibration_adjusted_probability=0.53,
+            feature_attribution_summary=json.dumps({"data_sufficiency_tier": "A", "data_confidence_score": 0.8}),
+        )
+        session.add(legacy_pred)
+        session.flush()
+
+        # Projection-backed rows
+        proj = StatProjection(
+            model_run_id=model_run.model_run_id,
+            game_id=game.game_id,
+            player_id=player.player_id,
+            market_id=market.market_id,
+            predicted_at=datetime(2026, 5, 28, 10, 0, tzinfo=UTC),
+            projected_mean=25.4,
+            projected_variance=9.0,
+            projected_median=25.0,
+            confidence_interval_low=18.0,
+            confidence_interval_high=31.0,
+            percentile_25=20.0,
+            percentile_75=30.0,
+            dnp_risk=0.05,
+            boom_probability=0.2,
+            bust_probability=0.1,
+            availability_branches=1,
+            data_sufficiency_tier="A",
+            data_confidence_score=0.95,
+            feature_attribution_summary=json.dumps({}),
+        )
+        session.add(proj)
+        session.flush()
+
+        ple = PropLineEvaluation(
+            model_run_id=model_run.model_run_id,
+            stat_projection_id=proj.stat_projection_id,
+            game_id=game.game_id,
+            player_id=player.player_id,
+            market_id=market.market_id,
+            line_snapshot_id=snap.snapshot_id,
+            source_type="sportsbook",
+            source_id="snap-1",
+            evaluated_at=datetime(2026, 5, 28, 10, 0, tzinfo=UTC),
+            line_value=24.5,
+            over_probability=0.58,
+            under_probability=0.36,
+            push_probability=0.06,
+            calibration_adjusted_probability=0.60,
+            calibrated_under_probability=0.34,
+            no_vig_market_probability=0.50,
+            fair_over_price=-110,
+            fair_under_price=-110,
+            market_probability=0.50,
+            ev=0.05,
+            edge_bps=50,
+            recommendation="OVER",
+            hit_probability=0.60,
+            meta=json.dumps({"probability_source": "projection_distribution"}),
+        )
+        session.add(ple)
+        session.flush()
+
+        with patch("app.services.prop_analysis.sync_live_games_from_nba_api"):
+            svc = PropAnalysisService(session)
+            quotes = svc._latest_prediction_quotes(target_date=_date(2026, 5, 28))
+
+    all_rows = [row for rows in quotes.values() for row in rows]
+    assert len(all_rows) >= 1, "Expected at least one quote"
+    # The projection-backed row must win; no legacy row survives for the same book/market/line.
+    proj_rows = [r for r in all_rows if r.probability_source == "projection_distribution"]
+    legacy_rows = [r for r in all_rows if r.probability_source == "legacy_prediction"]
+    assert len(proj_rows) >= 1, "Projection row must be present"
+    assert len(legacy_rows) == 0, f"Legacy row must be displaced by projection, but found: {legacy_rows}"
