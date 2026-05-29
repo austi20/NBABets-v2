@@ -23,7 +23,7 @@ from typing import Any
 
 from app.config.settings import Settings
 from app.trading.live_limits import load_live_limits
-from app.trading.monitoring import KalshiPublicMarketDataClient, MonitoredSymbol, fetch_quote_snapshot
+from app.trading.monitoring import KalshiPublicMarketDataClient, MonitoredSymbol, QuoteSnapshot, fetch_quote_snapshot
 from app.trading.risk import RiskLimits
 
 _log = logging.getLogger(__name__)
@@ -470,7 +470,29 @@ def write_live_decision_pack(
     brain_contexts: list[dict[str, Any] | None] = []
     with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as client:
         for nrow, nmon, nrisk in rows_to_quote:
-            nquote = fetch_quote_snapshot(nmon, client)
+            try:
+                nquote = fetch_quote_snapshot(nmon, client)
+            except Exception as _fetch_exc:  # noqa: BLE001
+                nquote = QuoteSnapshot(
+                    ticker=nmon.ticker,
+                    market_key=nmon.market_key,
+                    side=nmon.side,
+                    line_value=nmon.line_value,
+                    player_id=nmon.player_id,
+                    game_date=nmon.game_date,
+                    title=None,
+                    status=None,
+                    yes_bid=None,
+                    yes_ask=None,
+                    no_bid=None,
+                    no_ask=None,
+                    last_price=None,
+                    entry_price=None,
+                    exit_price=None,
+                    spread=None,
+                    observed_at=datetime.now(UTC),
+                    error=f"{nmon.ticker}: {_fetch_exc}",
+                )
             ng = evaluate_gates_for_row(
                 nrow,
                 limits=limits,

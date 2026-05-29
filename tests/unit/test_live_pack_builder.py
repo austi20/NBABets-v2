@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import tempfile
 from datetime import UTC, date, datetime
@@ -394,3 +395,65 @@ def test_write_live_pack_arms_multiple_selected_rows_and_downgrades_failed_gate(
     assert doc["decisions"][1]["mode"] == "observe"
     assert doc["decisions"][1]["recommendation"] == "observe_only"
     assert doc["decisions"][1]["gates"]["price_within_limit"] is False
+
+
+# ---------------------------------------------------------------------------
+# Task 5.6 — pack write survives market-client failures
+# ---------------------------------------------------------------------------
+
+def test_write_live_decision_pack_survives_quote_fetch_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Market-client failure downgrades to observe_only; pack write does not crash."""
+    import httpx
+
+    settings = Settings(
+        APP_DATA_DIR=str(tmp_path / "app"),
+        BRAIN_VAULT_ROOT=str(tmp_path / "vault"),
+        KALSHI_SYMBOLS_PATH=str(tmp_path / "symbols.json"),
+        KALSHI_RESOLUTION_TARGETS_PATH=str(tmp_path / "targets.json"),
+        KALSHI_DECISIONS_PATH=str(tmp_path / "decisions.json"),
+        TRADING_LIMITS_PATH=str(tmp_path / "limits.json"),
+    )
+    Path(settings.trading_limits_path).write_text(
+        '{"per_order_cap": 1.0, "per_market_cap": 2.0, "max_open_notional": 2.0, "daily_loss_cap": 2.0, "reject_cooldown_seconds": 300}',
+        encoding="utf-8",
+    )
+    Path(settings.kalshi_resolution_targets_path).write_text(
+        '{"defaults": {"contracts": "1.00", "max_price_dollars": "0.57"}}',
+        encoding="utf-8",
+    )
+    Path(settings.kalshi_symbols_path).write_text(
+        json.dumps({
+            "symbols": [{
+                "target_id": "ok",
+                "market_key": "points",
+                "recommendation": "buy_yes",
+                "candidate_status": "selected_live",
+                "kalshi_ticker": "KX-OK",
+                "line_value": 25.5,
+                "player_id": "1",
+                "game_date": "2099-05-10",
+            }],
+            "unresolved": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.trading.live_pack_builder.KalshiPublicMarketDataClient", _FakeMarketClient)
+    monkeypatch.setattr(
+        "app.trading.live_pack_builder.fetch_quote_snapshot",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(httpx.HTTPError("boom")),
+    )
+
+    doc = write_live_decision_pack(
+        decisions_path=Path(settings.kalshi_decisions_path),
+        settings=settings,
+        arm_live=False,
+        max_spread=0.20,
+    )
+
+    assert len(doc["decisions"]) == 1
+    decision = doc["decisions"][0]
+    # Market data failed → fresh_market_snapshot gate should be False OR recommendation observe_only
+    assert not decision["gates"]["fresh_market_snapshot"] or decision["recommendation"] == "observe_only"
