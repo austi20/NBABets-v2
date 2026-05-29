@@ -90,8 +90,9 @@ def test_sync_preserves_existing_pack_on_transient_error(tmp_path: Path) -> None
     assert on_disk["state"] == "synced", "existing pack was blanked despite being valid"
     assert on_disk["decisions"], "decisions array was wiped"
     assert on_disk["decisions"][0]["kalshi"]["ticker"] == "KX-PRESERVED"
-    # The sync result should now report synced (preserved) so loop_controller proceeds.
-    assert result.state == "synced"
+    # Soft-failed sync must report synced_stale (NOT synced) so loop_controller
+    # does NOT treat it as a live-arm green light.
+    assert result.state == "synced_stale"
 
 
 def test_sync_writes_blocked_pack_when_no_valid_existing(tmp_path: Path) -> None:
