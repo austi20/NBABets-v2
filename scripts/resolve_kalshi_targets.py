@@ -158,6 +158,31 @@ def _kalshi_threshold_value(market: dict[str, Any]) -> float | None:
     return values[0] if values else None
 
 
+_X_PLUS_RE = re.compile(r"\d+(?:\.\d+)?\s*\+")
+_RANGE_RE = re.compile(r"\bbetween\b|\d+\s*(?:to|-|and|–|—)\s*\d+")
+
+
+def _is_x_plus_market(market: dict[str, Any]) -> bool:
+    """True only for confirmed "X+" (X-or-more) binary markets.
+
+    Kalshi "X+" markets map to an over/under line of X - 0.5. Range-style
+    markets ("between 20 and 24") are NOT X+ and the -0.5 shift is wrong.
+    """
+    text = " ".join(
+        str(part)
+        for part in (
+            market.get("title"),
+            market.get("subtitle"),
+            market.get("yes_sub_title"),
+            market.get("rules_primary"),
+        )
+        if part
+    ).lower()
+    if _RANGE_RE.search(text):
+        return False
+    return bool(_X_PLUS_RE.search(text))
+
+
 def _threshold_line_value(market: dict[str, Any]) -> float | None:
     threshold = _kalshi_threshold_value(market)
     if threshold is None:
@@ -332,9 +357,16 @@ def resolve_targets(targets: list[dict[str, Any]], markets: list[dict[str, Any]]
             out["unresolved"].append(_unresolved(target, reason, **extra))
             continue
         if _enumerates_thresholds(target):
+            matched = False
             for _score, reasons, market in ranked:
-                if _score >= min_score:
-                    out["symbols"].append(_market_snapshot(target, market, reasons))
+                if _score < min_score:
+                    continue
+                if not _is_x_plus_market(market):
+                    continue
+                out["symbols"].append(_market_snapshot(target, market, reasons))
+                matched = True
+            if not matched:
+                out["unresolved"].append(_unresolved(target, "ambiguous_threshold_semantics"))
             continue
         _score, reasons, market = ranked[0]
         out["symbols"].append(_market_snapshot(target, market, reasons))

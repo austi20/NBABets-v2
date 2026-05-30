@@ -8,7 +8,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from scripts.resolve_kalshi_targets import _market_snapshot  # noqa: E402
+from scripts.resolve_kalshi_targets import _market_snapshot, resolve_targets  # noqa: E402
 
 
 def _market(**over: object) -> dict:
@@ -75,3 +75,44 @@ def test_base_target_id_survives_none_stripping() -> None:
     snap = _market_snapshot(target, market, "player,stat,line")
     assert "base_target_id" in snap
     assert snap["base_target_id"] == snap["target_id"]
+
+
+def _enum_target(**over: object) -> dict:
+    base = _target(
+        match_rules={
+            "enumerate_thresholds": True,
+            "player_name_contains_any": ["lebron"],
+            "stat_contains_any": ["rebounds"],
+        }
+    )
+    base.pop("line_value", None)
+    base.update(over)
+    return base
+
+
+def test_x_plus_market_applies_minus_half_shift() -> None:
+    target = _enum_target()
+    market = _market(
+        ticker="KXNBAREB-26MAY30LAL-LBJ-25",
+        title="LeBron James 25+ rebounds",
+        floor_strike=25.0,
+    )
+    out = resolve_targets([target], [market], min_score=70)
+    assert not out["unresolved"]
+    assert len(out["symbols"]) == 1
+    assert out["symbols"][0]["line_value"] == 24.5
+
+
+def test_range_style_market_is_ambiguous_threshold() -> None:
+    target = _enum_target()
+    market = _market(
+        ticker="KXNBAREB-26MAY30LAL-LBJ-B2024",
+        title="LeBron James rebounds",
+        subtitle="Between 20 and 24 rebounds",
+        rules_primary="Resolves YES if rebounds are between 20 and 24 inclusive.",
+        floor_strike=20.0,
+    )
+    out = resolve_targets([target], [market], min_score=70)
+    assert not out["symbols"]
+    reasons = {u["reason"] for u in out["unresolved"]}
+    assert "ambiguous_threshold_semantics" in reasons
