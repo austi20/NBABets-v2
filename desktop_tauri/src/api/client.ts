@@ -1,6 +1,7 @@
 // Base URL for the Python sidecar API.
 // In browser dev, keep this empty and use Vite's /api proxy.
 // In production (Tauri), Rust injects the sidecar URL via window globals.
+import { z } from "zod";
 import type {
   TradingFill,
   TradingLivePosition,
@@ -9,6 +10,42 @@ import type {
 } from "../routes/trading/api/types";
 
 const DEFAULT_API_BASE = "";
+
+// Probability values must be a finite number in [0, 1]. A drifted backend that
+// emits strings, nulls, or out-of-range values would silently corrupt edge math
+// downstream (e.g. DecisionDrawer probability bars), so reject at the boundary.
+const probability = z.number().min(0).max(1);
+
+const propOpportunityProbabilities = z
+  .object({
+    hit_probability: probability,
+    calibrated_over_probability: probability,
+    boom_probability: probability,
+    bust_probability: probability,
+    dnp_risk: probability,
+  })
+  .passthrough();
+
+const propInsightProbabilities = z
+  .object({
+    best_quote: z
+      .object({ no_vig_market_probability: probability })
+      .passthrough(),
+  })
+  .passthrough();
+
+const propWithInsightSchema = z
+  .object({
+    opportunity: propOpportunityProbabilities,
+    insight: propInsightProbabilities,
+  })
+  .passthrough();
+
+const propListResponseSchema = z
+  .object({
+    items: z.array(propWithInsightSchema),
+  })
+  .passthrough();
 
 type AppWindowGlobals = Window & {
   __NBA_API_BASE__?: string;
@@ -467,7 +504,11 @@ function withQuery(path: string, params: Record<string, string | number | boolea
   return query ? `${path}?${query}` : path;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+  schema?: z.ZodType<unknown>,
+): Promise<T> {
   const res = await fetch(`${resolveApiBase()}${path}`, {
     ...init,
     headers: buildHeaders(init?.headers),
@@ -475,7 +516,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new Error(`API ${path} returned ${res.status}`);
   }
-  return res.json() as Promise<T>;
+  const body = await res.json();
+  if (schema) {
+    const result = schema.safeParse(body);
+    if (!result.success) {
+      throw new Error(`API ${path} returned an invalid response shape: ${result.error.message}`);
+    }
+  }
+  return body as T;
 }
 
 export function startupStreamUrl(): string {
@@ -509,9 +557,14 @@ export const api = {
     }),
   boardAvailability: () => apiFetch<BoardAvailability>("/api/board/availability"),
   boardSummary: () => apiFetch<BoardSummary>("/api/board/summary"),
-  props: (query: PropsQuery = {}) => apiFetch<PropListResponse>(withQuery("/api/props", query)),
+  props: (query: PropsQuery = {}) =>
+    apiFetch<PropListResponse>(withQuery("/api/props", query), undefined, propListResponseSchema),
   propDetail: (params: { playerId: number; market: string; line: number }) =>
-    apiFetch<PropWithInsight>(`/api/props/${params.playerId}/${encodeURIComponent(params.market)}/${params.line}`),
+    apiFetch<PropWithInsight>(
+      `/api/props/${params.playerId}/${encodeURIComponent(params.market)}/${params.line}`,
+      undefined,
+      propWithInsightSchema,
+    ),
   sameGameParlays: (query: SameGameParlaysQuery = {}) =>
     apiFetch<SameGameParlaysResponse>(withQuery("/api/parlays/sgp", query)),
   multiGameParlays: (query: MultiGameParlaysQuery = {}) =>
