@@ -9,6 +9,7 @@ const BACKOFF_STEPS_MS = [1_000, 2_000, 4_000, 8_000];
 export function useTradingStream(): void {
   const applySnapshot = useTradingStore((s) => s.applySnapshot);
   const setStreamConnected = useTradingStore((s) => s.setStreamConnected);
+  const setStreamError = useTradingStore((s) => s.setStreamError);
   const backoffIndex = useRef(0);
   const pollTimerRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -52,6 +53,7 @@ export function useTradingStream(): void {
       source.addEventListener("open", () => {
         if (cancelled || epochRef.current !== epoch) return;
         setStreamConnected(true);
+        setStreamError(null);
         backoffIndex.current = 0;
         stopPolling();
       });
@@ -69,6 +71,10 @@ export function useTradingStream(): void {
       source.onerror = () => {
         if (cancelled || epochRef.current !== epoch) return;
         setStreamConnected(false);
+        setStreamError({
+          message: "Trading stream disconnected; falling back to polling",
+          at: Date.now(),
+        });
         source.close();
         if (pollTimerRef.current === null) {
           pollTimerRef.current = window.setTimeout(pollFallback, 0);
@@ -91,5 +97,5 @@ export function useTradingStream(): void {
         reconnectTimerRef.current = null;
       }
     };
-  }, [applySnapshot, setStreamConnected]);
+  }, [applySnapshot, setStreamConnected, setStreamError]);
 }

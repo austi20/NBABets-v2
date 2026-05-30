@@ -6,10 +6,16 @@ type SortKey = "candidate_id" | "model_prob" | "edge_bps" | "alloc";
 type SortDir = "asc" | "desc";
 type FilterMode = "all" | "queued" | "excluded" | "blocked";
 
+type StreamError = {
+  message: string;
+  at: number;
+};
+
 type TradingState = {
   // Live data
   snapshot: TradingLiveSnapshot | null;
   streamConnected: boolean;
+  streamError: StreamError | null;
   lastSnapshotAt: number | null;
   // UI-only state
   sortKey: SortKey;
@@ -21,6 +27,7 @@ type TradingState = {
   // Mutators
   applySnapshot: (snapshot: TradingLiveSnapshot) => void;
   setStreamConnected: (connected: boolean) => void;
+  setStreamError: (error: StreamError | null) => void;
   setSort: (key: SortKey) => void;
   setFilter: (mode: FilterMode) => void;
   toggleExpand: (candidateId: string) => void;
@@ -31,6 +38,7 @@ type TradingState = {
 export const useTradingStore = create<TradingState>((set) => ({
   snapshot: null,
   streamConnected: false,
+  streamError: null,
   lastSnapshotAt: null,
   sortKey: "model_prob",
   sortDir: "desc",
@@ -43,6 +51,8 @@ export const useTradingStore = create<TradingState>((set) => ({
     set({ snapshot, lastSnapshotAt: Date.now() }),
 
   setStreamConnected: (connected) => set({ streamConnected: connected }),
+
+  setStreamError: (error) => set({ streamError: error }),
 
   setSort: (key) =>
     set((state) => ({
