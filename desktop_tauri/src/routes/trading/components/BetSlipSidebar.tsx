@@ -1,11 +1,12 @@
 // desktop_tauri/src/routes/trading/components/BetSlipSidebar.tsx
 import { useTradingStore } from "../store";
 import { usePulseOnChange } from "../hooks/usePulseOnChange";
+import { fmtBp, fmtDollarSigned } from "../format";
 
 function Money({ value }: { value: number }) {
   const pulse = usePulseOnChange(value);
   const cls = pulse === "up" ? "trading-pulse-up" : pulse === "down" ? "trading-pulse-down" : "";
-  return <span className={cls}>{`${value >= 0 ? "+" : ""}$${value.toFixed(2)}`}</span>;
+  return <span className={cls}>{fmtDollarSigned(value)}</span>;
 }
 
 export function BetSlipSidebar() {
@@ -29,10 +30,10 @@ export function BetSlipSidebar() {
           <div key={pick.candidate_id} style={{ borderTop: "1px solid var(--trading-border)", paddingTop: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 600 }}>● {pick.prop_label}</div>
             <div className="mono" style={{ color: "var(--trading-fg-subtle)", fontSize: 10, marginTop: 2 }}>
-              {(pick.hit_pct * 100).toFixed(0)}% · +{pick.edge_bps}bp
+              {(pick.hit_pct * 100).toFixed(0)}% · {fmtBp(pick.edge_bps)}
             </div>
             <div className="mono" style={{ fontSize: 10, marginTop: 2 }}>
-              ${pick.alloc.toFixed(2)} → <span style={{ color: "var(--trading-accent-pnl)" }}>{`+$${pick.est_profit.toFixed(2)}`}</span>
+              ${pick.alloc.toFixed(2)} → <span style={{ color: "var(--trading-accent-pnl)" }}>{fmtDollarSigned(pick.est_profit)}</span>
             </div>
           </div>
         ))}

@@ -1,4 +1,5 @@
 // desktop_tauri/src/routes/trading/components/PickRowExpansion.tsx
+import { fmtBp } from "../format";
 import type { PickRow } from "../api/types";
 
 type Props = { pick: PickRow };
@@ -25,7 +26,7 @@ export function PickRowExpansion({ pick }: Props) {
               hit likelihood: {(pick.model_prob * 100).toFixed(1)}%<br />
               market prob: {pick.market_prob !== null ? `${(pick.market_prob * 100).toFixed(1)}%` : "—"}<br />
               source: {pick.probability_source ?? "--"}<br />
-              edge: +{pick.edge_bps}bp<br />
+              edge: {fmtBp(pick.edge_bps)}<br />
               rank: #{pick.rank + 1}
             </div>
           </div>

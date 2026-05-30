@@ -2,6 +2,7 @@
 import { tradingActions } from "../api/actions";
 import { useTradingStore } from "../store";
 import { usePulseOnChange } from "../hooks/usePulseOnChange";
+import { fmtBp, fmtDollarSigned, fmtPct, fmtUsd } from "../format";
 import type { PickRow as PickRowType } from "../api/types";
 
 type Props = { pick: PickRowType };
@@ -11,11 +12,6 @@ function PulseCell({ value, format }: { value: number; format: (v: number) => st
   const cls = pulse === "up" ? "trading-pulse-up" : pulse === "down" ? "trading-pulse-down" : "";
   return <span className={cls}>{format(value)}</span>;
 }
-
-const fmtPct = (v: number) => `${(v * 100).toFixed(0)}%`;
-const fmtBp = (v: number) => `${v >= 0 ? "+" : ""}${v}bp`;
-const fmtUsd = (v: number) => `$${v.toFixed(2)}`;
-const fmtUsdSigned = (v: number) => `${v >= 0 ? "+" : ""}$${v.toFixed(2)}`;
 
 export function PickRow({ pick }: Props) {
   const toggleExpand = useTradingStore((s) => s.toggleExpand);
@@ -61,7 +57,7 @@ export function PickRow({ pick }: Props) {
       </td>
       <td>{pick.alloc > 0 ? <PulseCell value={pick.alloc} format={fmtUsd} /> : "--"}</td>
       <td style={{ color: pick.est_profit >= 0 ? "var(--trading-accent-pnl)" : "var(--trading-accent-danger)" }}>
-        {pick.est_profit !== 0 ? <PulseCell value={pick.est_profit} format={fmtUsdSigned} /> : "--"}
+        {pick.est_profit !== 0 ? <PulseCell value={pick.est_profit} format={fmtDollarSigned} /> : "--"}
       </td>
       <td>
         {pick.state === "blocked" ? (
