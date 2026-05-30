@@ -116,8 +116,9 @@ class BoardCache:
 
         opportunity_insights: dict[tuple[int, int, str, float], PropInsight] = {}
         if get_settings().volatility_tier_enabled:
+            enriched_opportunities: list[PropOpportunity] = []
             with session_scope() as volatility_session:
-                for idx, opportunity in enumerate(opportunities):
+                for opportunity in opportunities:
                     # Apply the same side-bias offset used by _quote_recommendation
                     # BEFORE volatility shrinkage, so adjusted_over_probability is
                     # composed end-to-end (per-player -> per-market -> global, then
@@ -147,7 +148,7 @@ class BoardCache:
                         volatility_tier=volatility.tier,
                         adjusted_over_probability=volatility.adjusted_probability,
                     )
-                    opportunities[idx] = enriched
+                    enriched_opportunities.append(enriched)
                     key = (
                         enriched.game_id,
                         enriched.player_id,
@@ -159,6 +160,7 @@ class BoardCache:
                         injury_status_by_player_id.get(enriched.player_id),
                         volatility=volatility,
                     )
+            opportunities = enriched_opportunities
         else:
             for opportunity in opportunities:
                 key = (

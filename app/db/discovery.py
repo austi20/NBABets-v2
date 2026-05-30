@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Short connect timeout (seconds) used when probing a non-sqlite database URL so
+# discovery does not block on an unreachable host.
+_PROBE_CONNECT_TIMEOUT = 2
 
 LATEST_ACTIVITY_QUERY = """
 SELECT MAX(activity_ts) AS latest_activity
@@ -147,7 +155,8 @@ def _assess_candidate(candidate: DatabaseCandidate) -> DatabaseCandidate:
             has_activity=_coerce_datetime(latest_activity) is not None,
             freshness=_coerce_datetime(latest_activity) or _file_mtime(candidate.url),
         )
-    except Exception:
+    except SQLAlchemyError as exc:
+        logger.warning("database candidate %s not accessible: %s", candidate.source, type(exc).__name__)
         return candidate
 
 
@@ -174,10 +183,30 @@ def _sqlite_url(path: Path) -> str:
 
 
 def _url_exists(url: str) -> bool:
-    if not url.startswith("sqlite"):
-        return True
-    path = _sqlite_path_from_url(url)
-    return _path_has_content(path)
+    if url.startswith("sqlite"):
+        return _path_has_content(_sqlite_path_from_url(url))
+    # Non-sqlite (e.g. postgres/mysql): probe with a short connect timeout
+    # instead of assuming the server is reachable.
+    try:
+        engine = create_engine(
+            url,
+            future=True,
+            connect_args={"connect_timeout": _PROBE_CONNECT_TIMEOUT},
+        )
+        with engine.connect():
+            return True
+    except (SQLAlchemyError, OSError) as exc:
+        logger.warning("database url probe failed: %s", type(exc).__name__)
+        return False
+    except TypeError:
+        # Driver does not accept connect_timeout; fall back to a plain connect.
+        try:
+            engine = create_engine(url, future=True)
+            with engine.connect():
+                return True
+        except (SQLAlchemyError, OSError) as exc:
+            logger.warning("database url probe failed: %s", type(exc).__name__)
+            return False
 
 
 def _file_mtime(url: str) -> datetime | None:

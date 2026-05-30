@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from datetime import date as _date
 from pathlib import Path
@@ -41,6 +42,7 @@ from app.server.schemas.trading import (
     WalletBalanceResponseModel,
 )
 from app.server.services.board_cache import BoardCache
+from app.server.sse import SSE_RECONNECT_MS
 from app.trading.decision_brain import default_brain_status, load_last_brain_status, sync_decision_brain
 from app.trading.loop import set_kill_switch
 from app.trading.mapper import signal_to_market_ref
@@ -56,9 +58,14 @@ from app.trading.monitoring import (
 from app.trading.protocols import PortfolioLedger
 from app.trading.readiness import build_trading_readiness
 from app.trading.risk import RiskLimits
+from app.trading.selections import SelectionStore
 from app.trading.snapshot_service import TradingSnapshotService
 from app.trading.sql_ledger import SqlPortfolioLedger
+from app.trading.stream_publisher import TradingStreamPublisher
 from app.trading.types import ExecutionIntent, OrderEvent, Signal
+from app.trading.wallet_init import extract_balance
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trading", tags=["trading"])
 
@@ -71,15 +78,35 @@ def _board_date_today() -> _date:
     return _date.today()
 
 
+# mtime-keyed cache for the decision-pack mode so the SSE stream does not
+# re-read and re-parse the decisions file on every tick. Keyed by resolved
+# path; value is (mtime_ns, mode).
+_DECISION_PACK_MODE_CACHE: dict[str, tuple[int, str]] = {}
+
+
 def _decision_pack_mode(settings) -> str:  # noqa: ANN001
     path = Path(str(settings.kalshi_decisions_path))
-    if not path.is_file():
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
         return "observe"
+    cache_key = str(path)
+    cached = _DECISION_PACK_MODE_CACHE.get(cache_key)
+    if cached is not None and cached[0] == mtime_ns:
+        return cached[1]
+    mode = _read_decision_pack_mode(path)
+    _DECISION_PACK_MODE_CACHE[cache_key] = (mtime_ns, mode)
+    return mode
+
+
+def _read_decision_pack_mode(path: Path) -> str:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         rows = payload if isinstance(payload, list) else payload.get("decisions", [])
-        first = rows[0] if isinstance(rows, list) and rows else {}
-        return "supervised-live" if isinstance(first, dict) and first.get("mode") == "live" else "observe"
+        any_live = isinstance(rows, list) and any(
+            isinstance(row, dict) and row.get("mode") == "live" for row in rows
+        )
+        return "supervised-live" if any_live else "observe"
     except (OSError, json.JSONDecodeError):
         return "observe"
 
@@ -98,6 +125,9 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
     ledger = _ledger(request)
     limits = getattr(risk_engine, "limits", RiskLimits())
     monitored_symbols = load_monitored_symbols(settings.kalshi_symbols_path)
+    # Resolve the kill-switch once per snapshot build so a single SSE tick does
+    # not re-query the DB for each monitor-snapshot branch.
+    kill_switch_active = _kill_switch_active(request, bool(risk_engine.killed))
     account_error: str | None = None
     with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as market_client:
         private_key_path = Path(settings.kalshi_private_key_path) if settings.kalshi_private_key_path else None
@@ -110,7 +140,7 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
                 ledger_snapshot = build_monitor_snapshot(
                     ledger=ledger,
                     limits=limits,
-                    kill_switch_active=_kill_switch_active(request, bool(risk_engine.killed)),
+                    kill_switch_active=kill_switch_active,
                     monitored_symbols=monitored_symbols,
                     market_client=market_client,
                     account_client=account_client,
@@ -121,7 +151,7 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
             ledger_snapshot = build_monitor_snapshot(
                 ledger=ledger,
                 limits=limits,
-                kill_switch_active=_kill_switch_active(request, bool(risk_engine.killed)),
+                kill_switch_active=kill_switch_active,
                 monitored_symbols=monitored_symbols,
                 market_client=market_client,
             )
@@ -132,8 +162,9 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
     brain_status: TradingBrainSyncModel | None = None
     try:
         brain_status = _brain_sync_model(load_last_brain_status(settings) or default_brain_status(settings))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"Decision brain status unavailable: {exc}")
+    except Exception:  # noqa: BLE001
+        logger.exception("Decision brain status unavailable")
+        errors.append("Decision brain status unavailable")
     return service.build(
         board_date=_board_date_today(),
         ledger_state=ledger_snapshot,
@@ -151,11 +182,13 @@ def _build_live_snapshot(request: Request) -> TradingLiveSnapshotModel:
 
 @router.get("/snapshot-live", response_model=TradingLiveSnapshotModel)
 def trading_snapshot_live(request: Request) -> TradingLiveSnapshotModel:
+    """Return a one-shot live trading snapshot for the trading tab."""
     return _build_live_snapshot(request)
 
 
 @router.get("/stream")
 async def trading_stream(request: Request) -> EventSourceResponse:
+    """Stream live trading snapshots as server-sent events with a reconnect hint."""
     service = _snapshot_service(request)
 
     async def event_generator() -> Any:
@@ -167,7 +200,9 @@ async def trading_stream(request: Request) -> EventSourceResponse:
             payload = snapshot.model_dump_json()
             if payload != last_yielded:
                 last_yielded = payload
-                yield {"event": "snapshot", "data": payload}
+                # retry tells the EventSource client how long to wait before
+                # auto-reconnecting if the stream drops.
+                yield {"event": "snapshot", "data": payload, "retry": SSE_RECONNECT_MS}
             await service.publisher.wait_for_update(timeout=2.0)
 
     return EventSourceResponse(event_generator())
@@ -325,17 +360,20 @@ def _loop_status_model(status) -> TradingLoopStatusModel:  # noqa: ANN001
 
 @router.get("/positions", response_model=list[PositionModel])
 def trading_positions(request: Request) -> list[PositionModel]:
+    """Return the current open trading positions from the ledger."""
     ledger = _ledger(request)
     return [PositionModel.from_dataclass(position) for position in ledger.open_positions()]
 
 
 @router.get("/pnl", response_model=TradingPnlModel)
 def trading_pnl(request: Request) -> TradingPnlModel:
+    """Return daily realized PnL plus kill-switch and active-limit state."""
     return _pnl_model(request)
 
 
 @router.get("/snapshot", response_model=TradingSnapshotModel)
 def trading_snapshot(request: Request) -> TradingSnapshotModel:
+    """Return the full monitor snapshot (positions, quotes, PnL, orders)."""
     settings = get_settings()
     risk_engine = request.app.state.trading_risk
     ledger = _ledger(request)
@@ -393,6 +431,7 @@ def trading_snapshot(request: Request) -> TradingSnapshotModel:
 
 @router.get("/readiness", response_model=TradingReadinessModel)
 def trading_readiness() -> TradingReadinessModel:
+    """Return the live-trading readiness assessment (creds, pack, market state)."""
     settings = get_settings()
     with KalshiPublicMarketDataClient(base_url=settings.kalshi_market_data_base_url) as market_client:
         readiness = build_trading_readiness(settings=settings, market_client=market_client)
@@ -401,22 +440,26 @@ def trading_readiness() -> TradingReadinessModel:
 
 @router.get("/brain/status", response_model=TradingBrainSyncModel)
 def trading_brain_status() -> TradingBrainSyncModel:
+    """Return the last persisted decision-brain status for the trading UI."""
     settings = get_settings()
     try:
         result = load_last_brain_status(settings) or default_brain_status(settings)
-    except Exception as exc:  # noqa: BLE001 - status should degrade into a visible API error
-        raise HTTPException(status_code=500, detail=f"Decision brain status unavailable: {exc}") from exc
+    except Exception:  # noqa: BLE001 - status should degrade into a visible API error
+        logger.exception("Decision brain status unavailable")
+        raise HTTPException(status_code=500, detail="Decision brain status unavailable") from None
     return _brain_sync_model(result)
 
 
 @router.post("/brain/sync", response_model=TradingBrainSyncModel)
 def trading_brain_sync(request: Request, payload: TradingBrainSyncRequestModel) -> TradingBrainSyncModel:
+    """Rebuild the prop board and re-sync the decision brain for the requested date."""
     settings = get_settings()
     board_cache = getattr(request.app.state, "board_cache", None) or BoardCache()
     try:
         board_entry = board_cache.populate(payload.board_date)
-    except Exception as exc:  # noqa: BLE001 - caller needs a clear setup failure
-        raise HTTPException(status_code=500, detail=f"Could not build prop board for decision brain: {exc}") from exc
+    except Exception:  # noqa: BLE001 - caller needs a clear setup failure
+        logger.exception("Could not build prop board for decision brain")
+        raise HTTPException(status_code=500, detail="Could not build prop board for decision brain") from None
     result = sync_decision_brain(
         settings=settings,
         board_entry=board_entry,
@@ -434,12 +477,14 @@ def trading_recent_fills(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[FillModel]:
+    """Return the most recent trade fills, newest first, up to ``limit``."""
     ledger = _ledger(request)
     return [FillModel.from_dataclass(fill) for fill in ledger.recent_fills(limit=limit)]
 
 
 @router.post("/kill-switch", response_model=TradingPnlModel)
 def trading_kill_switch(request: Request) -> TradingPnlModel:
+    """Engage the trading kill-switch and halt the loop, returning PnL state."""
     risk_engine = request.app.state.trading_risk
     risk_engine.set_killed(True)
     factory = getattr(request.app.state, "trading_session_factory", None)
@@ -453,12 +498,14 @@ def trading_kill_switch(request: Request) -> TradingPnlModel:
 
 @router.get("/loop/status", response_model=TradingLoopStatusModel)
 def trading_loop_status(request: Request) -> TradingLoopStatusModel:
+    """Return the current state of the background trading loop process."""
     controller = request.app.state.trading_loop_controller
     return _loop_status_model(controller.status())
 
 
 @router.post("/loop/start", response_model=TradingLoopStatusModel)
 def trading_loop_start(request: Request, payload: TradingLoopStartRequestModel | None = None) -> TradingLoopStatusModel:
+    """Build the board and start the background trading loop for the date."""
     settings = get_settings()
     body = payload or TradingLoopStartRequestModel()
     board_cache = getattr(request.app.state, "board_cache", None) or BoardCache()
@@ -467,8 +514,9 @@ def trading_loop_start(request: Request, payload: TradingLoopStartRequestModel |
         raise HTTPException(status_code=500, detail="Trading session factory is not configured.")
     try:
         board_entry = board_cache.populate(body.board_date)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Could not build prop board for loop start: {exc}") from exc
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not build prop board for loop start")
+        raise HTTPException(status_code=500, detail="Could not build prop board for loop start") from None
     controller = request.app.state.trading_loop_controller
     status = controller.start(
         settings=settings,
@@ -519,9 +567,7 @@ def _limits_path() -> Path:
 def trading_picks_toggle(
     request: Request, candidate_id: str, body: PickToggleRequestModel
 ) -> TradingLiveSnapshotModel:
-    from app.trading.selections import SelectionStore
-    from app.trading.stream_publisher import TradingStreamPublisher
-
+    """Include or exclude a single candidate pick and return the live snapshot."""
     store = SelectionStore.load(_selections_path(request))
     store.set_selection(_board_date_today(), candidate_id, body.included)
     store.save(today=_board_date_today())
@@ -538,9 +584,7 @@ def trading_picks_toggle(
 def trading_picks_bulk(
     request: Request, body: PickBulkRequestModel
 ) -> TradingLiveSnapshotModel:
-    from app.trading.selections import SelectionStore
-    from app.trading.stream_publisher import TradingStreamPublisher
-
+    """Apply a bulk pick action (select/deselect/top-n) and return the snapshot."""
     snapshot = _build_live_snapshot(request)
     store = SelectionStore.load(_selections_path(request))
     today = _board_date_today()
@@ -578,9 +622,7 @@ def trading_picks_bulk(
 def trading_thresholds_update(
     request: Request, body: ThresholdsUpdateRequestModel
 ) -> TradingLiveSnapshotModel:
-    from app.trading.selections import SelectionStore
-    from app.trading.stream_publisher import TradingStreamPublisher
-
+    """Update the hit/edge selection thresholds and return the live snapshot."""
     store = SelectionStore.load(_selections_path(request))
     store.update_thresholds(min_hit_pct=body.min_hit_pct, min_edge_bps=body.min_edge_bps)
     store.save(today=_board_date_today())
@@ -597,8 +639,7 @@ def trading_thresholds_update(
 def trading_limits_update(
     request: Request, body: LimitsUpdateRequestModel
 ) -> LimitsResponseModel:
-    from app.trading.stream_publisher import TradingStreamPublisher
-
+    """Persist updated risk limits from the UI and return the new values."""
     path = _limits_path()
     existing: dict[str, Any] = (
         json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
@@ -629,6 +670,7 @@ def trading_limits_update(
 
 @router.get("/limits", response_model=LimitsResponseModel)
 def trading_limits_read(request: Request) -> LimitsResponseModel:
+    """Return the currently configured risk limits."""
     path = _limits_path()
     existing: dict[str, Any] = (
         json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
@@ -645,8 +687,7 @@ def trading_limits_read(request: Request) -> LimitsResponseModel:
 
 @router.get("/wallet", response_model=WalletBalanceResponseModel)
 def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
-    from app.trading.wallet_init import _extract_balance
-
+    """Fetch the live Kalshi wallet balance for the trading UI."""
     settings = get_settings()
     if not (settings.kalshi_api_key_id and settings.kalshi_private_key_path):
         raise HTTPException(status_code=400, detail="Kalshi credentials not configured")
@@ -658,9 +699,10 @@ def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
     )
     try:
         raw = client.get_balance()
-        balance = _extract_balance(raw)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Kalshi balance fetch failed: {exc}") from exc
+        balance = extract_balance(raw)
+    except Exception:
+        logger.exception("Kalshi balance fetch failed")
+        raise HTTPException(status_code=502, detail="Kalshi balance fetch failed") from None
     finally:
         client.close()
     return WalletBalanceResponseModel(balance=balance, fetched_at=datetime.now(UTC))
@@ -668,6 +710,7 @@ def trading_wallet_balance(request: Request) -> WalletBalanceResponseModel:
 
 @router.post("/intent", response_model=TradingIntentResponseModel)
 def trading_intent(request: Request, payload: TradingIntentRequestModel) -> TradingIntentResponseModel:
+    """Evaluate and (if accepted) execute a manual trading intent."""
     ledger = _ledger(request)
     risk_engine = request.app.state.trading_risk
     adapter = request.app.state.trading_adapter

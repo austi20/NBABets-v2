@@ -14,7 +14,7 @@ class _BalanceClient(Protocol):
     def get_balance(self) -> Any: ...
 
 
-def _extract_balance(raw: Any) -> float:
+def extract_balance(raw: Any) -> float:
     """Extract a dollar-denominated float from a Kalshi balance response.
 
     The Kalshi /portfolio/balance endpoint returns a dict with a ``balance``
@@ -45,7 +45,7 @@ def init_budget_from_wallet(
         return
     try:
         raw = client.get_balance()
-        balance = _extract_balance(raw)
+        balance = extract_balance(raw)
     except Exception as exc:  # noqa: BLE001
         _log.warning("wallet-init: balance fetch failed: %s", exc)
         return

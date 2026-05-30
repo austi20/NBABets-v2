@@ -108,7 +108,12 @@ def _default_app_data_dir() -> Path:
     local_app_data = getenv("LOCALAPPDATA")
     if local_app_data:
         return Path(local_app_data) / "NBAPropEngine"
-    return Path.home() / ".nba-prop-engine"
+    # Non-Windows / no LOCALAPPDATA: use the platform-idiomatic user data dir
+    # (e.g. ~/.local/share on Linux, ~/Library/Application Support on macOS)
+    # instead of a bare home dotdir.
+    from platformdirs import user_data_dir
+
+    return Path(user_data_dir("NBAPropEngine", appauthor=False))
 
 
 def _default_database_url() -> str:

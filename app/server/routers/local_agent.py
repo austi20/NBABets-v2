@@ -8,6 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.config.settings import get_settings
 from app.db.session import session_scope
 from app.server.schemas.local_agent import LocalAgentPolicyRequest, LocalAgentStatusModel
+from app.server.sse import SSE_RECONNECT_MS
 from app.services.insights import build_local_ai_terminal_text, load_local_agent_status
 from app.services.local_autonomy.policy_state import update_local_agent_policy_state
 
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/local-agent", tags=["local-agent"])
 
 @router.get("/status", response_model=LocalAgentStatusModel)
 def local_agent_status() -> LocalAgentStatusModel:
+    """Return the current local autonomy agent status and policy state."""
     with session_scope() as session:
         status = load_local_agent_status(session)
     return LocalAgentStatusModel.from_dataclass(status)
@@ -23,6 +25,7 @@ def local_agent_status() -> LocalAgentStatusModel:
 
 @router.get("/terminal")
 async def local_agent_terminal_stream(request: Request) -> EventSourceResponse:
+    """Stream the local AI terminal output as server-sent events."""
     settings = get_settings()
 
     async def event_generator():
@@ -38,7 +41,7 @@ async def local_agent_terminal_stream(request: Request) -> EventSourceResponse:
                 )
             if text != previous_text:
                 previous_text = text
-                yield {"event": "terminal", "data": text}
+                yield {"event": "terminal", "data": text, "retry": SSE_RECONNECT_MS}
             await asyncio.sleep(1.0)
 
     return EventSourceResponse(event_generator())
@@ -46,6 +49,7 @@ async def local_agent_terminal_stream(request: Request) -> EventSourceResponse:
 
 @router.post("/policy", response_model=LocalAgentStatusModel)
 def set_local_agent_policy(payload: LocalAgentPolicyRequest) -> LocalAgentStatusModel:
+    """Update the local autonomy agent enable/auto-execute policy."""
     if payload.policy == "enable":
         update_local_agent_policy_state(
             enabled=True,

@@ -159,6 +159,7 @@ def list_props(
     show_all: bool = Query(default=False),
     flatten_by_book: bool = Query(default=False),
 ) -> PropListResponseModel:
+    """Return a filtered, sorted, paginated list of prop opportunities."""
     entry = board_cache_entry_or_503(request)
     settings = get_settings()
     disabled_markets = settings.disabled_markets
@@ -284,6 +285,7 @@ def prop_detail(
     market: str,
     line: float,
 ) -> PropWithInsightModel:
+    """Return a single prop opportunity matched by player, market, and line."""
     entry = board_cache_entry_or_503(request)
     for opportunity in entry.opportunities:
         if opportunity.player_id != player_id:
@@ -302,4 +304,5 @@ def prop_detail(
 
 @router.get("/rotation-audit/{game_id}", response_model=dict[str, Any])
 def rotation_audit_detail(game_id: int) -> dict[str, Any]:
+    """Return the minutes-redistribution audit for the given game."""
     return rotation_audit.get_redistribution(game_id)

@@ -24,6 +24,7 @@ dependencies = [
   "numpy>=2.3.0",
   "nba_api>=1.11.4",
   "pandas>=2.3.0",
+  "platformdirs>=4.0.0",
   "pyarrow>=18.0.0",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.10.0",

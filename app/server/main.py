@@ -48,6 +48,8 @@ from app.trading.stream_publisher import TradingStreamPublisher
 from app.trading.ws_consumer import KalshiWsCredentials
 from app.trading.ws_service import KalshiMarketService
 
+logger = logging.getLogger(__name__)
+
 _ALLOWED_ORIGINS = (
     "tauri://localhost",
     "http://tauri.localhost",
@@ -164,8 +166,6 @@ def _configure_sidecar_logging() -> None:
 
 
 def _install_exception_logging() -> None:
-    logger = logging.getLogger("nba.sidecar")
-
     def _sys_hook(exc_type, exc, tb) -> None:
         logger.error("Uncaught exception in sidecar main thread")
         logger.error("".join(traceback.format_exception(exc_type, exc, tb)).rstrip())
@@ -211,7 +211,7 @@ def _resolve_app_token(app_token: str | None, *, rotate: bool = False) -> str:
         except OSError:
             pass
     except OSError as exc:
-        logging.getLogger("nba.sidecar").warning("app_token persist failed: %s", exc)
+        logger.warning("app_token persist failed: %s", exc)
     return token
 
 
@@ -252,7 +252,7 @@ def create_app(
                 finally:
                     _wc.close()
             except Exception as exc:  # noqa: BLE001
-                logging.getLogger("nba.sidecar").warning("wallet-init failed: %s", exc)
+                logger.warning("wallet-init failed: %s", exc)
         await brain_resync.start()
         try:
             yield
@@ -287,7 +287,7 @@ def create_app(
                     reason="startup data refresh in progress",
                 )
             except Exception as exc:  # noqa: BLE001 - startup should continue while surfacing stale-pack risk
-                logging.getLogger("nba.sidecar").warning("Could not clear decision pack at startup: %s", exc)
+                logger.warning("Could not clear decision pack at startup: %s", exc)
 
     def _on_startup_success(result) -> None:  # noqa: ANN001
         resolved_board_cache.clear()
@@ -308,14 +308,14 @@ def create_app(
                     resolve_markets=True,
                     build_pack=True,
                 )
-                logging.getLogger("nba.sidecar").info(
+                logger.info(
                     "Decision brain startup sync: state=%s selected=%s ticker=%s",
                     brain_result.state,
                     brain_result.selected_candidate_id,
                     brain_result.selected_ticker,
                 )
             except Exception as exc:  # noqa: BLE001 - startup must still finish if brain sync blocks
-                logging.getLogger("nba.sidecar").warning("Decision brain startup sync failed: %s", exc)
+                logger.warning("Decision brain startup sync failed: %s", exc)
 
     resolved_startup_coordinator = startup_coordinator or StartupCoordinator(
         on_start=_on_startup_start,
@@ -357,7 +357,7 @@ def create_app(
                 build_pack=True,
             )
         except Exception as exc:  # noqa: BLE001
-            logging.getLogger("nba.sidecar").warning("auto-resync failed: %s", exc)
+            logger.warning("auto-resync failed: %s", exc)
             return default_brain_status(settings)
 
     def _current_mode() -> str:
@@ -423,7 +423,7 @@ def cli() -> None:
     args = parser.parse_args()
     _configure_sidecar_logging()
     _install_exception_logging()
-    logging.getLogger("nba.sidecar").info("Starting sidecar on %s:%s", args.host, args.port)
+    logger.info("Starting sidecar on %s:%s", args.host, args.port)
 
     if sys.platform == "win32":
         try:

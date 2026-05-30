@@ -12,6 +12,7 @@ MAX_PLAYER_IDS = 500
 
 @router.get("/providers", response_model=list[ProviderStatusModel])
 def provider_insights(request: Request) -> list[ProviderStatusModel]:
+    """Return per-provider data freshness/health badges for the board."""
     entry = board_cache_entry_or_503(request)
     return [ProviderStatusModel.from_dataclass(status) for status in entry.provider_statuses]
 
@@ -21,6 +22,7 @@ def injury_insights(
     request: Request,
     player_ids: str | None = Query(default=None),
 ) -> dict[int, InjuryStatusBadgeModel]:
+    """Return injury-status badges, optionally filtered to the given player ids."""
     requested_ids: set[int] | None = None
     if player_ids is not None and player_ids.strip() != "":
         parts = [part.strip() for part in player_ids.split(",") if part.strip()]

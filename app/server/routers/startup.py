@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Request, Response, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.server.schemas.startup import StartupRunRequest, StartupSnapshotModel
+from app.server.sse import SSE_RECONNECT_MS
 from app.services.startup import StartupCoordinator
 
 router = APIRouter(prefix="/api/startup", tags=["startup"])
@@ -21,6 +22,7 @@ def run_startup(
     request: Request,
     body: Annotated[StartupRunRequest | None, Body()] = None,
 ) -> dict[str, str]:
+    """Kick off an async startup/refresh run and return its run id."""
     coordinator = _coordinator_from_request(request)
     effective = body if body is not None else StartupRunRequest()
     run_id = coordinator.run_async(full_refresh=bool(effective.full_refresh))
@@ -30,6 +32,7 @@ def run_startup(
 
 @router.get("/snapshot", response_model=StartupSnapshotModel)
 def startup_snapshot(request: Request) -> StartupSnapshotModel:
+    """Return the current startup progress snapshot, launching a run if idle."""
     coordinator = _coordinator_from_request(request)
     snapshot = coordinator.snapshot()
     if (
@@ -44,6 +47,7 @@ def startup_snapshot(request: Request) -> StartupSnapshotModel:
 
 @router.get("/stream")
 async def startup_stream(request: Request) -> Response:
+    """Stream startup progress snapshots as server-sent events until done."""
     coordinator = _coordinator_from_request(request)
 
     async def event_generator() -> Any:
@@ -57,7 +61,7 @@ async def startup_stream(request: Request) -> Response:
             serialized = payload.model_dump_json()
             if serialized != previous_payload:
                 previous_payload = serialized
-                yield {"event": "snapshot", "data": serialized}
+                yield {"event": "snapshot", "data": serialized, "retry": SSE_RECONNECT_MS}
 
             if snapshot.completed or snapshot.failed:
                 break

@@ -26,6 +26,7 @@ def same_game_parlays(
     game_id: int | None = Query(default=None),
     book: str = Query(default=""),
 ) -> SameGameParlaysResponseModel:
+    """Return same-game parlay suggestions grouped by book, leg count, and game."""
     entry = board_cache_entry_or_503(request)
     sections: dict[str, dict[str, dict[str, list[ParlayWithInsightModel]]]] = {}
     for sportsbook_key, by_leg_count in entry.same_game_sections_by_book.items():
@@ -61,6 +62,7 @@ def multi_game_parlays(
     request: Request,
     book: str = Query(default=""),
 ) -> MultiGameParlaysResponseModel:
+    """Return multi-game parlay suggestions grouped by book and leg count."""
     entry = board_cache_entry_or_503(request)
     sections: dict[str, dict[str, list[ParlayWithInsightModel]]] = {}
     for sportsbook_key, by_leg_count in entry.multi_game_sections_by_book.items():
