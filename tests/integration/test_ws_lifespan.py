@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import pytest
@@ -23,18 +22,22 @@ def _write_key(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def reset_settings():
-    import app.config.settings as settings_mod
+    from app.config.settings import get_settings
+
     yield
-    importlib.reload(settings_mod)
+    get_settings.cache_clear()
 
 
 def _reload_create_app():
-    import app.config.settings as settings_mod
-    import app.server.main as main_mod
+    # No module reload: create_app reads get_settings() at call time, so a
+    # cleared settings cache is enough to pick up the test's monkeypatched env.
+    # Reloading app.server.main here forked get_settings/create_app and leaked
+    # divergent objects into other test modules that import those symbols.
+    from app.config.settings import get_settings
+    from app.server.main import create_app
 
-    importlib.reload(settings_mod)
-    importlib.reload(main_mod)
-    return main_mod.create_app
+    get_settings.cache_clear()
+    return create_app
 
 
 def test_lifespan_does_not_start_service_when_ws_disabled(tmp_path, reset_settings, monkeypatch):

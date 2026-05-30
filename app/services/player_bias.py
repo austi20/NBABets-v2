@@ -53,14 +53,19 @@ def _provider_id_for_db(db_player_id: int) -> str | None:
     """Translate a local DB player_id to the provider_player_id used in the offsets file."""
     # Local-import to avoid pulling SQLAlchemy at module import time.
     from sqlalchemy import select
+    from sqlalchemy.exc import SQLAlchemyError
 
     from app.db.session import session_scope
     from app.models.all import Player
 
-    with session_scope() as session:
-        provider_id = session.scalar(
-            select(Player.provider_player_id).where(Player.player_id == db_player_id)
-        )
+    try:
+        with session_scope() as session:
+            provider_id = session.scalar(
+                select(Player.provider_player_id).where(Player.player_id == db_player_id)
+            )
+    except SQLAlchemyError as exc:  # informational lookup; never break the request path
+        _log.warning("player_bias: provider id lookup failed (%s); skipping per-player offset", exc)
+        return None
     if provider_id is None:
         return None
     return str(provider_id)

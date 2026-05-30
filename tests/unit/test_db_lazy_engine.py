@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib
-
 import pytest
 
 
@@ -10,9 +8,10 @@ def test_import_does_not_create_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
     import app.db.session as session_module
 
-    session_module = importlib.reload(session_module)
-
-    # Importing the module alone must not build an engine.
+    # The autouse isolation fixture (tests/conftest.py) resets the module
+    # globals to the unconfigured baseline before each test, so no engine
+    # should exist yet. Reloading the module here would fork SessionLocal and
+    # leak a divergent sessionmaker into other tests.
     assert session_module.engine is None
 
     # The engine is created lazily on first use.
