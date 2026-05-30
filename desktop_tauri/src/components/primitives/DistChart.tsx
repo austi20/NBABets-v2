@@ -37,6 +37,20 @@ export function DistChart({
   confidenceIntervalLow,
   confidenceIntervalHigh,
 }: DistChartProps) {
+  const inputsFinite =
+    Number.isFinite(projectedMean) &&
+    Number.isFinite(line) &&
+    (projectedVariance === null || Number.isFinite(projectedVariance));
+  if (!inputsFinite) {
+    return (
+      <div className="dist-chart">
+        <div className="dist-chart-meta">
+          <span className="tabular">Projection data unavailable</span>
+        </div>
+      </div>
+    );
+  }
+
   const points = buildDistribution(projectedMean, projectedVariance, line, {
     percentile25,
     percentile75,
