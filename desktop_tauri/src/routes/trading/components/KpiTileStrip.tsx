@@ -26,9 +26,14 @@ export function KpiTileStrip() {
 
   const { pnl, budget, picks, system } = snapshot.kpis;
 
+  const startEditing = () => {
+    setDraft(budget.max_open_notional.toFixed(2));
+    setEditing(true);
+  };
+
   const submitBudget = async () => {
     const value = Number.parseFloat(draft);
-    if (!Number.isFinite(value) || value <= 0) {
+    if (!Number.isFinite(value) || value <= 0 || value === budget.max_open_notional) {
       setEditing(false);
       return;
     }
@@ -59,7 +64,7 @@ export function KpiTileStrip() {
               autoFocus
               type="number"
               step="0.01"
-              defaultValue={budget.max_open_notional.toFixed(2)}
+              value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={submitBudget}
               onKeyDown={(e) => {
@@ -79,7 +84,7 @@ export function KpiTileStrip() {
         rightSlot={
           <button
             type="button"
-            onClick={() => setEditing((v) => !v)}
+            onClick={() => (editing ? void submitBudget() : startEditing())}
             style={{ background: "transparent", border: "none", color: "var(--trading-accent-budget)", fontSize: 9, cursor: "pointer", textDecoration: "underline" }}
           >
             {editing ? "save" : "edit"}
