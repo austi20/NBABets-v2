@@ -13,7 +13,6 @@ from app.db.models.trading import (
     TradingOrder,
     TradingPosition,
 )
-from app.server.main import _ensure_trading_tables
 
 
 def test_trading_models_create_tables() -> None:
@@ -57,8 +56,12 @@ def test_kill_switch_singleton_row() -> None:
         assert loaded.killed is False
 
 
-def test_ensure_trading_tables_adds_flatten_to_legacy_kill_switch(monkeypatch) -> None:
-    engine = create_engine("sqlite:///:memory:", future=True)
+def test_migration_adds_flatten_to_legacy_kill_switch(tmp_path) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db = tmp_path / "legacy.sqlite"
+    engine = create_engine(f"sqlite:///{db}", future=True)
     with engine.begin() as connection:
         connection.execute(
             text(
@@ -82,11 +85,13 @@ def test_ensure_trading_tables_adds_flatten_to_legacy_kill_switch(monkeypatch) -
             ),
             {"set_at": datetime.now(UTC)},
         )
+    engine.dispose()
 
-    monkeypatch.setattr("app.server.main.get_engine", lambda: engine)
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+    command.upgrade(cfg, "head")
 
-    _ensure_trading_tables()
-
+    engine = create_engine(f"sqlite:///{db}", future=True)
     columns = {column["name"] for column in inspect(engine).get_columns("trading_kill_switch")}
     assert "flatten" in columns
     with engine.connect() as connection:

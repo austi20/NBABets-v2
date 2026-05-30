@@ -13,25 +13,18 @@ from datetime import date
 from importlib import metadata
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import uvicorn
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
-from sqlalchemy import Table, inspect, text
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import make_url
 
 from app.config.settings import get_settings
-from app.db.base import Base
-from app.db.models.trading import (
-    TradingDailyPnL,
-    TradingFill,
-    TradingKillSwitch,
-    TradingOrder,
-    TradingPosition,
-)
-from app.db.session import SessionLocal, get_engine
+from app.db.session import SessionLocal, get_database_selection
 from app.server.auth import AppTokenMiddleware
 from app.server.routers.board import router as board_router
 from app.server.routers.insights import router as insights_router
@@ -81,34 +74,18 @@ def _build_market_service() -> KalshiMarketService:
     )
 
 
-def _ensure_legacy_trading_schema(engine: Engine) -> None:
-    inspector = inspect(engine)
-    if not inspector.has_table(TradingKillSwitch.__tablename__):
-        return
+def _upgrade_database() -> None:
+    """Bring the active database to the latest Alembic revision.
 
-    kill_switch_columns = {
-        column["name"] for column in inspector.get_columns(TradingKillSwitch.__tablename__)
-    }
-    if "flatten" not in kill_switch_columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text("ALTER TABLE trading_kill_switch ADD COLUMN flatten BOOLEAN DEFAULT 0")
-            )
-
-
-def _ensure_trading_tables() -> None:
-    engine = get_engine()
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            cast(Table, TradingOrder.__table__),
-            cast(Table, TradingFill.__table__),
-            cast(Table, TradingPosition.__table__),
-            cast(Table, TradingKillSwitch.__table__),
-            cast(Table, TradingDailyPnL.__table__),
-        ],
-    )
-    _ensure_legacy_trading_schema(engine)
+    Runs against the URL the engine actually binds to (post-discovery), so the
+    migrations touch the same SQLite file the app reads. The baseline migration
+    is a no-op when a populated schema already exists.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", get_database_selection().url)
+    command.upgrade(cfg, "head")
 
 
 def _build_trading_risk() -> ExposureRiskEngine:
@@ -347,7 +324,7 @@ def create_app(
 
     app.state.startup_coordinator = resolved_startup_coordinator
     app.state.board_cache = resolved_board_cache
-    _ensure_trading_tables()
+    _upgrade_database()
     app.state.trading_session_factory = SessionLocal
     app.state.trading_ledger = InMemoryPortfolioLedger()
     app.state.trading_risk = _build_trading_risk()
