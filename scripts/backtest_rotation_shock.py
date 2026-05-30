@@ -222,8 +222,8 @@ def _simulate_row_metrics(
             ),
             minutes_std=float(max(row.get("predicted_minutes_std", row.get("minutes_volatility", 1.0)) or 1.0, 1.0)),
             market_key=market_key,
-            context=pipeline._simulation_context(row, market_key),
-            dist_family=pipeline._dist_family_for_market(market_key),
+            context=pipeline.simulation_context(row, market_key),
+            dist_family=pipeline.dist_family_for_market(market_key),
         )
         summary = distribution_summary_from_samples(samples, line_f)
         raw_over = float(summary.over_probability)
@@ -349,7 +349,7 @@ def _build_backtest_feature_frames(
     train_marked["_phase7_split"] = "train"
     eval_marked["_phase7_split"] = "eval"
     combined_raw = pd.concat([train_marked, eval_marked], ignore_index=True, sort=False)
-    feature_set = pipeline._features.build_training_frame(combined_raw)
+    feature_set = pipeline.features.build_training_frame(combined_raw)
     frame = feature_set.frame.copy()
     if "_phase7_split" not in frame.columns:
         raise RuntimeError("Backtest split marker was dropped during feature construction.")
@@ -433,25 +433,25 @@ def _evaluate_mode(
     train = _apply_feature_defaults(train, base_feature_columns)
     evaluate = _apply_feature_defaults(evaluate, base_feature_columns)
 
-    minutes_model = MinutesModel(pipeline._settings.training_seed)
+    minutes_model = MinutesModel(pipeline.settings.training_seed)
     minutes_model.fit(train, base_feature_columns)
     train = _with_minutes_predictions(train, minutes_model.predict(train), minutes_model.predict_uncertainty(train))
     evaluate = _with_minutes_predictions(evaluate, minutes_model.predict(evaluate), minutes_model.predict_uncertainty(evaluate))
-    train = pipeline._features.apply_post_minutes_features(train, minutes_column="predicted_minutes")
-    evaluate = pipeline._features.apply_post_minutes_features(evaluate, minutes_column="predicted_minutes")
+    train = pipeline.features.apply_post_minutes_features(train, minutes_column="predicted_minutes")
+    evaluate = pipeline.features.apply_post_minutes_features(evaluate, minutes_column="predicted_minutes")
 
     with _rotation_mode(mode):
-        train = pipeline._apply_rotation_treatment_mode(train, write_audit=False)
-        evaluate = pipeline._apply_rotation_treatment_mode(
+        train = pipeline.apply_rotation_treatment_mode(train, write_audit=False)
+        evaluate = pipeline.apply_rotation_treatment_mode(
             evaluate, write_audit=False, historical_frame=train
         )
 
-    stat_features = _stat_feature_columns(pipeline._features, train, base_feature_columns)
+    stat_features = _stat_feature_columns(pipeline.features, train, base_feature_columns)
     train = _apply_feature_defaults(train, stat_features)
     evaluate = _apply_feature_defaults(evaluate, stat_features)
 
-    models = StatModelSuite(pipeline._settings.training_seed, l1_alpha=pipeline._l1_alpha)
-    models.fit(train, stat_features, l1_alpha=pipeline._l1_alpha)
+    models = StatModelSuite(pipeline.settings.training_seed, l1_alpha=pipeline.l1_alpha)
+    models.fit(train, stat_features, l1_alpha=pipeline.l1_alpha)
 
     diagnostics = _aggregate_treatment_diagnostics(evaluate)
     diagnostics["mode_env"] = mode

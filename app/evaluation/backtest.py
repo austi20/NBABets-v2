@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 import numpy as np
 import pandas as pd
@@ -34,6 +34,23 @@ MIN_TRAIN_QUOTES_PER_MARKET = 50
 MIN_VALIDATION_QUOTES_PER_MARKET = 20
 
 
+class HistoricalQuoteLoader(Protocol):
+    """Minimal loader interface RollingOriginBacktester.run() depends on.
+
+    DatasetLoader satisfies this structurally; backtest scripts may inject a
+    surrogate (e.g. one backed by parquet quotes) via the public `loader`
+    setter without subclassing DatasetLoader.
+    """
+
+    def load_historical_player_games(
+        self, *, prediction_buffer_minutes: int = ...
+    ) -> pd.DataFrame: ...
+
+    def load_historical_bet_quotes(
+        self, *, prediction_buffer_minutes: int = ...
+    ) -> pd.DataFrame: ...
+
+
 @dataclass(frozen=True)
 class BacktestArtifacts:
     summary_csv: Path
@@ -53,11 +70,20 @@ class RollingOriginBacktester:
     ) -> None:
         self._session = session
         self._settings = get_settings()
-        self._loader = DatasetLoader(session)
+        self._loader: HistoricalQuoteLoader = DatasetLoader(session)
         self._k_seasons = max(1, int(DEFAULT_K_SEASONS if k_seasons is None else k_seasons))
         self._l1_alpha = max(0.0, float(DEFAULT_L1_ALPHA if l1_alpha is None else l1_alpha))
         self._dist_family_override: DistFamily | None = cast(DistFamily | None, dist_family)
         self._features = FeatureEngineer(k_seasons=self._k_seasons)
+
+    @property
+    def loader(self) -> HistoricalQuoteLoader:
+        """Loader used to source historical games and quotes."""
+        return self._loader
+
+    @loader.setter
+    def loader(self, value: HistoricalQuoteLoader) -> None:
+        self._loader = value
 
     def run(
         self,

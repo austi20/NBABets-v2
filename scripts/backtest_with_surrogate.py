@@ -29,6 +29,11 @@ class _SurrogateQuoteLoader:
     def load_historical_bet_quotes(self, *_: object, **__: object) -> pd.DataFrame:
         return self._quote_inventory.copy()
 
+    def load_historical_player_games(self, *_: object, **__: object) -> pd.DataFrame:
+        # Unused: the backtester is always driven with an explicit `historical`
+        # frame, so this surrogate never sources games itself.
+        return pd.DataFrame()
+
 
 def _parse_seasons(raw: str) -> list[int]:
     return [int(part.strip()) for part in raw.split(",") if part.strip()]
@@ -254,7 +259,7 @@ def main() -> None:
         historical = _attach_surrogate_lines_to_historical(historical, surrogate_lines)
 
         backtester = RollingOriginBacktester(session)
-        backtester._loader = _SurrogateQuoteLoader(quote_inventory)  # type: ignore[attr-defined]
+        backtester.loader = _SurrogateQuoteLoader(quote_inventory)
         result = backtester.run(
             historical=historical,
             train_days=max(14, int(args.train_days)),

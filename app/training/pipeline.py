@@ -181,6 +181,44 @@ class TrainingPipeline:
             self._settings.app_env,
         )
 
+    # ------------------------------------------------------------------
+    # Public API consumed by backtest scripts (stable, no leading underscore).
+    # ------------------------------------------------------------------
+    @property
+    def features(self) -> FeatureEngineer:
+        """Feature engineer used to build training/inference frames."""
+        return self._features
+
+    @property
+    def settings(self) -> Any:
+        """Resolved application settings for this pipeline run."""
+        return self._settings
+
+    @property
+    def l1_alpha(self) -> float:
+        """L1 regularization strength applied to the stat model suite."""
+        return self._l1_alpha
+
+    def dist_family_for_market(self, market_key: str) -> DistFamily:
+        """Distribution family used to price the given market."""
+        return self._dist_family_for_market(market_key)
+
+    def simulation_context(self, row: dict[str, Any], market_key: str) -> dict[str, float]:
+        """Per-row simulation context for Monte Carlo sampling."""
+        return self._simulation_context(row, market_key)
+
+    def apply_rotation_treatment_mode(
+        self,
+        frame: pd.DataFrame,
+        *,
+        write_audit: bool,
+        historical_frame: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        """Apply the configured rotation-shock treatment to a feature frame."""
+        return self._apply_rotation_treatment_mode(
+            frame, write_audit=write_audit, historical_frame=historical_frame
+        )
+
     def train(
         self,
         progress_callback: ProgressCallback | None = None,
