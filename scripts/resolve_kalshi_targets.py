@@ -257,9 +257,15 @@ def _market_snapshot(target: dict[str, Any], market: dict[str, Any], reasons: st
     )
     target_id = str(target["target_id"])
     unique_target_id = f"{target_id}::{market['ticker']}" if enumerate_thresholds else target_id
+    if enumerate_thresholds:
+        match_quality = "enumerated_threshold"
+    elif "line" in reasons:
+        match_quality = "exact"
+    else:
+        match_quality = "text_only"
     entry: dict[str, Any] = {
         "target_id": unique_target_id,
-        "base_target_id": target_id if enumerate_thresholds else None,
+        "base_target_id": target_id,
         "market_key": target["market_key"],
         "game_date": target["game_date"],
         "player_id": target.get("player_id"),
@@ -280,7 +286,7 @@ def _market_snapshot(target: dict[str, Any], market: dict[str, Any], reasons: st
         "yes_bid_dollars": market.get("yes_bid_dollars"),
         "yes_ask_dollars": market.get("yes_ask_dollars"),
         "matched_at": datetime.now(UTC).isoformat(),
-        "match_quality": "enumerated_threshold" if enumerate_thresholds else "exact" if "line" in reasons else reasons,
+        "match_quality": match_quality,
         "pricing_source": "projection_distribution" if enumerate_thresholds else "target_line_match",
     }
     entry = {key: value for key, value in entry.items() if value is not None}
