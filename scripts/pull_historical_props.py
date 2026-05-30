@@ -7,7 +7,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -36,7 +36,7 @@ async def get_json(client: httpx.AsyncClient, url: str, params: dict) -> dict:
                 continue
             r.raise_for_status()
             return r.json()
-        except Exception as e:
+        except httpx.HTTPError as e:
             last_err = e
             await asyncio.sleep(1)
     raise RuntimeError(f"giving up on {url} after retries: {last_err}")
@@ -49,7 +49,7 @@ async def pull_games(client, headers, start: date, end: date) -> list[dict]:
         data = await get_json(
             client,
             "https://api.balldontlie.io/v1/games",
-            params={"dates[]": [d.isoformat()], "per_page": 100, "Authorization": None},
+            params={"dates[]": [d.isoformat()], "per_page": 100},
         )
         for g in data.get("data") or []:
             if g.get("status") == "Final":
@@ -66,14 +66,11 @@ async def pull_props_for_game(client, headers, game_id: int) -> list[dict]:
         params = {"game_id": game_id, "per_page": 100}
         if cursor:
             params["cursor"] = cursor
-        try:
-            data = await get_json(
-                client,
-                "https://api.balldontlie.io/v2/odds/player_props",
-                params=params | {"_h": ""},  # placeholder; httpx will ignore
-            )
-        except RuntimeError:
-            return []
+        data = await get_json(
+            client,
+            "https://api.balldontlie.io/v2/odds/player_props",
+            params=params,
+        )
         rows.extend(data.get("data") or [])
         cursor = (data.get("meta") or {}).get("next_cursor")
         if not cursor:
@@ -126,7 +123,15 @@ async def main():
             if gid in cache["props_by_game"]:
                 continue
             t0 = time.time()
-            rows = await pull_props_for_game(client, None, int(gid))
+            try:
+                rows = await pull_props_for_game(client, None, int(gid))
+            except RuntimeError as exc:
+                # Fetch FAILED (exhausted retries) is not the same as 0 results.
+                # Skip caching so this game is retried on the next run instead
+                # of being permanently recorded as having no props.
+                print(f"  props [{i}/{total}] gid={gid} FETCH FAILED, will retry: {exc}")
+                await asyncio.sleep(THROTTLE_SECONDS)
+                continue
             cache["props_by_game"][gid] = rows
             if i % 20 == 0 or i == total:
                 print(f"  props [{i}/{total}] gid={gid} props={len(rows)} ({time.time()-t0:.1f}s)")
@@ -146,7 +151,7 @@ async def main():
             OUT_PATH.write_text(json.dumps(cache, indent=1), encoding="utf-8")
             await asyncio.sleep(THROTTLE_SECONDS)
 
-    cache["fetched_at"] = datetime.utcnow().isoformat()
+    cache["fetched_at"] = datetime.now(UTC).isoformat()
     OUT_PATH.write_text(json.dumps(cache, indent=1), encoding="utf-8")
     print(f"DONE. {len(cache['games'])} games, "
           f"{sum(len(v) for v in cache['props_by_game'].values())} prop snapshots, "
