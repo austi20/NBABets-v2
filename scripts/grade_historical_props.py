@@ -272,6 +272,9 @@ def main():
                 print(f"      line {b:>6}: n={n:>4} over={ov:.1f}% under={un:.1f}%")
 
     # Save CSV for further analysis
+    if not rows:
+        print("No graded rows; nothing to write.")
+        return
     out_csv = _REPO_ROOT / "historical_grading.csv"
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=rows[0].keys())
