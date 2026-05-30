@@ -1,12 +1,9 @@
 // desktop_tauri/src/routes/trading/api/actions.ts
 import { getAppToken, tradingSnapshotUrl } from "../../../api/client";
+import type { TradingRiskLimits } from "../../../api/client";
 import type { TradingLiveSnapshot } from "./types";
 
-type LimitsResponse = {
-  max_open_notional: number;
-  per_market_cap: number;
-  daily_loss_cap: number;
-  reject_cooldown_seconds: number;
+type LimitsResponse = TradingRiskLimits & {
   per_order_cap_override: number | null;
   wallet_init_done_at: string | null;
 };
@@ -39,7 +36,12 @@ const tradingFetch = async <T>(path: string, init?: RequestInit): Promise<T> => 
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}: ${path}`);
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "unknown parse error";
+    throw new Error(`Failed to parse response from ${path}: ${detail}`);
+  }
 };
 
 export const tradingActions = {

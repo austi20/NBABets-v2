@@ -100,27 +100,9 @@ function NavItem({
     <Link
       to={item.to}
       aria-label={item.label}
-      className="flex items-center gap-3 h-10 px-3 rounded-lg transition-colors duration-150 shrink-0 outline-none"
-      style={{
-        backgroundColor: active ? "var(--accent-glow)" : "transparent",
-        color: active ? "var(--color-crimson)" : "var(--color-fg-secondary)",
-        borderLeft: active ? `2px solid var(--color-crimson)` : "2px solid transparent",
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          (e.currentTarget as HTMLElement).style.backgroundColor =
-            "var(--color-surface-3)";
-          (e.currentTarget as HTMLElement).style.color =
-            "var(--color-fg-primary)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
-          (e.currentTarget as HTMLElement).style.color =
-            "var(--color-fg-secondary)";
-        }
-      }}
+      className={`nav-rail-item flex items-center gap-3 h-10 px-3 rounded-lg transition-colors duration-150 shrink-0 outline-none${
+        active ? " nav-rail-item-active" : ""
+      }`}
     >
       <span className="shrink-0">{item.icon}</span>
       {expanded && (

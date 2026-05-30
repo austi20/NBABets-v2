@@ -1570,6 +1570,23 @@
       grid-template-columns: 1fr;
     }
   }
+
+  .nav-rail-item {
+    color: var(--color-fg-secondary);
+    background-color: transparent;
+    border-left: 2px solid transparent;
+  }
+
+  .nav-rail-item:hover:not(.nav-rail-item-active) {
+    background-color: var(--color-surface-3);
+    color: var(--color-fg-primary);
+  }
+
+  .nav-rail-item-active {
+    color: var(--color-crimson);
+    background-color: var(--accent-glow);
+    border-left: 2px solid var(--color-crimson);
+  }
 }
 
 /* ---- Trading terminal design tokens (Phase 5) ---- */

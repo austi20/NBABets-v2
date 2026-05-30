@@ -1,9 +1,10 @@
 // desktop_tauri/src/routes/trading/components/EventLogStrip.tsx
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTradingStore, selectEventLog } from "../store";
 
 export function EventLogStrip() {
   const log = useTradingStore(selectEventLog);
+  const reversedLog = useMemo(() => [...log].reverse(), [log]);
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
 
@@ -30,7 +31,7 @@ export function EventLogStrip() {
           userScrolledRef.current = el.scrollTop > 16;
         }}
       >
-        {[...log].reverse().map((line) => (
+        {reversedLog.map((line) => (
           <div key={line.cursor} className={`log-${line.level}`}>
             [{line.timestamp.slice(11, 19)}] {line.level}  {line.message}
           </div>

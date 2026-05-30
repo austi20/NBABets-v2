@@ -121,6 +121,7 @@ export function LimitsModal() {
           setError(err instanceof Error ? err.message : "failed to load limits");
         });
     }
+    // tradingActions is a stable module-level singleton; only `open` should retrigger the load.
   }, [open]);
 
   const refreshWallet = async () => {

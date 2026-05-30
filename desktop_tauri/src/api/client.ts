@@ -125,12 +125,17 @@ export type BoardAvailability = {
   has_pregame_options: boolean;
 };
 
-export type TradingActiveLimits = {
-  per_order_cap: number;
+// Shared numeric risk-limit fields returned by both /api/trading/pnl
+// (active_limits) and /api/trading/limits. Each endpoint adds its own extras.
+export type TradingRiskLimits = {
   per_market_cap: number;
   max_open_notional: number;
   daily_loss_cap: number;
   reject_cooldown_seconds: number;
+};
+
+export type TradingActiveLimits = TradingRiskLimits & {
+  per_order_cap: number;
 };
 
 export type TradingPnl = {

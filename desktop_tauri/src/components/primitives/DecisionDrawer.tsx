@@ -322,9 +322,6 @@ function americanToDecimal(odds: number): number {
 
 function probabilityToAmerican(probability: number): number | null {
   const p = Math.max(0.0001, Math.min(0.9999, probability));
-  if (!Number.isFinite(p)) {
-    return null;
-  }
   if (p >= 0.5) {
     return -Math.round((100 * p) / (1 - p));
   }

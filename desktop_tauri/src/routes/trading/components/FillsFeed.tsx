@@ -1,6 +1,7 @@
 // desktop_tauri/src/routes/trading/components/FillsFeed.tsx
 import { useEffect, useRef, useState } from "react";
 import { useTradingStore } from "../store";
+import { fmtDollarSigned } from "../format";
 import type { TradingFill } from "../api/types";
 
 const EMPTY: TradingFill[] = [];
@@ -16,13 +17,14 @@ export function FillsFeed() {
     for (const id of current) {
       if (!previousIds.current.has(id)) novel.add(id);
     }
-    if (novel.size > 0 && previousIds.current.size > 0) {
-      setFlashIds(novel);
-      const timer = setTimeout(() => setFlashIds(new Set()), 220);
-      previousIds.current = current;
-      return () => clearTimeout(timer);
-    }
+    const hadPrevious = previousIds.current.size > 0;
     previousIds.current = current;
+    if (novel.size === 0 || !hadPrevious) {
+      return () => {};
+    }
+    setFlashIds(novel);
+    const timer = setTimeout(() => setFlashIds(new Set()), 220);
+    return () => clearTimeout(timer);
   }, [fills]);
 
   return (
@@ -39,15 +41,15 @@ export function FillsFeed() {
         <div className="mono" style={{ background: "var(--trading-surface)", borderRadius: 6, padding: 10, fontSize: 10 }}>
           {fills.map((fill) => (
             <div
-              key={fill.fill_id}
+              key={fill.fill_id || `${fill.market?.symbol ?? ""}-${fill.timestamp}`}
               className={flashIds.has(fill.fill_id ?? "") ? "trading-pulse-up" : ""}
               style={{ padding: "4px 0", borderBottom: "1px solid var(--trading-border)", display: "flex", justifyContent: "space-between" }}
             >
               <span>
                 <span style={{ color: "var(--trading-fg)" }}>{fill.market?.symbol ?? "—"}</span> · {fill.side ?? "—"} @ {fill.price?.toFixed(3) ?? "—"} · stake ${fill.stake?.toFixed(2) ?? "—"}
               </span>
-              <span style={{ color: (fill.realized_pnl ?? 0) >= 0 ? "var(--trading-accent-pnl)" : "var(--trading-accent-danger)" }}>
-                {fill.realized_pnl !== undefined ? `${fill.realized_pnl >= 0 ? "+" : ""}$${fill.realized_pnl.toFixed(2)}` : "—"}
+              <span style={{ color: fill.realized_pnl >= 0 ? "var(--trading-accent-pnl)" : "var(--trading-accent-danger)" }}>
+                {fmtDollarSigned(fill.realized_pnl)}
               </span>
             </div>
           ))}

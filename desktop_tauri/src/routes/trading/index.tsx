@@ -43,19 +43,13 @@ function TradingPageV2() {
 
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
         <CollapsedSection title="Resting Orders" count={snapshot?.resting_orders.length ?? 0} hideWhenEmpty>
-          <pre className="mono" style={{ fontSize: 10, color: "var(--trading-fg-muted)" }}>
-            {JSON.stringify(snapshot?.resting_orders, null, 2)}
-          </pre>
+          <DebugJson value={snapshot?.resting_orders} />
         </CollapsedSection>
         <CollapsedSection title="Live Kalshi Quotes" count={snapshot?.quotes.length ?? 0}>
-          <pre className="mono" style={{ fontSize: 10, color: "var(--trading-fg-muted)" }}>
-            {JSON.stringify(snapshot?.quotes, null, 2)}
-          </pre>
+          <DebugJson value={snapshot?.quotes} />
         </CollapsedSection>
         <CollapsedSection title="System Diagnostics" count={snapshot?.diagnostics ? 1 : 0}>
-          <pre className="mono" style={{ fontSize: 10, color: "var(--trading-fg-muted)" }}>
-            {JSON.stringify(snapshot?.diagnostics, null, 2)}
-          </pre>
+          <DebugJson value={snapshot?.diagnostics} />
         </CollapsedSection>
       </div>
 
@@ -68,5 +62,22 @@ function TradingPageV2() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// Raw JSON dump kept for development inspection only; in production builds the
+// section renders a count summary without the unstructured payload.
+function DebugJson({ value }: { value: unknown }) {
+  if (!import.meta.env.DEV) {
+    return (
+      <p className="micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--trading-fg-subtle)" }}>
+        Raw payload hidden outside development.
+      </p>
+    );
+  }
+  return (
+    <pre className="mono" style={{ fontSize: 10, color: "var(--trading-fg-muted)" }}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
   );
 }

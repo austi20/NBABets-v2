@@ -54,19 +54,47 @@ function InsightsPage() {
     if (tab !== "local-agent") {
       return;
     }
-    const source = new EventSource(localAgentTerminalStreamUrl());
-    source.onmessage = (event) => {
-      if (!event.data) {
+    let cancelled = false;
+    let source: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let backoffIndex = 0;
+    const backoffSteps = [1_000, 2_000, 4_000, 8_000];
+
+    const connect = () => {
+      if (cancelled) {
         return;
       }
-      const nextLines = event.data.split(/\r?\n/);
-      setTerminalLines(nextLines.slice(-500));
-      setTerminalError(null);
+      source = new EventSource(localAgentTerminalStreamUrl());
+      source.onmessage = (event) => {
+        if (!event.data) {
+          return;
+        }
+        backoffIndex = 0;
+        const nextLines = event.data.split(/\r?\n/);
+        setTerminalLines(nextLines.slice(-500));
+        setTerminalError(null);
+      };
+      source.onerror = () => {
+        if (cancelled) {
+          return;
+        }
+        setTerminalError("Terminal stream disconnected. Reconnecting...");
+        source?.close();
+        const delay = backoffSteps[Math.min(backoffIndex, backoffSteps.length - 1)];
+        backoffIndex = Math.min(backoffIndex + 1, backoffSteps.length - 1);
+        reconnectTimer = setTimeout(connect, delay);
+      };
     };
-    source.onerror = () => {
-      setTerminalError("Terminal stream disconnected. Reconnecting...");
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      source?.close();
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+      }
     };
-    return () => source.close();
   }, [tab]);
 
   const providers = providersQuery.data ?? [];
