@@ -13,6 +13,10 @@ describe("fmtBp", () => {
   it("renders zero with a +", () => {
     expect(fmtBp(0)).toBe("+0bp");
   });
+
+  it.each([NaN, Infinity, -Infinity])("renders a safe placeholder for %s", (value) => {
+    expect(fmtBp(value)).toBe("—");
+  });
 });
 
 describe("fmtDollarSigned", () => {
@@ -26,5 +30,9 @@ describe("fmtDollarSigned", () => {
 
   it("renders zero with a +", () => {
     expect(fmtDollarSigned(0)).toBe("+$0.00");
+  });
+
+  it.each([NaN, Infinity, -Infinity])("renders a safe placeholder for %s", (value) => {
+    expect(fmtDollarSigned(value)).toBe("—");
   });
 });

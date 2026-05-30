@@ -14,6 +14,7 @@ import { PnlTrendChart } from "./components/PnlTrendChart";
 import { CollapsedSection } from "./components/CollapsedSection";
 import { EventLogStrip } from "./components/EventLogStrip";
 import { LimitsModal } from "./components/LimitsModal";
+import { StreamStatusBanner } from "./components/StreamStatusBanner";
 import { useTradingStore } from "./store";
 
 export const Route = createRoute({
@@ -25,7 +26,6 @@ export const Route = createRoute({
 function TradingPageV2() {
   useTradingStream();
   const snapshot = useTradingStore((s) => s.snapshot);
-  const streamConnected = useTradingStore((s) => s.streamConnected);
 
   return (
     <div className="trading-page-v2">
@@ -55,12 +55,7 @@ function TradingPageV2() {
 
       <EventLogStrip />
       <LimitsModal />
-
-      {!streamConnected ? (
-        <div style={{ position: "fixed", bottom: 12, right: 12, padding: "4px 10px", background: "var(--trading-surface)", border: "1px solid var(--trading-accent-system)", borderRadius: 12, fontSize: 10, color: "var(--trading-accent-system)" }}>
-          ● disconnected — retrying
-        </div>
-      ) : null}
+      <StreamStatusBanner />
     </div>
   );
 }

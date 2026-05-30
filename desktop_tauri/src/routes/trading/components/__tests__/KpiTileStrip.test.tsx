@@ -63,4 +63,17 @@ describe("KpiTileStrip budget input", () => {
     fireEvent.blur(input);
     expect(updateLimits).toHaveBeenCalledWith({ max_open_notional: 300 });
   });
+
+  it("still submits when a mid-edit snapshot changes the server value to the typed value", () => {
+    render(<KpiTileStrip />);
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "400" } });
+    // Simulate a snapshot arriving mid-edit that sets the server value to the
+    // exact value the user typed — must not swallow the legitimate submit.
+    SNAPSHOT.kpis.budget.max_open_notional = 400;
+    fireEvent.blur(input);
+    SNAPSHOT.kpis.budget.max_open_notional = 250;
+    expect(updateLimits).toHaveBeenCalledWith({ max_open_notional: 400 });
+  });
 });

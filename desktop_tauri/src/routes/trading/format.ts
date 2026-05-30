@@ -7,6 +7,12 @@ export const fmtPct = (v: number): string => `${(v * 100).toFixed(0)}%`;
 
 export const fmtUsd = (v: number): string => `$${v.toFixed(2)}`;
 
-export const fmtBp = (v: number): string => `${v >= 0 ? "+" : "-"}${Math.abs(v)}bp`;
+// Placeholder for non-finite values (NaN/Infinity) on money screens — matches
+// the "—" dash convention used by FillsFeed/PositionsTable for missing fields.
+const PLACEHOLDER = "—";
 
-export const fmtDollarSigned = (v: number): string => `${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}`;
+export const fmtBp = (v: number): string =>
+  Number.isFinite(v) ? `${v >= 0 ? "+" : "-"}${Math.abs(Math.round(v))}bp` : PLACEHOLDER;
+
+export const fmtDollarSigned = (v: number): string =>
+  Number.isFinite(v) ? `${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}` : PLACEHOLDER;

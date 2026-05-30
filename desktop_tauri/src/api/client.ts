@@ -47,6 +47,36 @@ const propListResponseSchema = z
   })
   .passthrough();
 
+// Parlay tickets carry the joint/leg hit probabilities that drive the parlay
+// money screens. Validate the probability fields (bound [0,1]) at the boundary
+// so a drifted backend can't feed NaN/out-of-range odds into the ranking math.
+const parlayWithInsightSchema = z
+  .object({
+    parlay: z
+      .object({
+        joint_probability: probability,
+        average_leg_hit_probability: probability,
+        weakest_leg_hit_probability: probability,
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+const sameGameParlaysResponseSchema = z
+  .object({
+    sections: z.record(
+      z.string(),
+      z.record(z.string(), z.record(z.string(), z.array(parlayWithInsightSchema))),
+    ),
+  })
+  .passthrough();
+
+const multiGameParlaysResponseSchema = z
+  .object({
+    sections: z.record(z.string(), z.record(z.string(), z.array(parlayWithInsightSchema))),
+  })
+  .passthrough();
+
 type AppWindowGlobals = Window & {
   __NBA_API_BASE__?: string;
   __APP_TOKEN__?: string;
@@ -571,9 +601,9 @@ export const api = {
       propWithInsightSchema,
     ),
   sameGameParlays: (query: SameGameParlaysQuery = {}) =>
-    apiFetch<SameGameParlaysResponse>(withQuery("/api/parlays/sgp", query)),
+    apiFetch<SameGameParlaysResponse>(withQuery("/api/parlays/sgp", query), undefined, sameGameParlaysResponseSchema),
   multiGameParlays: (query: MultiGameParlaysQuery = {}) =>
-    apiFetch<MultiGameParlaysResponse>(withQuery("/api/parlays/multi", query)),
+    apiFetch<MultiGameParlaysResponse>(withQuery("/api/parlays/multi", query), undefined, multiGameParlaysResponseSchema),
   insightsProviders: () => apiFetch<ProviderStatus[]>("/api/insights/providers"),
   insightsInjuries: (playerIds?: number[]) =>
     apiFetch<Record<string, InjuryStatusBadge>>(

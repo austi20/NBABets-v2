@@ -25,7 +25,7 @@ export function PositionsTable() {
       </div>
       <div className="mono" style={{ background: "var(--trading-surface)", borderRadius: 6, padding: 10, fontSize: 10, color: "var(--trading-fg-muted)" }}>
         {positions.map((p, idx) => (
-          <div key={idx} style={{ padding: "4px 0", borderBottom: "1px solid var(--trading-border)" }}>
+          <div key={p.ticker || p.market_symbol || `${p.market_key}-${idx}`} style={{ padding: "4px 0", borderBottom: "1px solid var(--trading-border)" }}>
             {p.market_symbol || p.ticker || "—"} · {p.side || "—"} · {p.contract_count}
           </div>
         ))}

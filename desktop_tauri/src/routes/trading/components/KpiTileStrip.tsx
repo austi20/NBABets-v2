@@ -1,5 +1,5 @@
 // desktop_tauri/src/routes/trading/components/KpiTileStrip.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTradingStore } from "../store";
 import { tradingActions } from "../api/actions";
 import { KpiTile } from "./KpiTile";
@@ -13,6 +13,9 @@ export function KpiTileStrip() {
   const snapshot = useTradingStore((s) => s.snapshot);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Server value captured when edit started; a mid-edit snapshot may move the
+  // live value to match the user's draft, which must NOT swallow the submit.
+  const editStartValue = useRef(0);
 
   if (!snapshot) {
     return (
@@ -27,13 +30,14 @@ export function KpiTileStrip() {
   const { pnl, budget, picks, system } = snapshot.kpis;
 
   const startEditing = () => {
+    editStartValue.current = budget.max_open_notional;
     setDraft(budget.max_open_notional.toFixed(2));
     setEditing(true);
   };
 
   const submitBudget = async () => {
     const value = Number.parseFloat(draft);
-    if (!Number.isFinite(value) || value <= 0 || value === budget.max_open_notional) {
+    if (!Number.isFinite(value) || value <= 0 || value === editStartValue.current) {
       setEditing(false);
       return;
     }

@@ -65,11 +65,15 @@ function InsightsPage() {
         return;
       }
       source = new EventSource(localAgentTerminalStreamUrl());
+      // Reset backoff only on a stable (re)open, not on every message — a
+      // connect/emit/drop loop would otherwise never escalate past the 1s step.
+      source.onopen = () => {
+        backoffIndex = 0;
+      };
       source.onmessage = (event) => {
         if (!event.data) {
           return;
         }
-        backoffIndex = 0;
         const nextLines = event.data.split(/\r?\n/);
         setTerminalLines(nextLines.slice(-500));
         setTerminalError(null);
