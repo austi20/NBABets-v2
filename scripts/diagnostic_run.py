@@ -77,9 +77,9 @@ def stage1_training_data(settings) -> int:
                 print("  HISTORICAL_PARQUET_ROOT:  not set (set env var to add prior-season data)")
 
             return len(frame)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError) as exc:
             print(f"  [ERROR] {exc}")
-            return 0
+            raise
 
 
 def stage2_artifacts(settings) -> None:
@@ -119,8 +119,9 @@ def stage2_artifacts(settings) -> None:
             print(f"\n  Last model run: id={row[0]} window={row[1]} to {row[2]} at={row[3]}")
         else:
             print("\n  No model runs in DB")
-    except Exception as exc:
+    except sqlite3.Error as exc:
         print(f"\n  [ERROR reading model_runs] {exc}")
+        raise
 
 
 def stage3_predict(settings) -> None:
@@ -147,10 +148,11 @@ def stage3_predict(settings) -> None:
             for o in top10:
                 print(f"  {str(getattr(o,'player_name','?')):<25} {str(getattr(o,'market_key','?')):<12} "
                       f"{getattr(o,'line_value',0):>6.1f} {getattr(o,'hit_probability',0):>8.3f} {getattr(o,'projected_mean',0):>9.2f}")
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, RuntimeError) as exc:
             print(f"  [ERROR] {exc}")
             import traceback
             traceback.print_exc()
+            raise
 
 
 def stage4_brain_candidates(settings) -> list:
@@ -170,9 +172,9 @@ def stage4_brain_candidates(settings) -> list:
         print(f"  Allowed market keys: {sorted(policy.allowed_market_keys)}")
         print(f"  Blocked market keys: {sorted(policy.blocked_market_keys)}")
         print(f"  Min model_prob={policy.min_model_prob}  min_confidence={policy.min_confidence}  min_edge_bps={policy.min_edge_bps}")
-    except Exception as exc:
+    except (OSError, ValueError, KeyError) as exc:
         print(f"  [ERROR loading policy] {exc}")
-        return []
+        raise
 
     # Stale context check
     stale = _stale_context_blockers(settings, policy)
@@ -203,9 +205,9 @@ def stage4_brain_candidates(settings) -> list:
         print(f"\n  Targets file: {targets_path}")
         print(f"  Generated:    {generated_at}")
         print(f"  Total targets exported: {len(targets)}")
-    except Exception as exc:
+    except (OSError, ValueError, KeyError) as exc:
         print(f"  [ERROR reading targets] {exc}")
-        return []
+        raise
 
     # Show market distribution from targets
     all_candidates = targets  # use raw dicts for reporting
