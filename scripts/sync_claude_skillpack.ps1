@@ -27,13 +27,13 @@ if (-not (Test-Path -LiteralPath $syncScript)) {
 
 $pythonExe = Find-Python
 
-$args = @()
-if ($DryRun)      { $args += "--dry-run" }
-if ($NoPrune)     { $args += "--no-prune" }
-elseif ($Prune)   { $args += "--prune" }
-if ($Pack)        { $args += @("--pack", $Pack) }
-if ($ForceRefetch){ $args += "--force-refetch" }
-if ($Config)      { $args += @("--config", $Config) }
+$pyArgs = @()
+if ($DryRun)      { $pyArgs += "--dry-run" }
+if ($NoPrune)     { $pyArgs += "--no-prune" }
+elseif ($Prune)   { $pyArgs += "--prune" }
+if ($Pack)        { $pyArgs += @("--pack", $Pack) }
+if ($ForceRefetch){ $pyArgs += "--force-refetch" }
+if ($Config)      { $pyArgs += @("--config", $Config) }
 
-& $pythonExe $syncScript @args
+& $pythonExe $syncScript @pyArgs
 exit $LASTEXITCODE

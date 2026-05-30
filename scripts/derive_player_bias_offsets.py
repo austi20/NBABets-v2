@@ -37,7 +37,8 @@ def main() -> int:
         print(f"ERROR: {INPUT_CSV} not found. Run scripts/grade_historical_props.py first.")
         return 1
 
-    rows = list(csv.DictReader(INPUT_CSV.open(encoding="utf-8")))
+    with INPUT_CSV.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
     for r in rows:
         r["over_hit"] = r["over_hit"] in ("True", "true", "1")
 

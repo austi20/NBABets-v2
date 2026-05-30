@@ -564,7 +564,18 @@ def main() -> int:
         f"wrote {args.symbols_out} "
         f"symbols={len(resolved['symbols'])} unresolved={len(resolved['unresolved'])}"
     )
-    return 0 if not resolved["unresolved"] else 2
+    return _exit_code(resolved)
+
+
+def _exit_code(resolved: dict[str, Any]) -> int:
+    """Map a resolution result to a process exit code.
+
+    0 = everything resolved, 3 = partial (some resolved, some not),
+    2 = total failure (nothing resolved).
+    """
+    if not resolved["unresolved"]:
+        return 0
+    return 3 if resolved["symbols"] else 2
 
 
 if __name__ == "__main__":

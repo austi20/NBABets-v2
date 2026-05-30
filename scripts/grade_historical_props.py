@@ -1,4 +1,4 @@
-"""Grade the 9,902 historical prop snapshots against actual box scores.
+"""Grade cached historical prop snapshots against actual box scores.
 
 Two analyses:
 1. Market-level: for each (game, player, prop_type) take the *closing* line

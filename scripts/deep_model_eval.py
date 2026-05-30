@@ -447,7 +447,7 @@ def main() -> None:
             try:
                 bet_detail = pd.read_csv(detail_csv_path)
                 print(f"[{_ts()}] [{label}] Bet detail: {len(bet_detail):,} rows")
-            except Exception as exc:
+            except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
                 print(f"[{_ts()}] [{label}] WARNING: could not read detail CSV ({exc}), skipping deep analytics")
                 bet_detail = pd.DataFrame()
         else:
@@ -460,7 +460,7 @@ def main() -> None:
         if fold_csv_path and Path(fold_csv_path).exists() and Path(fold_csv_path).stat().st_size > 0:
             try:
                 fold_df = pd.read_csv(fold_csv_path)
-            except Exception:
+            except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
                 fold_df = pd.DataFrame()
 
         # Combine fold metrics from summary

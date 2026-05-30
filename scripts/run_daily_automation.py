@@ -25,7 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="When provided, never execute suggested actions, only report recommendations.",
+        help=(
+            "Never execute suggested actions, only report recommendations. "
+            "Note: dry-run is also forced automatically whenever --agent-mode is not 'auto', "
+            "so actions only ever execute when --agent-mode=auto and --dry-run is omitted."
+        ),
     )
     parser.add_argument(
         "--shadow-compare",

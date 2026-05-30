@@ -56,7 +56,7 @@ def main() -> int:
     try:
         limits = load_live_limits(settings.trading_limits_path)
     except Exception as exc:  # noqa: BLE001 - surfaced as preflight failure
-        print(f"FAIL: limits: {exc}")
+        print(f"FAIL: limits: {type(exc).__name__}: {exc}")
         return 2
 
     _check("per-order cap", limits.per_order_cap <= 1.0, f"{limits.per_order_cap:.2f} <= 1.00", failures)
@@ -76,7 +76,7 @@ def main() -> int:
     try:
         decisions, decision_count = _load_live_decisions(decisions_path)
     except Exception as exc:  # noqa: BLE001 - surfaced as preflight failure
-        print(f"FAIL: live decision pack: {exc}")
+        print(f"FAIL: live decision pack: {type(exc).__name__}: {exc}")
         return 2
     if decision_count > 1:
         print(f"WARN: live runner will use only the first of {decision_count} decisions.")

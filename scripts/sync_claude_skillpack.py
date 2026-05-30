@@ -209,7 +209,7 @@ def _current_worktree_commit(worktree_dir: Path) -> str:
     if not worktree_dir.exists():
         return ""
     result = _run_git(["rev-parse", "HEAD"], cwd=worktree_dir)
-    if result.returncode == 0:
+    if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
     return ""
 

@@ -85,8 +85,11 @@ def stage1_training_data(settings) -> int:
 def stage2_artifacts(settings) -> None:
     _section("STAGE 2: Model Artifact Status")
     import datetime as dt
-    import sqlite3
 
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.db.session import session_scope
     from app.training.artifacts import artifact_exists, artifact_paths, resolve_artifact_namespace
     ns = resolve_artifact_namespace(settings.database_url, settings.app_env)
     # All markets share a single artifact directory keyed by model version "v1"
@@ -109,17 +112,18 @@ def stage2_artifacts(settings) -> None:
 
     # Latest model run from DB
     try:
-        db_path = settings.database_url[len("sqlite:///"):]
-        con = sqlite3.connect(db_path)
-        cur = con.cursor()
-        cur.execute("SELECT model_run_id, training_window_start, training_window_end, started_at FROM model_runs ORDER BY started_at DESC LIMIT 1")
-        row = cur.fetchone()
-        con.close()
+        with session_scope() as session:
+            row = session.execute(
+                text(
+                    "SELECT model_run_id, training_window_start, training_window_end, started_at "
+                    "FROM model_runs ORDER BY started_at DESC LIMIT 1"
+                )
+            ).fetchone()
         if row:
             print(f"\n  Last model run: id={row[0]} window={row[1]} to {row[2]} at={row[3]}")
         else:
             print("\n  No model runs in DB")
-    except sqlite3.Error as exc:
+    except SQLAlchemyError as exc:
         print(f"\n  [ERROR reading model_runs] {exc}")
         raise
 

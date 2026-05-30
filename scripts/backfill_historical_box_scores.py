@@ -2,8 +2,8 @@
 
 Usage:
     python scripts/backfill_historical_box_scores.py --seasons 2024
-    python scripts/backfill_historical_box_scores.py --seasons 1996-2025
-    python scripts/backfill_historical_box_scores.py  # all seasons 1996-2024
+    python scripts/backfill_historical_box_scores.py --seasons 1996-2024
+    python scripts/backfill_historical_box_scores.py  # default: seasons DEFAULT_START..DEFAULT_END
 """
 from __future__ import annotations
 

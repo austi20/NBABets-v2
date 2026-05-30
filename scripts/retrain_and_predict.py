@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
-import sys
 import threading
 from contextlib import contextmanager
 from datetime import date
@@ -17,13 +17,19 @@ from app.training.data import DatasetLoader
 from app.training.pipeline import TrainingPipeline
 from app.training.upcoming import load_upcoming_scoped
 
+logger = logging.getLogger("retrain_and_predict")
 
-def _safe_print(obj: object) -> None:
-    try:
-        print(obj)
-    except UnicodeEncodeError:
-        import json
-        sys.stdout.buffer.write((json.dumps(str(obj), ensure_ascii=True) + "\n").encode("ascii", errors="replace"))
+
+def prob_to_american(prob: float) -> str:
+    """Convert a fair over-probability into American odds, or "N/A" out of range.
+
+    Favorites (prob > 0.5) yield negative odds; underdogs yield positive odds.
+    """
+    if not (0.0 < prob < 1.0):
+        return "N/A"
+    if prob > 0.5:
+        return f"{-(prob / (1.0 - prob)) * 100:.0f}"
+    return f"{((1.0 - prob) / prob) * 100:+.0f}"
 
 
 @contextmanager
@@ -37,7 +43,7 @@ def _heartbeat(seconds: int, phase_ref: dict[str, str]):
         tick = 0
         while not stop_event.wait(seconds):
             tick += 1
-            _safe_print(f"  [heartbeat] {phase_ref['label']} still running ({tick * seconds}s elapsed)")
+            logger.info("  [heartbeat] %s still running (%ss elapsed)", phase_ref["label"], tick * seconds)
 
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
@@ -114,6 +120,7 @@ def _bounded_smoke_inputs(
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _parse_args()
     target_date = date.today()
     settings = get_settings()
@@ -123,16 +130,17 @@ def main() -> None:
     smoke_historical: pd.DataFrame | None = None
     smoke_game_ids: set[int] | None = None
     if args.smoke:
-        print(
-            f"SMOKE MODE active (non-production): historical<= {max_historical_rows:,} rows, "
-            f"games<= {max_game_count}."
+        logger.info(
+            "SMOKE MODE active (non-production): historical<= %s rows, games<= %s.",
+            f"{max_historical_rows:,}",
+            max_game_count,
         )
         smoke_historical, smoke_game_ids = _bounded_smoke_inputs(
             target_date=target_date,
             max_historical_rows=max_historical_rows,
             max_game_count=max_game_count,
         )
-    print(f"Retraining model for {target_date} ({settings.model_version}) ...")
+    logger.info("Retraining model for %s (%s) ...", target_date, settings.model_version)
     phase_ref = {"label": "idle"}
     with session_scope() as session:
         pipeline = TrainingPipeline(
@@ -144,11 +152,11 @@ def main() -> None:
 
         def progress(step: int | None, total: int | None, msg: str) -> None:
             if step is None or total is None or total <= 0:
-                _safe_print(f"  [~] {msg}")
+                logger.info("  [~] %s", msg)
                 return
-            _safe_print(f"  [{step}/{total}] {msg}")
+            logger.info("  [%s/%s] %s", step, total, msg)
 
-        print("\n--- Training ---")
+        logger.info("--- Training ---")
         phase_ref["label"] = "training"
         with _heartbeat(heartbeat_seconds, phase_ref):
             pipeline.train(
@@ -157,7 +165,7 @@ def main() -> None:
                 skip_calibration=args.smoke,
             )
 
-        print("\n--- Predicting upcoming games ---")
+        logger.info("--- Predicting upcoming games ---")
         phase_ref["label"] = "prediction"
         with _heartbeat(heartbeat_seconds, phase_ref):
             predictions = pipeline.predict_upcoming(
@@ -167,7 +175,7 @@ def main() -> None:
                 historical=smoke_historical,
             )
 
-    print(f"\nDone. Generated {len(predictions)} predictions.")
+    logger.info("Done. Generated %s predictions.", len(predictions))
 
     if predictions:
         from collections import defaultdict
@@ -175,19 +183,17 @@ def main() -> None:
         for p in predictions:
             by_market[p.market_key].append(p)
 
-        print("\n--- Sample predictions (first 5 per market) ---")
+        logger.info("--- Sample predictions (first 5 per market) ---")
         for market, preds in sorted(by_market.items()):
-            print(f"\n  {market.upper()} ({len(preds)} total):")
+            logger.info("  %s (%s total):", market.upper(), len(preds))
             for p in sorted(preds, key=lambda x: abs(x.calibrated_over_probability - 0.5), reverse=True)[:5]:
                 fair_over = p.calibrated_over_probability
-                if fair_over > 0 and fair_over < 1:
-                    fair_odds = (-fair_over / (1 - fair_over)) * 100 if fair_over > 0.5 else ((1 - fair_over) / fair_over) * 100
-                    odds_str = f"{fair_odds:+.0f}" if fair_over <= 0.5 else f"{-abs(fair_odds):.0f}"
-                else:
-                    odds_str = "N/A"
-                _safe_print(
-                    f"    {p.player_name:<22} line={p.sportsbook_line:>5.1f}  "
-                    f"over%={fair_over:.1%}  fair={odds_str}"
+                logger.info(
+                    "    %-22s line=%5.1f  over%%=%s  fair=%s",
+                    p.player_name,
+                    p.sportsbook_line,
+                    f"{fair_over:.1%}",
+                    prob_to_american(fair_over),
                 )
 
 

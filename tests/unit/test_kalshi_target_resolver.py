@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from scripts.resolve_kalshi_targets import _load_candidate_markets, resolve_targets
+from scripts.resolve_kalshi_targets import _exit_code, _load_candidate_markets, resolve_targets
+
+
+def test_exit_code_all_resolved_is_zero() -> None:
+    assert _exit_code({"symbols": [{"t": 1}], "unresolved": []}) == 0
+
+
+def test_exit_code_partial_resolution_is_three() -> None:
+    assert _exit_code({"symbols": [{"t": 1}], "unresolved": [{"x": 1}]}) == 3
+
+
+def test_exit_code_total_failure_is_two() -> None:
+    assert _exit_code({"symbols": [], "unresolved": [{"x": 1}]}) == 2
 
 
 class _FakeResponse:
