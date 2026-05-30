@@ -25,6 +25,7 @@ from app.server.schemas.trading import (
     PickToggleRequestModel,
     PositionModel,
     RestingOrderModel,
+    ThresholdsResponseModel,
     ThresholdsUpdateRequestModel,
     TradingBrainCheckModel,
     TradingBrainSyncModel,
@@ -616,6 +617,16 @@ def trading_picks_bulk(
     publisher.log_event(level="info", message=f"bulk pick action: {body.action}")
     publisher.notify()
     return _build_live_snapshot(request)
+
+
+@router.get("/thresholds", response_model=ThresholdsResponseModel)
+def trading_thresholds_read(request: Request) -> ThresholdsResponseModel:
+    """Return the currently persisted hit/edge selection thresholds."""
+    store = SelectionStore.load(_selections_path(request))
+    return ThresholdsResponseModel(
+        min_hit_pct=store.thresholds.min_hit_pct,
+        min_edge_bps=store.thresholds.min_edge_bps,
+    )
 
 
 @router.post("/thresholds", response_model=TradingLiveSnapshotModel)

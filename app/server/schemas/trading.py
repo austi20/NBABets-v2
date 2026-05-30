@@ -419,3 +419,8 @@ class PickBulkRequestModel(BaseModel):
 class ThresholdsUpdateRequestModel(BaseModel):
     min_hit_pct: float = Field(ge=0.0, le=1.0)
     min_edge_bps: int = Field(ge=0, le=5_000)
+
+
+class ThresholdsResponseModel(BaseModel):
+    min_hit_pct: float
+    min_edge_bps: int

@@ -11,6 +11,11 @@ type LimitsResponse = {
   wallet_init_done_at: string | null;
 };
 
+type ThresholdsResponse = {
+  min_hit_pct: number;
+  min_edge_bps: number;
+};
+
 function resolveBase(): string {
   const url = new URL(tradingSnapshotUrl());
   return url.origin;
@@ -55,6 +60,8 @@ export const tradingActions = {
       method: "POST",
       body: JSON.stringify({ min_hit_pct: minHitPct, min_edge_bps: minEdgeBps }),
     }),
+
+  readThresholds: () => tradingFetch<ThresholdsResponse>("/api/trading/thresholds"),
 
   updateLimits: (body: Partial<{
     max_open_notional: number;

@@ -1,5 +1,5 @@
 // desktop_tauri/src/routes/trading/components/ThresholdsRow.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTradingStore } from "../store";
 import { tradingActions } from "../api/actions";
 
@@ -8,6 +8,24 @@ export function ThresholdsRow() {
   const setOpen = useTradingStore((s) => s.setThresholdsOpen);
   const [hit, setHit] = useState(55);
   const [edge, setEdge] = useState(50);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    tradingActions
+      .readThresholds()
+      .then((thresholds) => {
+        if (cancelled) return;
+        setHit(Math.round(thresholds.min_hit_pct * 100));
+        setEdge(thresholds.min_edge_bps);
+      })
+      .catch(() => {
+        // keep current values if the fetch fails
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   return (
     <div style={{ marginBottom: 8 }}>
