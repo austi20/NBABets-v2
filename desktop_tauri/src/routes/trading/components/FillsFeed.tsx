@@ -1,21 +1,12 @@
 // desktop_tauri/src/routes/trading/components/FillsFeed.tsx
 import { useEffect, useRef, useState } from "react";
 import { useTradingStore } from "../store";
+import type { TradingFill } from "../api/types";
 
-const EMPTY: never[] = [];
-
-type FillLike = {
-  fill_id?: string;
-  market?: { symbol?: string };
-  side?: string;
-  price?: number;
-  stake?: number;
-  realized_pnl?: number;
-  timestamp?: string;
-};
+const EMPTY: TradingFill[] = [];
 
 export function FillsFeed() {
-  const fills = (useTradingStore((s) => s.snapshot?.fills) ?? EMPTY) as FillLike[];
+  const fills = useTradingStore((s) => s.snapshot?.fills) ?? EMPTY;
   const previousIds = useRef<Set<string>>(new Set());
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
 

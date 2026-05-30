@@ -1,10 +1,11 @@
 // desktop_tauri/src/routes/trading/components/PositionsTable.tsx
 import { useTradingStore } from "../store";
+import type { TradingLivePosition } from "../api/types";
 
-const EMPTY: never[] = [];
+const EMPTY: TradingLivePosition[] = [];
 
 export function PositionsTable() {
-  const positions = (useTradingStore((s) => s.snapshot?.positions) ?? EMPTY) as Array<Record<string, unknown>>;
+  const positions = useTradingStore((s) => s.snapshot?.positions) ?? EMPTY;
   if (positions.length === 0) {
     return (
       <section style={{ marginTop: 14 }}>
@@ -25,7 +26,7 @@ export function PositionsTable() {
       <div className="mono" style={{ background: "var(--trading-surface)", borderRadius: 6, padding: 10, fontSize: 10, color: "var(--trading-fg-muted)" }}>
         {positions.map((p, idx) => (
           <div key={idx} style={{ padding: "4px 0", borderBottom: "1px solid var(--trading-border)" }}>
-            {String(p.market_symbol ?? p.ticker ?? "—")} · {String(p.side ?? "—")} · {String(p.contract_count ?? "—")}
+            {p.market_symbol || p.ticker || "—"} · {p.side || "—"} · {p.contract_count}
           </div>
         ))}
       </div>

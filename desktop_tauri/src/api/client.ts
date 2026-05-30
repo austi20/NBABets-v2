@@ -1,6 +1,13 @@
 // Base URL for the Python sidecar API.
 // In browser dev, keep this empty and use Vite's /api proxy.
 // In production (Tauri), Rust injects the sidecar URL via window globals.
+import type {
+  TradingFill,
+  TradingLivePosition,
+  TradingQuote,
+  TradingRestingOrder,
+} from "../routes/trading/api/types";
+
 const DEFAULT_API_BASE = "";
 
 type AppWindowGlobals = Window & {
@@ -121,65 +128,6 @@ export type TradingPosition = {
   updated_at: string;
 };
 
-export type TradingFill = {
-  fill_id: string;
-  intent_id: string;
-  market: {
-    exchange?: string;
-    symbol?: string;
-    market_key?: string;
-    side?: string;
-    line_value?: number;
-  };
-  side: string;
-  stake: number;
-  price: number;
-  fee: number;
-  realized_pnl: number;
-  timestamp: string;
-};
-
-export type TradingQuote = {
-  prop_line_evaluation_id?: string | number | null;
-  stat_projection_id?: string | number | null;
-  probability_source?: string | null;
-  ticker: string;
-  market_key: string;
-  side: string | null;
-  line_value: number | null;
-  player_id: string | null;
-  game_date: string | null;
-  title: string | null;
-  status: string | null;
-  yes_bid: number | null;
-  yes_ask: number | null;
-  no_bid: number | null;
-  no_ask: number | null;
-  last_price: number | null;
-  entry_price: number | null;
-  exit_price: number | null;
-  spread: number | null;
-  observed_at: string;
-  error?: string | null;
-};
-
-export type TradingLivePosition = {
-  market_symbol: string;
-  market_key: string;
-  side: string;
-  ticker: string | null;
-  open_stake: number;
-  contract_count: number;
-  avg_price: number;
-  current_exit_price: number | null;
-  current_value: number | null;
-  unrealized_pnl: number | null;
-  unrealized_pnl_pct: number | null;
-  realized_pnl: number;
-  updated_at: string;
-  quote: TradingQuote | null;
-};
-
 export type TradingExchangePosition = {
   ticker: string;
   side: string;
@@ -192,17 +140,6 @@ export type TradingExchangePosition = {
   current_value: number | null;
   updated_at: string | null;
   quote: TradingQuote | null;
-};
-
-export type TradingRestingOrder = {
-  order_id: string;
-  client_order_id: string | null;
-  ticker: string | null;
-  side: string | null;
-  status: string | null;
-  remaining_count: number | null;
-  price: number | null;
-  created_at: string | null;
 };
 
 export type TradingSnapshot = {
