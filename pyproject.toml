@@ -97,3 +97,16 @@ warn_return_any = true
 warn_unused_configs = true
 no_implicit_optional = true
 exclude = ["tests", "llm_train"]
+
+# Third-party libraries without type stubs / py.typed markers.
+[[tool.mypy.overrides]]
+module = [
+  "sklearn.*",
+  "scipy.*",
+  "nba_api.*",
+  "dateutil.*",
+  "joblib",
+  "threadpoolctl",
+  "xgboost",
+]
+ignore_missing_imports = true
