@@ -158,15 +158,18 @@ def _kalshi_threshold_value(market: dict[str, Any]) -> float | None:
     return values[0] if values else None
 
 
-_X_PLUS_RE = re.compile(r"\d+(?:\.\d+)?\s*\+")
+_X_PLUS_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:\+|or\s+more)")
 _RANGE_RE = re.compile(r"\bbetween\b|\d+\s*(?:to|-|and|–|—)\s*\d+")
 
 
 def _is_x_plus_market(market: dict[str, Any]) -> bool:
-    """True only for confirmed "X+" (X-or-more) binary markets.
+    """True for confirmed "X+" (X-or-more / floor) binary markets.
 
-    Kalshi "X+" markets map to an over/under line of X - 0.5. Range-style
-    markets ("between 20 and 24") are NOT X+ and the -0.5 shift is wrong.
+    Kalshi's structured ``floor_strike`` denotes a >= (X-or-more) threshold and
+    maps to an over/under line of X - 0.5. A genuine band/range market carries
+    an upper bound (``cap_strike``) and/or range text ("between 20 and 24") and
+    is NOT X+ — the -0.5 shift is wrong for it. Classify on the structured
+    signal plus range exclusion, not the fragile title-"+" regex alone.
     """
     text = " ".join(
         str(part)
@@ -180,7 +183,9 @@ def _is_x_plus_market(market: dict[str, Any]) -> bool:
     ).lower()
     if _RANGE_RE.search(text):
         return False
-    return bool(_X_PLUS_RE.search(text))
+    if _numeric(market.get("cap_strike")) is not None:
+        return False
+    return _numeric(market.get("floor_strike")) is not None or bool(_X_PLUS_RE.search(text))
 
 
 def _threshold_line_value(market: dict[str, Any]) -> float | None:

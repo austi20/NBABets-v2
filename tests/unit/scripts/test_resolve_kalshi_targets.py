@@ -103,6 +103,36 @@ def test_x_plus_market_applies_minus_half_shift() -> None:
     assert out["symbols"][0]["line_value"] == 24.5
 
 
+def test_or_more_phrasing_market_applies_minus_half_shift() -> None:
+    # Regression (Task 10.2 false-negative): genuine floor market phrased
+    # "X or more" with a numeric floor_strike must still be treated as X+.
+    target = _enum_target()
+    market = _market(
+        ticker="KXNBAREB-26MAY30LAL-LBJ-25",
+        title="LeBron James 25 or more rebounds",
+        floor_strike=25.0,
+    )
+    out = resolve_targets([target], [market], min_score=70)
+    assert not out["unresolved"]
+    assert len(out["symbols"]) == 1
+    assert out["symbols"][0]["line_value"] == 24.5
+
+
+def test_plain_title_with_floor_strike_applies_minus_half_shift() -> None:
+    # Regression (Task 10.2 false-negative): a plain title carrying a valid
+    # numeric floor_strike and no range/cap must be treated as a floor (X+).
+    target = _enum_target()
+    market = _market(
+        ticker="KXNBAREB-26MAY30LAL-LBJ",
+        title="LeBron James rebounds",
+        floor_strike=24.5,
+    )
+    out = resolve_targets([target], [market], min_score=70)
+    assert not out["unresolved"]
+    assert len(out["symbols"]) == 1
+    assert out["symbols"][0]["line_value"] == 24.0
+
+
 def test_range_style_market_is_ambiguous_threshold() -> None:
     target = _enum_target()
     market = _market(
@@ -111,6 +141,21 @@ def test_range_style_market_is_ambiguous_threshold() -> None:
         subtitle="Between 20 and 24 rebounds",
         rules_primary="Resolves YES if rebounds are between 20 and 24 inclusive.",
         floor_strike=20.0,
+    )
+    out = resolve_targets([target], [market], min_score=70)
+    assert not out["symbols"]
+    reasons = {u["reason"] for u in out["unresolved"]}
+    assert "ambiguous_threshold_semantics" in reasons
+
+
+def test_band_market_with_cap_strike_is_ambiguous_threshold() -> None:
+    # A band carries an upper bound (cap_strike) -> NOT a floor, exclude.
+    target = _enum_target()
+    market = _market(
+        ticker="KXNBAREB-26MAY30LAL-LBJ-2024",
+        title="LeBron James rebounds",
+        floor_strike=20.0,
+        cap_strike=24.0,
     )
     out = resolve_targets([target], [market], min_score=70)
     assert not out["symbols"]
