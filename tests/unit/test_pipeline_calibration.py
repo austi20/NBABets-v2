@@ -47,8 +47,14 @@ def test_pipeline_and_ece_agree_on_fold_slice() -> None:
         np.testing.assert_array_equal(a, b)
 
 
-def test_calibrator_applied_changes_adjusted_probability() -> None:
-    """A non-identity calibrator must change calibration_adjusted_probability from the raw value."""
+def test_calibrator_transform_returns_bounded_probability() -> None:
+    """Unit test of ProbabilityCalibrator.transform on a skewed fit.
+
+    NOTE: this only exercises the calibrator in isolation. The production pricing
+    path (predict_upcoming applying the per-market calibrator to written
+    PropLineEvaluation probabilities) is pinned in
+    tests/integration/test_pipeline_calibrator_pricing.py.
+    """
     import numpy as np
 
     from app.training.calibration import ProbabilityCalibrator
@@ -69,8 +75,13 @@ def test_calibrator_applied_changes_adjusted_probability() -> None:
     assert 0.0 <= float(calibrated[0]) <= 1.0
 
 
-def test_calibration_applied_in_evaluate_projection_line_with_mock() -> None:
-    """calibration_adjusted_probability must equal the calibrated value, not raw CDF."""
+def test_calibrator_constant_strategy_pushes_toward_label_mean() -> None:
+    """Unit test of ProbabilityCalibrator's constant strategy in isolation.
+
+    NOTE: this does NOT exercise the production pricing path. End-to-end
+    application of the calibrator inside predict_upcoming is pinned in
+    tests/integration/test_pipeline_calibrator_pricing.py.
+    """
     import numpy as np
 
     from app.training.calibration import ProbabilityCalibrator
