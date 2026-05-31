@@ -105,21 +105,23 @@ def _app_version() -> str:
         return "0.1.0"
 
 
+def _safe_database_url(database_url: str) -> str:
+    """Mask credentials in a non-sqlite database URL; sqlite URLs pass through."""
+    if database_url.startswith("sqlite"):
+        return database_url
+    parsed = make_url(database_url)
+    if parsed.username:
+        parsed = parsed.set(username="***")
+    if parsed.password is not None:
+        parsed = parsed.set(password="***")
+    return parsed.render_as_string(hide_password=False)
+
+
 def _sanitize_settings() -> dict[str, Any]:
     settings = get_settings()
-    database_url = settings.database_url
-    if database_url.startswith("sqlite"):
-        safe_database_url = database_url
-    else:
-        parsed = make_url(database_url)
-        if parsed.username:
-            parsed = parsed.set(username="***")
-        if parsed.password is not None:
-            parsed = parsed.set(password="***")
-        safe_database_url = parsed.render_as_string(hide_password=False)
     return {
         "app_env": settings.app_env,
-        "database_url": safe_database_url,
+        "database_url": _safe_database_url(settings.database_url),
         "app_data_dir": str(settings.app_data_dir),
         "logs_dir": str(settings.logs_dir),
         "providers": {
@@ -403,7 +405,7 @@ def create_app(
         return {
             "ok": True,
             "version": _app_version(),
-            "db_path": settings.database_url,
+            "db_path": _safe_database_url(settings.database_url),
         }
 
     @app.get("/api/settings")
