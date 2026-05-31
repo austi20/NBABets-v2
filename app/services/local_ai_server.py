@@ -136,7 +136,7 @@ class LocalAIServer:
                 response = client.get(health_url, headers=headers)
                 response.raise_for_status()
                 body = response.json()
-            return body.get("status") == "ok"
+            return bool(body.get("status") == "ok")
         except Exception:
             return False
 

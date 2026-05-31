@@ -230,10 +230,11 @@ async def poll_lineup_changes(
 
 
 def _cache_provider_name(provider: object) -> str | None:
-    aliases = list(getattr(provider, "_cache_provider_aliases", []) or [])
+    aliases: list[str] = list(getattr(provider, "_cache_provider_aliases", []) or [])
     if aliases:
         return aliases[0]
-    return getattr(provider, "_cache_provider_name", getattr(provider, "provider_name", None))
+    name: str | None = getattr(provider, "_cache_provider_name", getattr(provider, "provider_name", None))
+    return name
 
 
 def _cache_provider_names(provider: object) -> list[str]:

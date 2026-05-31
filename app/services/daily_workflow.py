@@ -348,7 +348,7 @@ def _extract_markdown_bullets(report_text: str, section_title: str) -> dict[str,
 
 
 def _coerce_datetime_to_utc_date(value: object) -> date | None:
-    if not hasattr(value, "astimezone"):
+    if not isinstance(value, datetime):
         return None
     coerced = value
     if coerced.tzinfo is None:

@@ -291,7 +291,7 @@ class BrainStore:
                     ),
                 )
                 self._conn.commit()
-                return existing["strategy_id"]
+                return int(existing["strategy_id"])
             cursor = self._conn.execute(
                 """INSERT INTO strategy_memory
                    (problem_type, action_template, market, parameters,

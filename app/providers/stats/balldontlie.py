@@ -384,7 +384,7 @@ def _parse_game_start(item: dict[str, Any]) -> datetime:
     raw_value = item.get("datetime") or item.get("date")
     if raw_value is None:
         raise ValueError("BallDontLie game payload missing datetime/date")
-    parsed = isoparse(str(raw_value))
+    parsed: datetime = isoparse(str(raw_value))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
@@ -404,4 +404,5 @@ def _parse_minutes(raw_minutes: str | int | float | None) -> float:
 def _parse_game_date(raw_value: object) -> str | None:
     if raw_value in (None, ""):
         return None
-    return isoparse(str(raw_value)).date().isoformat()
+    iso: str = isoparse(str(raw_value)).date().isoformat()
+    return iso

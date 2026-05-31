@@ -15,7 +15,7 @@ def safe_int(value: object) -> int | None:
     if value is None:
         return None
     try:
-        return int(value)  # type: ignore[call-overload]
+        return int(value)  # type: ignore[call-overload, no-any-return]
     except (TypeError, ValueError):
         _log.warning("safe_int: cannot convert %r to int", value)
         return None

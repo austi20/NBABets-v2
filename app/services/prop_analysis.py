@@ -227,7 +227,7 @@ class PropAnalysisService:
         target_date = target_date or date.today()
         sync_live_games_from_nba_api(self._session, target_date)
         quotes = self._latest_prediction_quotes(target_date)
-        player_quotes = []
+        player_quotes: list[SportsbookQuote] = []
         for (_, _, _, row_player_id, _, _), entries in quotes.items():
             if row_player_id != player_id:
                 continue

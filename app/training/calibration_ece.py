@@ -132,7 +132,8 @@ def dump_calibration_oof(
 
 def load_calibration_oof(path: str | Path) -> dict[str, Any]:
     """Load a captured calibration OOF dump."""
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    data: dict[str, Any] = json.loads(Path(path).read_text(encoding="utf-8"))
+    return data
 
 
 def summarize_fold_subsets(

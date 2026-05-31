@@ -312,7 +312,7 @@ def _coerce_snapshot_meta(meta: object) -> dict[str, object]:
 
 
 def _coerce_datetime_to_local_date(value: object) -> date | None:
-    if not hasattr(value, "astimezone"):
+    if not isinstance(value, datetime):
         return None
     coerced = value
     if coerced.tzinfo is None:

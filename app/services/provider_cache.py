@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -611,7 +611,7 @@ class LocalProviderCache:
             )
 
     @contextmanager
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self._path)
         connection.row_factory = sqlite3.Row
         try:
