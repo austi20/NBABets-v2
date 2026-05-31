@@ -1,0 +1,27 @@
+Phase 12 — Type / Lint Cleanup: final counts (2026-05-31)
+
+ruff check .   -> 0 errors (clean)
+mypy app       -> 290 errors (down from 353 baseline)
+
+Progression:
+  353  baseline (this phase start)
+  332  after Step A (ignore_missing_imports for stub-less third-party libs)
+  300  after Step B (var-annotated + trivial no-any-return in services/eval/providers)
+  290  after Step C (Protocol/None-guard gaps; skipped pandas friction)
+
+Non-regression floor locked at 290 in scripts/check.ps1.
+
+Intentionally deferred (NOT bugs — type-checker noise):
+  - pandas Series | float arg-type / call-overload friction, concentrated in
+    app/training/pipeline.py (the bulk of remaining errors), plus
+    app/training/features.py, data.py, distributions.py, models.py.
+  - numpy ndarray no-any-return in training/distributions/models/parlays.
+  - pydantic ProviderFetchResult.payload (dict | list) union-attr on .get() in
+    BallDontLie providers — payload is always a dict at those sites by
+    construction; adding isinstance guards would change behavior.
+  - asyncio.gather(return_exceptions=True) BaseException narrowing in
+    nba_api availability fetch — broadening the catch from Exception to
+    BaseException would swallow CancelledError (behavior change), so left as-is.
+
+Casting/restructuring money/model code to satisfy these is high-risk and
+against project rules (KISS, smallest correct change, behavior-preserving).
