@@ -26,6 +26,9 @@ class BaseProvider(ABC):
 class StatsProvider(BaseProvider, ABC):
     provider_type = "stats"
 
+    def set_team_scope(self, team_abbreviations: set[str]) -> None:
+        """Optionally restrict fetches to the given teams. No-op by default."""
+
     @abstractmethod
     async def fetch_teams(self) -> tuple[ProviderFetchResult, list[TeamPayload]]:
         raise NotImplementedError

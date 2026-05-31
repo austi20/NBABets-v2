@@ -202,7 +202,8 @@ class TradingLiveSnapshotBuilder:
     def _live_eligibility_blocker(self, raw: dict[str, Any]) -> str | None:
         if str(raw.get("mode") or "").strip().lower() != "live":
             return "observe-only decision"
-        execution = raw.get("execution") if isinstance(raw.get("execution"), dict) else {}
+        raw_execution = raw.get("execution")
+        execution = raw_execution if isinstance(raw_execution, dict) else {}
         if execution.get("allow_live_submit") is not True:
             return "live submit not allowed"
         recommendation = str(raw.get("recommendation") or "").strip().lower()
@@ -329,7 +330,8 @@ class TradingLiveSnapshotBuilder:
         first = (inputs.decision_pack.get("decisions") or [{}])[0]
         first_live_ready = False
         if isinstance(first, dict):
-            execution = first.get("execution") if isinstance(first.get("execution"), dict) else {}
+            raw_execution = first.get("execution")
+            execution = raw_execution if isinstance(raw_execution, dict) else {}
             recommendation = str(first.get("recommendation") or "").strip().lower()
             first_live_ready = (
                 str(first.get("mode") or "").strip().lower() == "live"

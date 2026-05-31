@@ -222,7 +222,8 @@ def build_trading_readiness(
             ok=parsed_game_date is not None and parsed_game_date >= current_date,
             detail=game_date or "missing",
         )
-        gates = first.get("gates") if isinstance(first.get("gates"), dict) else {}
+        raw_gates = first.get("gates")
+        gates = raw_gates if isinstance(raw_gates, dict) else {}
         failed_gates = [field for field in _LIVE_GATE_FIELDS if gates.get(field) is not True]
         checks.append(
             ReadinessCheck(

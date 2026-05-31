@@ -22,6 +22,7 @@ from app.models.all import (
     Sportsbook,
     Team,
 )
+from app.providers.base import InjuriesProvider, OddsProvider, StatsProvider
 from app.schemas.domain import (
     GamePayload,
     InjuryPayload,
@@ -726,7 +727,7 @@ class IngestionOrchestrator:
         self._ingestion = IngestionService(session)
         self._agent_runs = AgentRunService(session)
 
-    async def refresh_reference_data(self, stats_provider: object, target_date: date) -> dict[str, int]:
+    async def refresh_reference_data(self, stats_provider: StatsProvider, target_date: date) -> dict[str, int]:
         provider_name = str(getattr(stats_provider, "provider_name", "unknown"))
         try:
             game_result, games = await stats_provider.fetch_schedule(target_date)
@@ -789,7 +790,7 @@ class IngestionOrchestrator:
         self._session.commit()
         return metrics
 
-    async def ingest_game_logs(self, stats_provider: object, start_date: date, end_date: date) -> dict[str, int]:
+    async def ingest_game_logs(self, stats_provider: StatsProvider, start_date: date, end_date: date) -> dict[str, int]:
         provider_name = str(getattr(stats_provider, "provider_name", "unknown"))
         try:
             result, logs = await stats_provider.fetch_player_game_logs(start_date, end_date)
@@ -876,7 +877,7 @@ class IngestionOrchestrator:
         self._session.commit()
         return metrics
 
-    async def ingest_injuries(self, injuries_provider: object, target_date: date | None) -> dict[str, int]:
+    async def ingest_injuries(self, injuries_provider: InjuriesProvider, target_date: date | None) -> dict[str, int]:
         provider_name = str(getattr(injuries_provider, "provider_name", "unknown"))
         try:
             result, injuries = await injuries_provider.fetch_injuries(target_date)
@@ -901,7 +902,7 @@ class IngestionOrchestrator:
 
     async def ingest_odds(
         self,
-        odds_provider: object,
+        odds_provider: OddsProvider,
         target_date: date,
         prefetched_result: object | None = None,
         prefetched_lines: list[LineSnapshotPayload] | None = None,
