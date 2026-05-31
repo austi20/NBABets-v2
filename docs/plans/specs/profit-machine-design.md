@@ -165,7 +165,7 @@ Wraps `KalshiClient.place_order` and `cancel_order`. Single shared semaphore enf
     "conviction_hold": 0.85,            // model_prob at/above this => override TP/SL, hold to settle
     "max_entry_price": 0.80,
     "min_model_prob": 0.60,
-    "min_edge_bps": 100,
+    "min_edge_bps": 100,               // NO-OP since 2026-05-11: kept in policy/UI schema for compat but does NOT gate decisions (decision_brain.py / live_snapshot.py)
     "spread_max_cents": 6,
     "volatility_max_cents": 5,          // rolling 60s stdev of yes_bid
     "volatility_override": 0.80,        // model_prob at/above this => ignore volatility veto
