@@ -22,7 +22,9 @@ Any other key is treated as contract drift and rejected.
 
 ## Training prediction contract
 
-- Prediction history gating is centralized in `TrainingPipeline._apply_prediction_history_requirements`.
+- The engine is stat-projection-first: `StatProjection` and `PropLineEvaluation` are the primary tables. The model owns a line-agnostic `StatProjection` distribution per (player, game, market), and `line_evaluator.evaluate_projection_line` prices any line/threshold from the CDF into `PropLineEvaluation` rows.
+- The legacy `Prediction` table is a compatibility surface only; it is no longer the source of truth for pricing decisions.
+- Prediction history gating is centralized in `TrainingPipeline._apply_prediction_history_requirements`. This is a no-op for board paths (projection-first board flow does not apply prediction history gating).
 - Any change to minimum history logic must preserve existing filter semantics unless explicitly approved.
 
 ## Verification contract
