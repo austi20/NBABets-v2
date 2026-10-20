@@ -58,7 +58,7 @@ A separate live-stats poller hits BallDontLie GOAT `/stats?player_ids[]=...&seas
 1. **`on_pace_to_hit(position)`** — at the 15-min settle decision, compares the player's current stat line against `line_value`. Pace is judged with a simple linear model: `projected = current + remaining_minutes * recent_rate_per_minute`. If `projected >= line_value` (when the position is YES-OVER), we hold; otherwise we sell.
 2. **Pre-emptive entry signal** — when a player crosses an internal "on-track" threshold (say, 75% of line value with >30% of game remaining) and the Kalshi quote hasn't yet adjusted, the trader can submit a buy *before* the market reprices. This is the "pounce before market responds" mechanic you asked for. Implementing this well needs a measured baseline of BDL update latency vs Kalshi quote latency; I'll instrument that during Phase 1 dry-run.
 
-BallDontLie GOAT documents ~600 req/min capacity. With 10 active games × 1 poll/15s = 40 req/min — comfortable. Existing `app/providers/stats/balldontlie.py` already has a rolling-window limiter at line 53.
+BallDontLie GOAT documents ~600 req/min capacity. With 10 active games × 1 poll/15s = 40 req/min — comfortable. (Update 2026-10-20: the key is now ALL-STAR, which caps at 60 req/min. `/stats` still works, but 40 req/min leaves little room, and the poller does not filter by date, so one poll can span several pages. See `docs/plans/2026-10-20-checkup-and-improvement-plan.md`.) Existing `app/providers/stats/balldontlie.py` already has a rolling-window limiter at line 53.
 
 ## 2. What already exists, reused as-is
 

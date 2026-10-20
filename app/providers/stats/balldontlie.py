@@ -51,7 +51,7 @@ class BallDontLieStatsProvider(HttpProviderMixin, StatsProvider):
         return await HttpProviderMixin._get(self, endpoint, headers=headers, params=params)
 
     async def _acquire_bdl_rate_slot(self, endpoint: str) -> None:
-        """Rolling-window limiter (default ~540 req / 60s) under BDL 600 rpm capacity."""
+        """Rolling-window limiter (default 54 req / 60s) under the ALL-STAR 60 rpm cap."""
         rpm = self._bdl_max_rpm
         if rpm <= 0:
             return

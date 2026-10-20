@@ -58,6 +58,13 @@ DEFAULT_MARKETS = {
 }
 
 
+def _season_start_year(season_code: str, game_date: date) -> int:
+    # code is the start year ("2025" = 2025-26)
+    if season_code.isdigit():
+        return int(season_code)
+    return game_date.year if game_date.month >= 10 else game_date.year - 1
+
+
 class IngestionService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -400,6 +407,8 @@ class IngestionService:
 
     def ingest_line_snapshots(self, payloads: Iterable[LineSnapshotPayload], source_payload_id: int | None = None) -> int:
         self.ensure_default_markets()
+        # matcher caches players at construction, so reload to see this run's new ones
+        self._player_matcher = PlayerMatcher(self._session)
         count = 0
         pending_snapshots: dict[tuple[datetime, int, int, int, int, float], LineSnapshot] = {}
         for payload in dedupe_line_snapshot_payloads(payloads):
@@ -567,10 +576,11 @@ class IngestionService:
             return None
         season = self._session.scalar(select(Season).where(Season.code == season_code))
         if season is None:
+            start_year = _season_start_year(season_code, game_date)
             season = Season(
                 code=season_code,
-                start_date=date(game_date.year, 10, 1),
-                end_date=date(game_date.year + 1, 6, 30),
+                start_date=date(start_year, 10, 1),
+                end_date=date(start_year + 1, 6, 30),
             )
             self._session.add(season)
             self._session.flush()
@@ -634,6 +644,10 @@ class IngestionService:
 
     @staticmethod
     def _line_event_date(payload: LineSnapshotPayload) -> date | None:
+        # Kalshi gives the local game date but no start time
+        event_date = payload.meta.get("event_date")
+        if event_date:
+            return date.fromisoformat(str(event_date))
         event_start = payload.meta.get("event_start_time")
         if event_start:
             parsed = isoparse(str(event_start))

@@ -8,6 +8,8 @@ from app.config.settings import Settings, get_settings
 from app.providers.base import InjuriesProvider, OddsProvider, StatsProvider
 from app.providers.cached import wrap_with_provider_cache
 from app.providers.live import BallDontLieInjuriesProvider, BallDontLieOddsProvider, BallDontLieStatsProvider
+from app.providers.odds.fallback import OddsWithKalshiFallback
+from app.providers.odds.kalshi_odds import KalshiOddsProvider
 from app.providers.stats.nba_api import NbaApiStatsProvider
 
 logger = logging.getLogger(__name__)
@@ -47,7 +49,7 @@ STATS_PROVIDER_PROFILES: dict[str, ProviderCapabilityProfile] = {
         name="balldontlie",
         kind="stats",
         implemented_fetch_methods=_STATS_CORE | frozenset({"fetch_schedule_range", "verify_required_access"}),
-        notes="Live stats source; requires GOAT tier for /stats endpoint.",
+        notes="Live stats source; /stats needs ALL-STAR or higher. Box scores, lineups and advanced stats are GOAT only and unused.",
     ),
 }
 
@@ -58,7 +60,13 @@ ODDS_PROVIDER_PROFILES: dict[str, ProviderCapabilityProfile] = {
         name="balldontlie",
         kind="odds",
         implemented_fetch_methods=_ODDS_CORE,
-        notes="v2 /odds/player_props per game_id; requires tier with betting odds.",
+        notes="v2 /odds/player_props per game_id; GOAT tier only. Falls back to Kalshi prices when refused.",
+    ),
+    "kalshi": ProviderCapabilityProfile(
+        name="kalshi",
+        kind="odds",
+        implemented_fetch_methods=_ODDS_CORE,
+        notes="Public Kalshi NBA player prop markets (KXNBAPTS, REB, AST, 3PT, PRA); no key or tier needed.",
     ),
 }
 
@@ -111,11 +119,16 @@ def get_odds_provider() -> OddsProvider:
     settings = get_settings()
     provider = settings.odds_provider.lower()
     if provider in {"", "none", "null"}:
-        raise ValueError("ODDS_PROVIDER must be set to a real provider (balldontlie)")
+        raise ValueError("ODDS_PROVIDER must be set to a real provider (balldontlie or kalshi)")
     if provider == "balldontlie":
         if not settings.balldontlie_api_key:
             raise ValueError("ODDS_PROVIDER=balldontlie requires BALLDONTLIE_API_KEY to be set")
-        return cast(OddsProvider, wrap_with_provider_cache(BallDontLieOddsProvider()))
+        return cast(
+            OddsProvider,
+            wrap_with_provider_cache(OddsWithKalshiFallback(BallDontLieOddsProvider(), KalshiOddsProvider())),
+        )
+    if provider == "kalshi":
+        return cast(OddsProvider, wrap_with_provider_cache(KalshiOddsProvider()))
     raise ValueError(f"Unsupported odds provider: {settings.odds_provider}")
 
 
@@ -143,5 +156,7 @@ def _configured_odds_provider_names(settings: Settings) -> tuple[str, ...]:
     if provider in {"", "none", "null"}:
         return tuple()
     if provider == "balldontlie":
-        return ("balldontlie",)
+        return ("balldontlie", "kalshi")
+    if provider == "kalshi":
+        return ("kalshi",)
     return tuple()

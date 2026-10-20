@@ -220,14 +220,17 @@ class Settings(BaseSettings):
     # Calibration breaks above |p-0.5|=0.30 (6-day backtest: model probability
     # >0.80 hit only 41.1%, >0.90 hit 35.5%; sportsbook >0.6 implied hit 42%).
     # Drop these from surfacing. 0.0 disables the filter.
+    # Kept on: the 2 day real quote backtest showed bigger claimed edges did not
+    # earn more (very_high tier -5.5%, low tier +4.4%).
     max_surfaceable_edge: float = Field(
         default=0.30, alias="MAX_SURFACEABLE_EDGE"
     )
     # Markets that should never appear in surfaced picks regardless of score.
-    # Threes hit only 39.3% (overs) across 451 historical closing lines;
-    # excluded from /api/props results until recalibrated.
+    # Empty by default: surface every market. Threes was previously excluded for
+    # poor calibration on the data-starved model; recalibrated once multi-season
+    # history was merged (best ECE across markets), so it is re-enabled.
     disabled_markets_csv: str = Field(
-        default="threes", alias="DISABLED_MARKETS"
+        default="", alias="DISABLED_MARKETS"
     )
     # Per-player bias offsets (loaded from data/player_bias_offsets.json).
     # Bayesian-shrunk over the per-market prior; takes precedence over the
@@ -320,8 +323,9 @@ class Settings(BaseSettings):
     odds_provider: str = Field(default="balldontlie", alias="ODDS_PROVIDER")
     injury_provider: str = Field(default="balldontlie", alias="INJURY_PROVIDER")
     balldontlie_api_key: SecretStr | None = Field(default=None, alias="BALLDONTLIE_API_KEY")
-    # Ball Dont Lie tier limit is 600 req/min; default leaves headroom (~10%).
-    balldontlie_max_rpm: int = Field(default=540, ge=0, alias="BALLDONTLIE_MAX_RPM")
+    # BDL limits: ALL-STAR 60 req/min, GOAT 600. Default is 90% of ALL-STAR;
+    # set BALLDONTLIE_MAX_RPM=540 on GOAT.
+    balldontlie_max_rpm: int = Field(default=54, ge=0, alias="BALLDONTLIE_MAX_RPM")
     balldontlie_rate_window_seconds: float = Field(default=60.0, gt=0, alias="BALLDONTLIE_RATE_WINDOW_SECONDS")
     request_timeout_seconds: int = Field(default=30, alias="REQUEST_TIMEOUT_SECONDS")
     nba_api_enable_boxscore_enrichment: bool = Field(

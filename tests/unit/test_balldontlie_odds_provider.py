@@ -28,12 +28,17 @@ def test_validate_odds_balldontlie_accepts_data_meta() -> None:
     validate_odds_provider_props_response("balldontlie", _fr({"data": [], "meta": {"record_count": 0}}))
 
 
-def test_iter_odds_chain_balldontlie_only() -> None:
+def test_iter_odds_chain_balldontlie_falls_back_to_kalshi() -> None:
     cfg = Settings.model_construct(
         odds_provider="balldontlie",
         balldontlie_api_key="unit-bdl",
     )
-    assert iter_configured_odds_provider_chain(cfg) == ("balldontlie",)
+    assert iter_configured_odds_provider_chain(cfg) == ("balldontlie", "kalshi")
+
+
+def test_iter_odds_chain_kalshi_only() -> None:
+    cfg = Settings.model_construct(odds_provider="kalshi")
+    assert iter_configured_odds_provider_chain(cfg) == ("kalshi",)
 
 
 def test_parse_bdl_player_props_maps_over_under() -> None:
