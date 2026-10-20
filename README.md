@@ -1,5 +1,7 @@
 # NBA Prop Probability Engine
 
+[![CI](https://github.com/austi20/NBABets-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/austi20/NBABets-v2/actions/workflows/ci.yml)
+
 Can a model that projects a player's stat line beat the sportsbook on player props? This project trains one locally, turns each projection into an over and under probability for any line, and shows the ranked results in a desktop app. It covers six markets: points, rebounds, assists, threes, turnovers, and points plus rebounds plus assists (PRA). Props only.
 
 ## What I found
