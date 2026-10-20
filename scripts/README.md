@@ -17,6 +17,7 @@ Local Claude/Qwen runtime management now lives outside this repo:
 
 - `retrain_and_predict.py` - retrain current model and generate upcoming predictions.
 - `deep_model_eval.py` - deep evaluation and analytics on model behavior.
+- `baseline_comparison.py` - score the model against trailing average baselines using a backtest folds CSV and the parquet box scores.
 - `eval_daily.ps1` - bundled daily evaluation chain.
 
 ## Automation and Reporting
@@ -40,6 +41,8 @@ Local Claude/Qwen runtime management now lives outside this repo:
 
 ## Build and Smoke
 
+- `build_sidecar.ps1` - PyInstaller build of the API sidecar (uses `.venv` when present).
+- `create_desktop_shortcut.ps1` - Desktop shortcut to the release exe built inside the repo (needs a prior `tauri:build -- --no-bundle`).
 - `build_tauri.ps1` - Tauri packaging workflow.
 - `smoke_tauri.ps1` - post-build bundle smoke checks.
 
