@@ -147,3 +147,36 @@ def test_as_of_date_filter(loader: DatasetLoader, parquet_root: Path) -> None:
 
 def test_use_parquet_flag_default(loader: DatasetLoader) -> None:
     assert loader.use_parquet is False
+
+
+def test_team_and_opponent_ids_are_mapped_from_abbreviations(parquet_root: Path) -> None:
+    # parquet rows only carry abbreviations; opponent features need real team ids
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+
+    from app.db.base import Base
+    from app.schemas.domain import TeamPayload
+    from app.services.ingestion import IngestionService
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        IngestionService(session).ingest_teams(
+            [
+                TeamPayload(provider_team_id="14", abbreviation="LAL", name="Lakers", city="Los Angeles"),
+                TeamPayload(provider_team_id="2", abbreviation="BOS", name="Celtics", city="Boston"),
+            ]
+        )
+        session.commit()
+        ids = dict(session.execute(text("SELECT abbreviation, team_id FROM teams")).all())
+        result = DatasetLoader(session).load_historical_player_games_from_parquet(parquet_root)
+
+    row = result[result["player_name"] == "Player A"].iloc[0]
+    assert row["team_id"] == ids["LAL"]
+    assert row["player_team_id"] == ids["LAL"]
+    assert row["opponent_team_id"] == ids["BOS"]
+
+
+def test_unknown_team_abbreviation_stays_missing(loader: DatasetLoader, parquet_root: Path) -> None:
+    result = loader.load_historical_player_games_from_parquet(parquet_root)
+    assert result["opponent_team_id"].isna().all()

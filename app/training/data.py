@@ -222,6 +222,11 @@ class DatasetLoader:
     def use_parquet(self) -> bool:
         return os.getenv("NBA_USE_PARQUET", "0") == "1"
 
+    def _team_ids_by_abbreviation(self) -> dict[str, int]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(text("SELECT abbreviation, team_id FROM teams")).all()
+        return {str(abbreviation): int(team_id) for abbreviation, team_id in rows}
+
     def load_historical_player_games_from_parquet(
         self,
         parquet_root: Path,
@@ -280,6 +285,11 @@ class DatasetLoader:
             index=frame.index,
         )
         frame = pd.concat([frame, defaults], axis=1)
+        # parquet has abbreviations only; opponent and team features need real ids
+        team_ids = self._team_ids_by_abbreviation()
+        frame["team_id"] = frame["team_abbreviation"].map(team_ids)
+        frame["player_team_id"] = frame["team_id"]
+        frame["opponent_team_id"] = frame["opponent_abbreviation"].map(team_ids)
 
         stat_cols = [
             "points",
