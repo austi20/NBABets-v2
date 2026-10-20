@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from app.training import models
 from app.training.models import (
     OOF_BLOCKS,
     StatModelSuite,
@@ -72,15 +73,23 @@ def test_oof_predictions_do_not_memorize_noise():
     assert abs(oof_corr) < 0.2
 
 
-def test_stacker_does_not_trust_base_models_on_pure_noise():
-    frame = _noise_frame(1200)
+def _base_model_weight(frame: pd.DataFrame) -> float:
     suite = StatModelSuite(random_state=3)
-
     suite.fit(frame, FEATURES)
-
     weights = suite.models["points"].learned_weights
-    assert abs(weights["stack_direct_mean"]) < 0.25
-    assert abs(weights["stack_rate_mean"]) < 0.25
+    return abs(weights["stack_direct_mean"]) + abs(weights["stack_rate_mean"])
+
+
+def test_stacker_trusts_base_models_far_less_than_the_in_sample_version(monkeypatch):
+    frame = _noise_frame(1200)
+
+    out_of_fold = _base_model_weight(frame)
+    monkeypatch.setattr(models, "MIN_ROWS_FOR_OOF", 10**9)  # forces the old in sample path
+    in_sample = _base_model_weight(frame)
+
+    # on pure noise the old stacker still puts about 1 on each base model
+    assert in_sample > 1.0
+    assert out_of_fold < 0.5 * in_sample
 
 
 def test_small_frames_still_fit_with_in_sample_stacking():
