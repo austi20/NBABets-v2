@@ -4,8 +4,8 @@ from pydantic import SecretStr
 def test_balldontlie_key_has_no_hardcoded_default(monkeypatch):
     monkeypatch.delenv("BALLDONTLIE_API_KEY", raising=False)
     from app.config import settings as settings_module
-    settings_module.get_settings.cache_clear()
-    cfg = settings_module.get_settings()
+    # skip .env so a real local key can't leak into the check
+    cfg = settings_module.Settings(_env_file=None)
     assert cfg.balldontlie_api_key is None or (
         isinstance(cfg.balldontlie_api_key, SecretStr)
         and cfg.balldontlie_api_key.get_secret_value() == ""

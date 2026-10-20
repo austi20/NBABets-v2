@@ -30,13 +30,15 @@ def _reset_db_globals() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_shared_state():
+def _isolate_shared_state(tmp_path, monkeypatch):
     """Reset process-global caches/bindings around every test.
 
     The settings lru_cache and the app.db.session module globals are shared for
     the whole test session; without this fixture a test that mutates env vars or
     configures a database engine leaks that state into later tests.
     """
+    # default app data dir is %LOCALAPPDATA%\NBAPropEngine, the real one
+    monkeypatch.setenv("NBA_PROP_APP_DATA_DIR", str(tmp_path / "app_data"))
     _reset_settings_cache()
     _reset_db_globals()
     try:

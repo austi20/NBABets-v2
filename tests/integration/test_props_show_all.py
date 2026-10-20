@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 
 from httpx import ASGITransport, AsyncClient
 
+from app.config.settings import get_settings
 from app.server.main import create_app
 from app.server.services.board_cache import BoardCacheEntry
 from app.services.insights import BoardSummary, PropInsight
@@ -211,9 +212,12 @@ def _player_names(payload: dict) -> set[str]:
     return {item["opportunity"]["player_name"] for item in payload["items"]}
 
 
-def test_show_all_false_drops_disabled_and_overedge_props() -> None:
-    """Default behavior: existing filters drop the threes market and the
-    over-edge fragile prop."""
+def test_show_all_false_drops_disabled_and_overedge_props(monkeypatch) -> None:
+    """With filters configured, they drop the threes market and the
+    over-edge fragile prop. Defaults are off, so set them here."""
+    monkeypatch.setenv("DISABLED_MARKETS", "threes")
+    monkeypatch.setenv("MAX_SURFACEABLE_EDGE", "0.30")
+    get_settings.cache_clear()
 
     async def _run() -> None:
         app = create_app(board_cache=_FakeBoardCache())
@@ -225,7 +229,11 @@ def test_show_all_false_drops_disabled_and_overedge_props() -> None:
             assert payload["total"] == 1
             assert _player_names(payload) == {"Solid Player"}
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
 
 
 def test_show_all_true_surfaces_every_prop() -> None:
