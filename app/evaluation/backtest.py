@@ -200,6 +200,7 @@ class RollingOriginBacktester:
                     validation_reg["actual_total"].to_numpy(dtype=float),
                     validation_reg["projected_mean"].to_numpy(dtype=float),
                 )
+                baseline_stats = _baseline_maes(validation_reg, validation_market, target_column)
                 interval_coverage = float(
                     np.mean(
                         (
@@ -307,6 +308,7 @@ class RollingOriginBacktester:
                         "brier_score": brier_val,
                         "expected_calibration_error": ece_val,
                         "interval_80_coverage": interval_coverage,
+                        **baseline_stats,
                         "realized_profit": realized_profit,
                         "realized_roi": realized_roi,
                         "average_expected_value": avg_ev,
@@ -657,6 +659,9 @@ class RollingOriginBacktester:
                     lines.append(f"| {row['market_key']} | {row['sufficiency_flag']} | {int(row['count'])} |")
                 lines.append("")
 
+        if not fold_results.empty:
+            lines.extend(_baseline_summary_lines(fold_results))
+
         for segment, title in (
             ("market", "By Market"),
             ("odds_provider", "By Odds Provider"),
@@ -848,6 +853,69 @@ def _finalize_bet_rows(frame: pd.DataFrame) -> pd.DataFrame:
     result["confidence_tier"] = result["hit_probability"].apply(_confidence_tier)
     result["evaluation_date"] = pd.to_datetime(result["game_date"]).dt.date.astype(str)
     return result
+
+
+def _baseline_maes(reg: pd.DataFrame, frame: pd.DataFrame, target_column: str) -> dict[str, float]:
+    """Model vs naive baseline MAE on the same rows.
+
+    Rows with no history (minutes_avg_10 == 0) are dropped. Their features are
+    filled with 0, which makes any baseline look worse than it is.
+    """
+    minutes = pd.to_numeric(frame["minutes_avg_10"], errors="coerce").fillna(0.0).to_numpy()
+    has_history = minutes > 0
+    out: dict[str, float] = {}
+    if not has_history.any():
+        nan = float("nan")
+        return {
+            "history_rows": 0,
+            "model_mae_hist": nan,
+            "baseline_mae_avg5": nan,
+            "baseline_mae_avg10": nan,
+            "baseline_mae_recency": nan,
+        }
+    actual = reg["actual_total"].to_numpy(dtype=float)[has_history]
+    model_pred = reg["projected_mean"].to_numpy(dtype=float)[has_history]
+    out["model_mae_hist"] = float(np.mean(np.abs(actual - model_pred)))
+    baseline_columns = {
+        "baseline_mae_avg5": f"{target_column}_avg_5",
+        "baseline_mae_avg10": f"{target_column}_avg_10",
+        "baseline_mae_recency": f"{target_column}_baseline_mean",
+    }
+    for name, column in baseline_columns.items():
+        if column not in frame.columns:
+            out[name] = float("nan")
+            continue
+        pred = pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=float)[has_history]
+        out[name] = float(np.nanmean(np.abs(actual - pred)))
+    out["history_rows"] = int(has_history.sum())
+    return out
+
+
+def _baseline_summary_lines(fold_results: pd.DataFrame) -> list[str]:
+    """Markdown table of model vs best naive baseline MAE, weighted by fold rows."""
+    baseline_cols = ["baseline_mae_avg5", "baseline_mae_avg10", "baseline_mae_recency"]
+    needed = ["market_key", "model_mae_hist", "history_rows", *baseline_cols]
+    if any(column not in fold_results.columns for column in needed):
+        return []
+    lines = [
+        "## Model vs Naive Baselines (out of sample)",
+        "",
+        "| Market | Model MAE | Best baseline MAE | Model vs baseline | Rows |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for market, group in fold_results.groupby("market_key"):
+        weights = group["history_rows"].to_numpy(dtype=float)
+        if weights.sum() <= 0:
+            continue
+        model_mae = float(np.average(group["model_mae_hist"].to_numpy(dtype=float), weights=weights))
+        baseline_maes = [
+            float(np.average(group[column].to_numpy(dtype=float), weights=weights)) for column in baseline_cols
+        ]
+        best = min(baseline_maes)
+        gap = (best - model_mae) / best * 100
+        lines.append(f"| {market} | {model_mae:.3f} | {best:.3f} | {gap:+.1f}% | {int(weights.sum())} |")
+    lines.append("")
+    return lines
 
 
 def _apply_feature_defaults(frame: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:

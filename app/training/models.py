@@ -860,9 +860,12 @@ class StatModelSuite:
                 prior_strength=10.0,
             )
             fitted, _ = self.models[market_key].predict(frame)
-            metrics[f"{market_key}_rmse"] = float(mean_squared_error(frame[target_column], fitted) ** 0.5)
-            metrics[f"{market_key}_mae"] = float(np.mean(np.abs(frame[target_column].to_numpy(dtype=float) - fitted)))
-            metrics[f"{market_key}_rate_rmse"] = float(
+            # fitted on the training rows, not held out accuracy
+            metrics[f"{market_key}_train_rmse"] = float(mean_squared_error(frame[target_column], fitted) ** 0.5)
+            metrics[f"{market_key}_train_mae"] = float(
+                np.mean(np.abs(frame[target_column].to_numpy(dtype=float) - fitted))
+            )
+            metrics[f"{market_key}_train_rate_rmse"] = float(
                 mean_squared_error(rate_target, _safe_training_rate(fitted, frame["predicted_minutes"])) ** 0.5
             )
         return metrics
