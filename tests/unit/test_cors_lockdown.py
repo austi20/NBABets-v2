@@ -39,3 +39,17 @@ def test_cors_allows_tauri_http_origin():
         },
     )
     assert r.headers.get("access-control-allow-origin") == "http://tauri.localhost"
+
+
+def test_cors_allows_protected_startup_preflight_from_vite_dev():
+    c = TestClient(create_app(app_token="t"))
+    r = c.options(
+        "/api/startup/run",
+        headers={
+            "Origin": "http://localhost:1420",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-App-Token, Content-Type",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:1420"

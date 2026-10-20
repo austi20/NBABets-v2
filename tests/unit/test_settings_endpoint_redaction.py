@@ -4,6 +4,16 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 
+def test_server_repo_root_prefers_explicit_env_file(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("APP_ENV=dev\n", encoding="utf-8")
+    monkeypatch.setenv("NBA_PROP_ENV_FILE", str(env_file))
+
+    from app.server.main import _resolve_repo_root
+
+    assert _resolve_repo_root() == tmp_path
+
+
 def test_api_settings_redacts_keys(monkeypatch):
     secret_bdl = "super-secret-bdl-value"
     secret_kalshi = "super-secret-kalshi-id"

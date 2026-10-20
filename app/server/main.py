@@ -53,8 +53,27 @@ logger = logging.getLogger(__name__)
 _ALLOWED_ORIGINS = (
     "tauri://localhost",
     "http://tauri.localhost",
+    "http://localhost:1420",  # Vite dev origin for tauri dev
     "http://127.0.0.1:1420",  # Vite dev origin for tauri dev
 )
+
+
+def _resolve_repo_root() -> Path:
+    explicit_env_file = os.getenv("NBA_PROP_ENV_FILE")
+    if explicit_env_file:
+        env_path = Path(explicit_env_file).expanduser()
+        try:
+            env_path = env_path.resolve()
+        except OSError:
+            pass
+        if env_path.is_file():
+            return env_path.parent
+
+    for directory in (Path.cwd(), *Path.cwd().parents):
+        if (directory / "pyproject.toml").is_file():
+            return directory
+
+    return Path(__file__).resolve().parents[2]
 
 
 def _build_market_service() -> KalshiMarketService:
@@ -83,7 +102,7 @@ def _upgrade_database() -> None:
     migrations touch the same SQLite file the app reads. The baseline migration
     is a no-op when a populated schema already exists.
     """
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = _resolve_repo_root()
     cfg = Config(str(repo_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(repo_root / "migrations"))
     cfg.set_main_option("sqlalchemy.url", get_database_selection().url)

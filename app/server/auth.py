@@ -24,6 +24,8 @@ class AppTokenMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.url.path in self._exempt_paths:
             return await call_next(request)
+        if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
+            return await call_next(request)
         if not request.url.path.startswith(self._protected_prefixes):
             return await call_next(request)
 
