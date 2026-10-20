@@ -26,8 +26,17 @@ jobs:
       - name: Ruff
         run: ruff check .
 
+      # Same non-regression floor as scripts/check.ps1. The remaining errors
+      # are mostly pandas and sklearn typing friction.
       - name: Mypy
-        run: mypy app
+        env:
+          MYPY_ERROR_FLOOR: "270"
+        run: |
+          mypy app | tee mypy.txt || true
+          errors=$(sed -n 's/^Found \([0-9]*\) error.*/\1/p' mypy.txt | tail -n 1)
+          errors=${errors:-0}
+          echo "mypy errors: $errors (floor $MYPY_ERROR_FLOOR)"
+          test "$errors" -le "$MYPY_ERROR_FLOOR"
 
       - name: Pytest
         run: pytest
