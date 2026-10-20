@@ -220,6 +220,13 @@ def _make_regressor(random_state: int, *, reg_alpha: float = 0.0) -> Any:
     return HistGradientBoostingRegressor(max_depth=5, learning_rate=0.04, random_state=random_state)
 
 
+# The stacker and variance model learn from out of fold base predictions: time
+# ordered blocks, each predicted by models fit on earlier blocks only. Fitting
+# them on in sample predictions made them trust the base models too much.
+OOF_BLOCKS = 4
+MIN_ROWS_FOR_OOF = 400  # below this, blocks are too small to fit anything useful
+
+
 @dataclass
 class FittedMarketModel:
     market_key: str
@@ -800,19 +807,27 @@ class StatModelSuite:
             rate_model = _make_regressor(self._random_state + 7, reg_alpha=active_l1)
             rate_model.fit(frame[market_features], rate_target)
 
-            direct_fitted = clip_non_negative(np.asarray(direct_model.predict(frame[market_features]), dtype=float))
-            rate_fitted = clip_non_negative(
-                np.asarray(rate_model.predict(frame[market_features]), dtype=float) * np.maximum(frame["predicted_minutes"].to_numpy(dtype=float), 0.0)
-            )
-            stacker_columns, stack_train = _build_stacker_frame(
-                frame,
-                market_key,
-                direct_fitted,
-                rate_fitted,
-            )
-            stacker = _fit_time_series_stacker(stack_train, frame[target_column].to_numpy(dtype=float))
+            if len(frame) >= MIN_ROWS_FOR_OOF:
+                direct_fitted, rate_fitted = _out_of_fold_base_predictions(
+                    frame, market_features, target_column, rate_target, self._random_state, active_l1
+                )
+            else:
+                direct_fitted = clip_non_negative(
+                    np.asarray(direct_model.predict(frame[market_features]), dtype=float)
+                )
+                rate_fitted = clip_non_negative(
+                    np.asarray(rate_model.predict(frame[market_features]), dtype=float)
+                    * np.maximum(frame["predicted_minutes"].to_numpy(dtype=float), 0.0)
+                )
+            # chronological rows that have a base prediction (the first OOF block does not)
+            positions = _chronological_positions(frame)
+            positions = positions[~np.isnan(direct_fitted[positions])]
+            stacker_columns, stack_all = _build_stacker_frame(frame, market_key, direct_fitted, rate_fitted)
+            stack_train = stack_all.iloc[positions]
+            labels = frame[target_column].to_numpy(dtype=float)[positions]
+            stacker = _fit_time_series_stacker(stack_train, labels)
             blended_fitted = clip_non_negative(np.asarray(stacker.predict(stack_train[stacker_columns]), dtype=float))
-            residual_std = float(np.std(frame[target_column].to_numpy(dtype=float) - blended_fitted))
+            residual_std = float(np.std(labels - blended_fitted))
             learned_weights = {
                 column: float(weight)
                 for column, weight in zip(
@@ -823,8 +838,7 @@ class StatModelSuite:
             }
 
             variance_model = _make_regressor(self._random_state + 13, reg_alpha=active_l1)
-            squared_residuals = np.square(frame[target_column].to_numpy(dtype=float) - blended_fitted)
-            variance_model.fit(stack_train[stacker_columns], squared_residuals)
+            variance_model.fit(stack_train[stacker_columns], np.square(labels - blended_fitted))
 
             self.models[market_key] = FittedMarketModel(
                 market_key=market_key,
@@ -936,6 +950,46 @@ def _fit_time_series_stacker(frame: pd.DataFrame, labels: np.ndarray) -> Ridge:
     model = Ridge(alpha=best_alpha)
     model.fit(frame, labels)
     return model
+
+
+def _chronological_positions(frame: pd.DataFrame) -> np.ndarray:
+    if "game_date" not in frame.columns:
+        return np.arange(len(frame))
+    return np.argsort(pd.to_datetime(frame["game_date"]).to_numpy(), kind="stable")
+
+
+def _out_of_fold_base_predictions(
+    frame: pd.DataFrame,
+    features: list[str],
+    target_column: str,
+    rate_target: np.ndarray,
+    random_state: int,
+    reg_alpha: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Direct and rate predictions for each row from models fit on earlier rows only.
+
+    Rows in the first block have nothing earlier to learn from, so they are NaN.
+    """
+    rows = len(frame)
+    order = _chronological_positions(frame)
+    edges = np.linspace(0, rows, OOF_BLOCKS + 1).astype(int)
+    x = frame[features]
+    y = frame[target_column].to_numpy(dtype=float)
+    minutes = np.maximum(frame["predicted_minutes"].to_numpy(dtype=float), 0.0)
+    direct = np.full(rows, np.nan)
+    rate = np.full(rows, np.nan)
+    for block in range(1, OOF_BLOCKS):
+        train_rows = order[: edges[block]]
+        test_rows = order[edges[block] : edges[block + 1]]
+        direct_model = _make_regressor(random_state, reg_alpha=reg_alpha)
+        direct_model.fit(x.iloc[train_rows], y[train_rows])
+        rate_model = _make_regressor(random_state + 7, reg_alpha=reg_alpha)
+        rate_model.fit(x.iloc[train_rows], rate_target[train_rows])
+        direct[test_rows] = clip_non_negative(np.asarray(direct_model.predict(x.iloc[test_rows]), dtype=float))
+        rate[test_rows] = clip_non_negative(
+            np.asarray(rate_model.predict(x.iloc[test_rows]), dtype=float) * minutes[test_rows]
+        )
+    return direct, rate
 
 
 def _safe_training_rate(numerator: pd.Series | np.ndarray, denominator: pd.Series | np.ndarray) -> np.ndarray:

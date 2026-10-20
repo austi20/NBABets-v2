@@ -84,6 +84,25 @@ By the NFL rule most of these read "noisy" or "unstable". They are not noise. Th
 
 Out of sample RMSE bottoms out at 80 trees on 25k training rows and 120 on 76k rows. At 220 trees it costs about 0.1% at full size. Tree count is not where the overfitting is.
 
+## Result of the out of fold stacking fix
+
+The stacker and the variance model now learn from out of fold base predictions: four time ordered blocks, each predicted by models fit only on earlier blocks, so the first block is training data only (`_out_of_fold_base_predictions` in `models.py`). Frames under 400 rows keep the old in sample behavior. The same walk forward was rerun before and after.
+
+| | stacked stage MAE | final MAE (all rows) | P(over) log loss |
+|---|---|---|---|
+| leak fixed, pooling and caps kept (B) | **-2.8% to -4.7%** in every market | -0.2% to +0.4%, mean +0.06% | +0.11% (assists +0.39, turnovers +0.52) |
+| leak fixed, pooling and caps removed (C) | same stacked stage | mean **-0.95%** | mean **-0.66%**, better in all six markets |
+
+What this says:
+
+- The leak is real and the fix works at the stage it targets. The honest stacker now matches the rate model alone (points 4.771 against 4.757).
+- Shipped as is (B), the app's output does not improve. The pooling and caps were tuned against the leaky stacker and now give nothing back: on players with fewer than 5 games they make `final` 3 to 13% worse than the stacked mean, and on players with history they cost threes 2.4%.
+- C is the version that pays. Threes improves 3.0% in each of the three seasons. Points and PRA are worse in the 2023 fold (one season of training data) and better in 2024 and 2025, which fits a stacker that gains from more data.
+- Intervals got slightly wider (80% intervals now cover 85 to 90%). The hand set variance inflations in `_inflate_variance` were sized for the old, too small variance, so they likely double count now. That is the next thing to retune.
+- Cost: each fit trains about 1.7 times as many models, roughly 40 seconds more per fit on 76k rows. A full training run with its 10 calibration folds takes several minutes longer.
+
+Not done, and a decision for whoever owns the safety layers: removing pooling and caps (C). The caps also guard against wild predictions that MAE does not show, so check the tail (largest errors, extreme projections) before removing them.
+
 ## The opponent strength idea
 
 ### What the model already had
@@ -142,8 +161,8 @@ The factor is a sound description of a defense and could be shown in the app as 
 
 ## Recommended order
 
-1. **Fix the stacker leak** by building the base predictions for the stacker and the variance model out of fold (blocked time folds inside each training set). Expected gain 1.5 to 2% MAE and a cleaner calibration slope. This is the biggest measured win.
-2. **Then fit the pooling and the caps again**, or test dropping them. They were tuned to repair the stacker.
+1. ~~Fix the stacker leak~~ Done, see the result section above.
+2. **Fit the pooling and the caps again, or drop them (option C above), and retune the variance inflation.** This is where the measured gain is.
 3. **Fix the player id split.** Parquet rows use nba_api ids and the database rows use BallDontLie ids, so a player's history is split in two, and 94% of the database rows from 2026 02 09 to 2026 05 13 (2,744 player games, identical points) are also in the parquet, so those games are double counted. A name and date match can unify the ids and drop the duplicates. Not done here; it changes training data and needs its own walk forward check.
 4. **Retest opponent features (option B)** after 1 to 3.
 5. **Look at threes.** It over projects, more at the top, and is worse than a season average. A leaner model or a different distribution family (counts) may do better.
