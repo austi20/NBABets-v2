@@ -23,14 +23,37 @@ if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 }
 
-Write-Host "Building Python sidecar with PyInstaller..."
-& py -3 -m PyInstaller `
+# Prefer the repo venv so the bundle gets the pinned pandas (<3).
+$venvPython = Join-Path $root ".venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    $python = $venvPython
+    $pythonArgs = @()
+} else {
+    $python = "py"
+    $pythonArgs = @("-3")
+}
+
+# Levenshtein ships a renamed msvcp140 under levenshtein.libs that PyInstaller
+# does not follow. Without it the frozen app dies on import.
+$extraArgs = @()
+$libsDir = Join-Path $root ".venv\Lib\site-packages\levenshtein.libs"
+if (Test-Path $libsDir) {
+    foreach ($dll in Get-ChildItem $libsDir -Filter *.dll) {
+        $extraArgs += "--add-binary"
+        $extraArgs += "$($dll.FullName);."
+    }
+}
+
+Write-Host "Building Python sidecar with PyInstaller ($python)..."
+& $python @pythonArgs -m PyInstaller @extraArgs `
     --noconfirm `
     --clean `
     --onefile `
     --name $binaryBase `
     --collect-binaries xgboost `
     --collect-data xgboost `
+    --collect-all Levenshtein `
+    --collect-all rapidfuzz `
     --hidden-import sklearn `
     --hidden-import scipy `
     --hidden-import nba_api `

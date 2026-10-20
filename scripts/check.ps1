@@ -5,14 +5,18 @@ $ErrorActionPreference = "Stop"
 # pandas/sklearn type friction in the training pipeline (not real bugs) and are
 # intentionally deferred. New code must not push the count above this floor.
 # See docs/superpowers/plans/2026-05-26-final-counts.txt.
-$MypyErrorFloor = 290
+$MypyErrorFloor = 270  # 267 on the repo venv (pandas 2.3.3), 2026-10-20
+
+# Use the repo venv when present so pandas matches the pyproject pin.
+$venvPython = Join-Path (Split-Path -Parent $PSScriptRoot) ".venv\Scripts\python.exe"
+$python = if (Test-Path $venvPython) { $venvPython } else { "python" }
 
 # Ruff must be clean (exit 0).
-python -m ruff check .
+& $python -m ruff check .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Mypy: count errors and fail only if above the floor (non-regression gate).
-$mypyOutput = python -m mypy app
+$mypyOutput = & $python -m mypy app
 $mypyOutput | Write-Output
 $summary = $mypyOutput | Select-String -Pattern 'Found (\d+) error' | Select-Object -Last 1
 if ($summary) {
@@ -27,5 +31,5 @@ if ($mypyErrors -gt $MypyErrorFloor) {
 }
 Write-Output "mypy ok: $mypyErrors errors (floor $MypyErrorFloor)"
 
-python -m pytest
+& $python -m pytest
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
