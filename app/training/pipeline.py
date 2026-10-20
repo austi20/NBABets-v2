@@ -2827,7 +2827,11 @@ def _training_data_quality_checks(frame: pd.DataFrame, feature_columns: list[str
             "row_count": 0,
             "reason": "empty_training_frame",
         }
-    numeric = frame.select_dtypes(include=["number"])
+    # provider only columns (pace, ratings) are empty for parquet rows and
+    # never reach the model, so score the model features only
+    numeric = frame[[column for column in feature_columns if column in frame.columns]].select_dtypes(include=["number"])
+    if numeric.empty:
+        numeric = frame.select_dtypes(include=["number"])
     finite_ratio = float(np.isfinite(numeric.to_numpy(dtype=float)).mean()) if not numeric.empty else 1.0
     null_fraction = float(numeric.isna().mean().mean()) if not numeric.empty else 0.0
     extreme_minutes_rows = int((pd.to_numeric(frame.get("minutes", 0.0), errors="coerce").fillna(0.0) > 60.0).sum())
