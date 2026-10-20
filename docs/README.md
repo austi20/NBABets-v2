@@ -18,6 +18,7 @@ handoffs or old implementation outlines as active work.
 
 ## Active Plans
 
+- `diag/nba_overfitting_and_opponent_factors.md` - walk forward overfitting diagnostics, the stacker leak, and the opponent strength experiment. Tables in `diag/nba_generalization_tables.md`.
 - `plans/2026-10-20-checkup-and-improvement-plan.md` - project checkup, accuracy against naive baselines, comparison with the NFL prop project, and the ordered improvement plan.
 - `plans/specs/mc-vectorization-spec.md` - deferred Monte Carlo vectorization spec.
 - `plans/specs/profit-machine-design.md` - profit-machine design spec.

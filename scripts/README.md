@@ -18,6 +18,7 @@ Local Claude/Qwen runtime management now lives outside this repo:
 - `retrain_and_predict.py` - retrain current model and generate upcoming predictions.
 - `deep_model_eval.py` - deep evaluation and analytics on model behavior.
 - `baseline_comparison.py` - score the model against trailing average baselines using a backtest folds CSV and the parquet box scores.
+- `diag/extract_walkforward.py`, `diag/generalization_report.py`, `diag/opponent_factor_experiment.py` - walk forward overfitting diagnostics and the opponent factor test (see `docs/diag/`).
 - `eval_daily.ps1` - bundled daily evaluation chain.
 
 ## Automation and Reporting
